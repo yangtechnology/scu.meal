@@ -1,4 +1,4 @@
-/* 東吳學餐 MealFlow v9.0 Pro - 商業級學餐智慧點餐 & 平板 POS 系統樣式表 */
+/* 東吳學餐 MealFlow v9.0 Enterprise Edition - 商業級學餐智慧點餐 & 全螢幕平板 POS 系統樣式表 */
 :root {
   --brand: #FF5A1F;
   --brand-light: #FFF3EE;
@@ -11,20 +11,21 @@
   --red-bg: #FEF2F2;
   --indigo: #4F46E5;
   --indigo-bg: #EEF2FF;
+  --slate-dark: #0F172A;
 
   --bg-page: #F4F6F9;
   --bg-card: #FFFFFF;
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-muted: #94A3B8;
-  --border: #E2E8F0;
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --text-muted: #9CA3AF;
+  --border: #E5E7EB;
 
   --radius-xl: 20px;
   --radius-lg: 16px;
   --radius-md: 12px;
-  --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-float: 0 20px 45px rgba(15, 23, 42, 0.24);
+  --shadow-sm: 0 2px 10px rgba(17, 24, 39, 0.04);
+  --shadow-md: 0 8px 24px rgba(17, 24, 39, 0.07);
+  --shadow-float: 0 18px 40px rgba(17, 24, 39, 0.22);
 }
 
 * {
@@ -43,7 +44,8 @@ body {
   overflow-x: hidden;
 }
 
-/* 僅在店家端 POS 點餐分頁鎖定外層不捲動，完美貼合平板全螢幕 */
+/* 僅在「店家端 ➔ 櫃檯點餐 (POS)」分頁鎖定外層不捲動，確保平板收銀滿版穩定；
+   切換至「訂單管理」、「AI 分析」、「店務設定」或學生頁面皆可自由捲動 */
 body.pos-no-scroll {
   height: 100dvh;
   overflow: hidden;
@@ -55,6 +57,7 @@ button {
   font-family: inherit;
   user-select: none;
 }
+
 input, select, textarea {
   font-family: inherit;
 }
@@ -62,7 +65,7 @@ input, select, textarea {
 /* ==================== 頂部導覽列 ==================== */
 .app-header {
   background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -70,8 +73,9 @@ input, select, textarea {
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
 }
+
 .header-inner {
-  max-width: 1280px;
+  max-width: 1260px;
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
@@ -79,18 +83,21 @@ input, select, textarea {
   gap: 10px;
   flex-wrap: wrap;
 }
+
 .brand-title-group {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
+
 .role-badge {
   font-size: 0.74rem;
   font-weight: 800;
   padding: 3px 10px;
   border-radius: 999px;
 }
+
 .sync-status {
   font-size: 0.74rem;
   color: var(--text-secondary);
@@ -104,20 +111,24 @@ input, select, textarea {
   border: 1px solid var(--border);
   transition: 0.15s;
 }
+
 .sync-status:hover {
   border-color: #CBD5E1;
   background: #FFFFFF;
 }
+
 .sync-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--green);
 }
+
 .sync-dot.syncing {
   background: var(--amber);
   animation: pulse 1s infinite;
 }
+
 .sync-dot.offline {
   background: var(--text-muted);
 }
@@ -129,6 +140,7 @@ input, select, textarea {
   border-radius: 999px;
   border: 1px solid var(--border);
 }
+
 .campus-btn {
   border: none;
   background: transparent;
@@ -139,26 +151,29 @@ input, select, textarea {
   color: var(--text-secondary);
   transition: 0.2s;
 }
+
 .campus-btn.active {
   background: var(--brand);
   color: #FFFFFF;
   box-shadow: 0 2px 6px rgba(255, 90, 31, 0.3);
 }
 
-/* ==================== 主容器 ==================== */
+/* ==================== 主容器與視圖路由 ==================== */
 .container {
-  max-width: 780px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 16px;
 }
+
 body.store-mode-active .container {
-  max-width: 1320px;
+  max-width: 1280px;
   padding: 12px 18px;
 }
 
 .view-section {
   display: none;
 }
+
 .view-section.active {
   display: block;
   animation: fadeIn 0.2s ease;
@@ -175,6 +190,7 @@ body.store-mode-active .container {
   flex-direction: column;
   justify-content: space-between;
 }
+
 .portal-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-md);
@@ -182,7 +198,7 @@ body.store-mode-active .container {
 
 /* ==================== 進行中訂單提示條 ==================== */
 .active-order-strip {
-  background: #0F172A;
+  background: #111827;
   color: #FFFFFF;
   border-radius: var(--radius-md);
   padding: 12px 16px;
@@ -195,12 +211,15 @@ body.store-mode-active .container {
   box-shadow: var(--shadow-md);
   transition: transform 0.15s ease;
 }
+
 .active-order-strip:hover {
   transform: translateY(-1px);
 }
+
 .active-order-strip.ready {
   background: var(--green);
 }
+
 .strip-num {
   background: rgba(255, 255, 255, 0.2);
   padding: 4px 10px;
@@ -209,7 +228,7 @@ body.store-mode-active .container {
   font-size: 1.05rem;
 }
 
-/* ==================== AI 選餐顧問與分流橫幅 ==================== */
+/* ==================== AI 選餐顧問（升級多輪氣泡式聊天室） ==================== */
 .ai-concierge-box {
   background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
   color: #FFFFFF;
@@ -218,6 +237,7 @@ body.store-mode-active .container {
   margin-bottom: 14px;
   box-shadow: 0 8px 24px rgba(49, 46, 129, 0.18);
 }
+
 .ai-chip-row {
   display: flex;
   gap: 6px;
@@ -225,9 +245,11 @@ body.store-mode-active .container {
   padding: 8px 0;
   scrollbar-width: none;
 }
+
 .ai-chip-row::-webkit-scrollbar {
   display: none;
 }
+
 .ai-prompt-chip {
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.1);
@@ -239,10 +261,12 @@ body.store-mode-active .container {
   white-space: nowrap;
   transition: 0.15s;
 }
+
 .ai-prompt-chip:hover {
   background: rgba(255, 255, 255, 0.22);
   color: #FFFFFF;
 }
+
 .ai-response-card {
   background: rgba(255, 255, 255, 0.98);
   color: var(--text-primary);
@@ -250,12 +274,60 @@ body.store-mode-active .container {
   padding: 12px 14px;
   margin-top: 10px;
   display: none;
+  max-height: 360px;
+  overflow-y: auto;
 }
+
 .ai-response-card.show {
   display: block;
   animation: fadeIn 0.25s ease;
 }
 
+/* 多輪對話氣泡樣式 */
+.ai-chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-msg-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-msg-row.user {
+  align-items: flex-end;
+}
+
+.chat-msg-row.assistant {
+  align-items: flex-start;
+}
+
+.chat-bubble {
+  max-width: 92%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.chat-msg-row.user .chat-bubble {
+  background: var(--indigo);
+  color: #FFFFFF;
+  border-bottom-right-radius: 4px;
+  font-weight: 700;
+}
+
+.chat-msg-row.assistant .chat-bubble {
+  background: #F8FAFC;
+  color: var(--text-primary);
+  border: 1px solid #E2E8F0;
+  border-bottom-left-radius: 4px;
+  width: 100%;
+}
+
+/* M/M/1 佇列動態分流橫幅 */
 .smart-tip-card {
   background: linear-gradient(135deg, #FFF3EE 0%, #FFFBEB 100%);
   border: 1.5px solid #FED7AA;
@@ -268,6 +340,7 @@ body.store-mode-active .container {
   gap: 14px;
   flex-wrap: wrap;
 }
+
 .smart-tip-badge {
   display: inline-flex;
   align-items: center;
@@ -280,16 +353,20 @@ body.store-mode-active .container {
   border-radius: 6px;
   margin-bottom: 5px;
 }
+
 .smart-tip-title {
   font-size: 0.96rem;
   font-weight: 800;
   color: #9A3412;
   margin-bottom: 2px;
 }
+
 .smart-tip-desc {
   font-size: 0.82rem;
   color: #C2410C;
 }
+
+/* ==================== 通用按鈕系統 ==================== */
 .btn-tip-action {
   background: var(--brand);
   color: #FFFFFF;
@@ -302,9 +379,11 @@ body.store-mode-active .container {
   box-shadow: 0 4px 12px rgba(255, 90, 31, 0.22);
   transition: 0.15s;
 }
+
 .btn-tip-action:hover {
-  filter: brightness(1.05);
+  filter: brightness(1.04);
 }
+
 .btn-tip-action:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -323,19 +402,42 @@ body.store-mode-active .container {
   box-shadow: 0 6px 16px rgba(255, 90, 31, 0.25);
   transition: 0.15s;
 }
+
 .btn-primary-full:disabled {
-  background: #94A3B8;
+  background: #9CA3AF;
   box-shadow: none;
   cursor: not-allowed;
 }
+
 .btn-outline {
   background: #FFFFFF;
   color: var(--text-primary);
   border: 1.5px solid var(--border);
-  padding: 11px 16px;
+  padding: 10px 16px;
   border-radius: var(--radius-md);
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   font-weight: 800;
+  transition: 0.15s;
+}
+
+.btn-outline:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+.btn-danger-soft {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid #FECACA;
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  transition: 0.15s;
+}
+
+.btn-danger-soft:hover {
+  background: #FEE2E2;
 }
 
 /* ==================== 篩選膠囊與店家列表 ==================== */
@@ -347,9 +449,11 @@ body.store-mode-active .container {
   margin-bottom: 6px;
   scrollbar-width: none;
 }
+
 .filter-row::-webkit-scrollbar {
   display: none;
 }
+
 .filter-chip {
   padding: 7px 14px;
   background: var(--bg-card);
@@ -361,6 +465,11 @@ body.store-mode-active .container {
   white-space: nowrap;
   transition: 0.15s;
 }
+
+.filter-chip:hover {
+  border-color: #CBD5E1;
+}
+
 .filter-chip.active {
   background: var(--brand);
   color: #FFFFFF;
@@ -373,6 +482,7 @@ body.store-mode-active .container {
   flex-direction: column;
   gap: 12px;
 }
+
 .store-card {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
@@ -385,14 +495,17 @@ body.store-mode-active .container {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+
 .store-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
+
 .store-card.recommended {
   border-color: #FDBA74;
   background: linear-gradient(to right, #FFFFFF 80%, #FFF7ED 100%);
 }
+
 .store-thumb {
   width: 72px;
   height: 72px;
@@ -405,6 +518,7 @@ body.store-mode-active .container {
   flex-shrink: 0;
   position: relative;
 }
+
 .ai-score-badge {
   position: absolute;
   bottom: -6px;
@@ -416,10 +530,12 @@ body.store-mode-active .container {
   border-radius: 999px;
   border: 1.5px solid #FFFFFF;
 }
+
 .store-info {
   flex: 1;
   min-width: 0;
 }
+
 .store-header-row {
   display: flex;
   justify-content: space-between;
@@ -427,6 +543,7 @@ body.store-mode-active .container {
   gap: 8px;
   margin-bottom: 3px;
 }
+
 .store-name {
   font-size: 1.05rem;
   font-weight: 800;
@@ -435,6 +552,7 @@ body.store-mode-active .container {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .wait-pill {
   padding: 3px 10px;
   border-radius: 999px;
@@ -443,36 +561,43 @@ body.store-mode-active .container {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
 .wait-free {
   background: var(--green-bg);
   color: var(--green);
 }
+
 .wait-mod {
   background: var(--amber-bg);
   color: var(--amber);
 }
+
 .wait-full {
   background: var(--red-bg);
   color: var(--red);
 }
+
 .store-meta {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin-bottom: 6px;
 }
+
 .load-bar-wrap {
   width: 100%;
   height: 5px;
-  background: #F1F5F9;
+  background: #F3F4F6;
   border-radius: 999px;
   overflow: hidden;
   margin-bottom: 7px;
 }
+
 .load-bar-fill {
   height: 100%;
   border-radius: 999px;
   transition: width 0.3s ease;
 }
+
 .promo-tag {
   display: inline-flex;
   align-items: center;
@@ -485,7 +610,7 @@ body.store-mode-active .container {
   border-radius: 6px;
 }
 
-/* ==================== 學生端分類菜單與購物車橫條 ==================== */
+/* ==================== 學生端進入餐廳後的分類菜單與購物車橫條 ==================== */
 .in-store-banner {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
@@ -494,6 +619,7 @@ body.store-mode-active .container {
   margin-bottom: 16px;
   box-shadow: var(--shadow-sm);
 }
+
 .category-group-title {
   font-size: 1.12rem;
   font-weight: 900;
@@ -505,6 +631,7 @@ body.store-mode-active .container {
   align-items: center;
   gap: 6px;
 }
+
 .menu-item-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -516,13 +643,16 @@ body.store-mode-active .container {
   transition: all 0.15s ease;
   box-shadow: var(--shadow-sm);
 }
+
 .menu-item-card:hover {
   box-shadow: var(--shadow-md);
   border-color: #FDBA74;
 }
+
 .menu-item-card:active {
   transform: scale(0.985);
 }
+
 .menu-img-box {
   width: 84px;
   height: 84px;
@@ -537,11 +667,13 @@ body.store-mode-active .container {
   justify-content: center;
   font-size: 2.2rem;
 }
+
 .menu-img-box img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+
 .menu-plus-badge {
   position: absolute;
   bottom: 5px;
@@ -571,10 +703,12 @@ body.store-mode-active .container {
   box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.06);
   z-index: 140;
 }
+
 .floating-cart-inner {
   max-width: 680px;
   margin: 0 auto;
 }
+
 .btn-view-cart {
   width: 100%;
   padding: 14px 20px;
@@ -590,12 +724,14 @@ body.store-mode-active .container {
   align-items: center;
   transition: 0.2s;
 }
+
 .btn-view-cart:disabled {
-  background: #94A3B8;
+  background: #9CA3AF;
   box-shadow: none;
   opacity: 0.65;
   cursor: not-allowed;
 }
+
 .cart-count-pill {
   background: #FFFFFF;
   color: var(--brand-dark);
@@ -605,7 +741,7 @@ body.store-mode-active .container {
   font-weight: 900;
 }
 
-/* ==================== 店家端左側白色圖示欄 + 美型 POS 介面 (/store/) ==================== */
+/* ==================== 店家端現代化左側白色圖示欄 + 美型 POS 介面 (/store/) ==================== */
 .store-shell-layout {
   display: grid;
   grid-template-columns: 74px 1fr;
@@ -645,20 +781,24 @@ body.store-mode-active .container {
   font-weight: 800;
   transition: all 0.16s ease;
 }
+
 .store-rail-btn .rail-icon {
   font-size: 1.35rem;
   line-height: 1;
 }
+
 .store-rail-btn:hover {
   background: var(--bg-page);
   color: var(--text-primary);
   transform: translateY(-1px);
 }
+
 .store-rail-btn.active {
   background: var(--brand);
   color: #FFFFFF;
   box-shadow: 0 6px 14px rgba(255, 90, 31, 0.28);
 }
+
 .tab-badge {
   position: absolute;
   top: 4px;
@@ -671,6 +811,7 @@ body.store-mode-active .container {
   border-radius: 999px;
   line-height: 1.2;
 }
+
 .store-rail-btn.active .tab-badge {
   background: #FFFFFF;
   color: var(--brand-dark);
@@ -681,9 +822,10 @@ body.store-mode-active .container {
   width: 100%;
 }
 
+/* 店家 POS 點餐雙欄工作區：剛好塞滿一頁平板高度 */
 .pos-modern-workspace {
   display: grid;
-  grid-template-columns: 1fr 400px;
+  grid-template-columns: 1fr 395px;
   gap: 14px;
   height: calc(100dvh - 82px);
   min-height: 480px;
@@ -701,6 +843,7 @@ body.store-mode-active .container {
   height: 100%;
   overflow: hidden;
 }
+
 .pos-cat-strip {
   display: flex;
   gap: 8px;
@@ -711,20 +854,27 @@ body.store-mode-active .container {
   flex-shrink: 0;
   scrollbar-width: none;
 }
+
 .pos-cat-strip::-webkit-scrollbar {
   display: none;
 }
+
 .pos-cat-pill {
   border: 1.5px solid var(--border);
   background: var(--bg-page);
   color: var(--text-secondary);
   padding: 6px 14px;
   border-radius: 999px;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   font-weight: 800;
   white-space: nowrap;
   transition: 0.15s;
 }
+
+.pos-cat-pill:hover {
+  border-color: #CBD5E1;
+}
+
 .pos-cat-pill.active {
   background: var(--brand-light);
   color: var(--brand-dark);
@@ -736,11 +886,12 @@ body.store-mode-active .container {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-  grid-auto-rows: 112px;
+  grid-auto-rows: 114px;
   gap: 10px;
   align-content: start;
   padding-right: 4px;
 }
+
 .pos-dish-tile {
   background: #FFFFFF;
   border: 1.5px solid var(--border);
@@ -753,15 +904,18 @@ body.store-mode-active .container {
   transition: all 0.14s ease;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
 }
+
 .pos-dish-tile:hover {
   border-color: #FDBA74;
   background: #FFFDFB;
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
 }
+
 .pos-dish-tile:active {
   transform: scale(0.97);
 }
+
 .pos-tile-cat {
   font-size: 0.7rem;
   font-weight: 800;
@@ -770,6 +924,7 @@ body.store-mode-active .container {
   padding: 2px 7px;
   border-radius: 6px;
 }
+
 .pos-tile-opt {
   font-size: 0.68rem;
   font-weight: 800;
@@ -778,6 +933,7 @@ body.store-mode-active .container {
   padding: 2px 6px;
   border-radius: 6px;
 }
+
 .pos-tile-name {
   font-size: 0.94rem;
   font-weight: 900;
@@ -789,12 +945,14 @@ body.store-mode-active .container {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
 .pos-tile-price {
   font-size: 1rem;
   font-weight: 900;
   color: var(--brand-dark);
 }
 
+/* 右側：現代化結帳明細卡 */
 .pos-receipt-column {
   background: #FFFFFF;
   border-radius: var(--radius-lg);
@@ -805,6 +963,7 @@ body.store-mode-active .container {
   height: 100%;
   overflow: hidden;
 }
+
 .pos-receipt-header {
   padding: 12px 16px;
   background: linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 100%);
@@ -814,11 +973,13 @@ body.store-mode-active .container {
   align-items: center;
   flex-shrink: 0;
 }
+
 .pos-receipt-list {
   flex: 1;
   overflow-y: auto;
   padding: 10px 14px;
 }
+
 .pos-receipt-item {
   display: flex;
   justify-content: space-between;
@@ -830,6 +991,7 @@ body.store-mode-active .container {
   margin-bottom: 8px;
   border: 1px solid var(--border);
 }
+
 .pos-receipt-footer {
   padding: 12px 14px;
   background: #FFFFFF;
@@ -848,10 +1010,12 @@ body.store-mode-active .container {
   text-align: center;
   transition: 0.15s;
 }
+
 .pos-chip-btn:hover {
   border-color: #CBD5E1;
   background: #F8FAFC;
 }
+
 .pos-chip-btn.active {
   background: var(--brand-light);
   color: var(--brand-dark);
@@ -870,17 +1034,20 @@ body.store-mode-active .container {
   box-shadow: 0 6px 16px rgba(255, 90, 31, 0.28);
   transition: 0.15s;
 }
+
 .pos-checkout-btn:disabled {
-  background: #94A3B8;
+  background: #9CA3AF;
   box-shadow: none;
   cursor: not-allowed;
 }
 
+/* 彈出式觸控數字鍵盤 */
 .pos-numpad-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+
 .pos-numpad-key {
   background: #F8FAFC;
   color: var(--text-primary);
@@ -894,17 +1061,20 @@ body.store-mode-active .container {
   justify-content: center;
   transition: 0.1s;
 }
+
 .pos-numpad-key:active {
   background: var(--brand-light);
   border-color: var(--brand);
   transform: scale(0.96);
 }
+
 .pos-numpad-key.clear {
   background: var(--red-bg);
   color: var(--red);
   border-color: #FECACA;
   font-size: 0.95rem;
 }
+
 .pos-numpad-key.back {
   background: #EEF2FF;
   color: var(--indigo);
@@ -912,13 +1082,14 @@ body.store-mode-active .container {
   font-size: 1.05rem;
 }
 
-/* ==================== 訂單管理 (KDS) ==================== */
+/* ==================== 訂單管理 (KDS 分天檢視 & 退單/印單支援) ==================== */
 .kds-panel-wrap {
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding-bottom: 40px;
 }
+
 .kds-toolbar {
   background: #FFFFFF;
   border-radius: var(--radius-lg);
@@ -929,11 +1100,13 @@ body.store-mode-active .container {
   flex-direction: column;
   gap: 10px;
 }
+
 .kds-orders-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 14px;
 }
+
 .kds-ticket-card {
   background: #FFFFFF;
   border-radius: var(--radius-lg);
@@ -945,13 +1118,21 @@ body.store-mode-active .container {
   justify-content: space-between;
   transition: 0.15s;
 }
+
 .kds-ticket-card.ready {
   border-color: var(--green);
   background: linear-gradient(180deg, #FFFFFF 0%, #F0FDF4 100%);
 }
+
 .kds-ticket-card.unpaid {
   border-color: var(--amber);
   background: linear-gradient(180deg, #FFFFFF 0%, #FFFBEB 100%);
+}
+
+.kds-ticket-card.cancelled {
+  border-color: #FCA5A5;
+  background: #FEF2F2;
+  opacity: 0.72;
 }
 
 /* ==================== AI 營運分析與設定面板 ==================== */
@@ -962,11 +1143,13 @@ body.store-mode-active .container {
   gap: 14px;
   padding-bottom: 40px;
 }
+
 .analytics-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
+
 .kpi-card {
   background: #FFFFFF;
   border-radius: var(--radius-lg);
@@ -974,28 +1157,33 @@ body.store-mode-active .container {
   padding: 16px;
   box-shadow: var(--shadow-sm);
 }
+
 .kpi-title {
   font-size: 0.8rem;
   font-weight: 800;
   color: var(--text-secondary);
   margin-bottom: 6px;
 }
+
 .kpi-val {
   font-size: 1.55rem;
   font-weight: 900;
   color: var(--text-primary);
 }
+
 .kpi-sub {
   font-size: 0.76rem;
   font-weight: 700;
   color: var(--green);
   margin-top: 4px;
 }
+
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 14px;
 }
+
 .chart-card,
 .merchant-box {
   background: #FFFFFF;
@@ -1006,90 +1194,143 @@ body.store-mode-active .container {
   position: relative;
 }
 
-/* 互動式圖表動畫與懸浮提示框 (修正原版 .show 與 .active 失效 Bug) */
+/* ==================== 修復 Bug 7：互動式圖表動畫與懸浮提示框 ==================== */
 .chart-interactive-bar {
   cursor: pointer;
   transition: opacity 0.18s ease, filter 0.18s ease, transform 0.18s ease;
   transform-box: fill-box;
   transform-origin: bottom center;
 }
+
 .chart-interactive-bar:hover,
-.chart-interactive-bar.active,
 .chart-interactive-bar.active-bar {
   filter: brightness(1.12) drop-shadow(0 4px 10px rgba(255, 90, 31, 0.35));
   transform: scaleY(1.04);
 }
+
 .chart-interactive-slice {
   cursor: pointer;
   transition: stroke-width 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
 }
+
 .chart-interactive-slice:hover,
-.chart-interactive-slice.active,
 .chart-interactive-slice.active-slice {
   stroke-width: 8.4 !important;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
 }
+
 .chart-interactive-point {
   cursor: pointer;
   transition: r 0.18s ease, stroke-width 0.18s ease, filter 0.18s ease;
 }
+
 .chart-interactive-point:hover,
-.chart-interactive-point.active,
 .chart-interactive-point.active-point {
   r: 7.5px;
   stroke-width: 3.5px;
   filter: drop-shadow(0 2px 8px rgba(16, 185, 129, 0.5));
 }
+
 .legend-interactive-row {
-  padding: 6px 8px;
-  border-radius: 8px;
-  cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
   transition: background 0.15s ease, transform 0.15s ease;
 }
+
+/* 同時相容 .active 與 .active-legend，徹底修復滑鼠移過圓餅圖圖例無反應的 Bug */
 .legend-interactive-row:hover,
 .legend-interactive-row.active,
 .legend-interactive-row.active-legend {
   background: var(--brand-light);
   transform: translateX(3px);
 }
+
 .chart-floating-tooltip {
   position: fixed;
   z-index: 9950;
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(17, 24, 39, 0.96);
   color: #FFFFFF;
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 0.78rem;
   line-height: 1.45;
   pointer-events: none;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.15);
   display: none;
   min-width: 180px;
 }
+
+/* 補齊原本遺漏的 .show 顯示規則，讓圖表 Tooltip 正常浮現 */
 .chart-floating-tooltip.show {
   display: block;
+  animation: fadeIn 0.12s ease;
 }
 
-/* ==================== 80mm 熱感應收據預覽樣式 ==================== */
+/* ==================== AI 視覺菜單掃描可編輯表格 & 進階菜單管理 ==================== */
+.ai-scan-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #C7D2FE;
+  border-radius: 12px;
+  background: #FFFFFF;
+  margin-bottom: 12px;
+}
+
+.ai-scan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.ai-scan-table th {
+  background: #EEF2FF;
+  color: #312E81;
+  font-weight: 900;
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid #C7D2FE;
+  white-space: nowrap;
+}
+
+.ai-scan-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #E5E7EB;
+  vertical-align: middle;
+}
+
+.ai-scan-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ==================== 80mm 熱感應出單機收據預覽樣式 (`#receiptPrintModal`) ==================== */
 .thermal-receipt-paper {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
   background: #FFFDF9;
-  border: 1px dashed #94A3B8;
-  border-radius: 8px;
+  border: 1px solid #D1D5DB;
+  border-top: 5px dashed #9CA3AF;
+  border-bottom: 5px dashed #9CA3AF;
   padding: 18px 16px;
   font-family: "Courier New", "Noto Sans TC", monospace;
-  color: #0F172A;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.02);
+  color: #111827;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.thermal-divider {
+  border-top: 1.5px dashed #6B7280;
+  margin: 10px 0;
 }
 
 /* ==================== 彈窗共用遮罩與嚴格圖層順序 ==================== */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(17, 24, 39, 0.55);
   backdrop-filter: blur(3px);
   z-index: 8000;
   display: none;
@@ -1097,8 +1338,9 @@ body.store-mode-active .container {
   align-items: center;
   padding: 16px;
 }
+
 #cartModal { z-index: 8000 !important; }
-#optionsModal, #menuEditModal, #receiptPreviewModal { z-index: 9500 !important; }
+#optionsModal, #menuEditModal, #receiptPrintModal { z-index: 9500 !important; }
 #posCashNumpadModal, #orderPayModal, #lineBindModal { z-index: 9600 !important; }
 #pickupAlertModal { z-index: 9800 !important; }
 
@@ -1106,10 +1348,12 @@ body.store-mode-active .container {
   display: flex;
   animation: fadeIn 0.2s ease;
 }
+
 .modal-overlay.bottom-sheet {
   align-items: flex-end;
   padding: 0;
 }
+
 .modal-card {
   background: #FFFFFF;
   width: 100%;
@@ -1121,12 +1365,14 @@ body.store-mode-active .container {
   flex-direction: column;
   overflow: hidden;
 }
+
 .modal-overlay.bottom-sheet .modal-card {
   max-width: 680px;
   border-radius: 26px 26px 0 0;
   height: 88vh;
   animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .modal-header {
   padding: 14px 20px;
   border-bottom: 1px solid var(--border);
@@ -1135,11 +1381,13 @@ body.store-mode-active .container {
   align-items: center;
   background: #FFFFFF;
 }
+
 .modal-body {
   padding: 16px 20px;
   overflow-y: auto;
   flex: 1;
 }
+
 .modal-footer {
   padding: 14px 20px;
   border-top: 1px solid var(--border);
@@ -1157,9 +1405,11 @@ body.store-mode-active .container {
   cursor: pointer;
   transition: 0.15s;
 }
+
 .option-label-row:hover {
-  background: #F8FAFC;
+  background: #F9FAFB;
 }
+
 .option-label-row.checked {
   border-color: var(--brand);
   background: var(--brand-light);
@@ -1174,10 +1424,13 @@ body.store-mode-active .container {
   font-size: 0.88rem;
   font-weight: 600;
   outline: none;
+  transition: border-color 0.15s;
 }
+
 .select-input:focus {
   border-color: var(--brand);
 }
+
 .field-label {
   font-size: 0.78rem;
   font-weight: 800;
@@ -1195,6 +1448,7 @@ body.store-mode-active .container {
   box-shadow: var(--shadow-md);
   text-align: center;
 }
+
 .ticket-Serial {
   font-size: 3.4rem;
   font-weight: 950;
@@ -1202,6 +1456,7 @@ body.store-mode-active .container {
   line-height: 1.1;
   margin: 4px 0 8px;
 }
+
 .status-stepper {
   display: flex;
   justify-content: space-around;
@@ -1211,6 +1466,7 @@ body.store-mode-active .container {
   background: var(--bg-page);
   border-radius: 14px;
 }
+
 .step-item {
   display: flex;
   flex-direction: column;
@@ -1220,39 +1476,44 @@ body.store-mode-active .container {
   font-size: 0.76rem;
   font-weight: 700;
 }
+
 .step-dot {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #E2E8F0;
-  color: #64748B;
+  background: #E5E7EB;
+  color: #6B7280;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 900;
 }
+
 .step-item.done {
   color: var(--green);
 }
+
 .step-item.done .step-dot {
   background: var(--green);
   color: #FFFFFF;
 }
+
 .step-item.active {
   color: var(--brand-dark);
 }
+
 .step-item.active .step-dot {
   background: var(--brand);
   color: #FFFFFF;
 }
 
-/* ==================== Toast & LINE 按鈕 ==================== */
+/* ==================== Toast & LINE 推播按鈕 ==================== */
 .toast {
   position: fixed;
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: #0F172A;
+  background: #111827;
   color: #FFFFFF;
   padding: 10px 18px;
   border-radius: 999px;
@@ -1279,6 +1540,7 @@ body.store-mode-active .container {
   box-shadow: 0 4px 12px rgba(6, 199, 85, 0.25);
   transition: 0.15s;
 }
+
 .btn-line:hover {
   background: #05B34C;
 }
@@ -1299,27 +1561,7 @@ body.store-mode-active .container {
   80% { transform: rotate(10deg) scale(1.08); }
 }
 
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  #receiptPreviewModal,
-  #receiptPreviewModal * {
-    visibility: visible;
-  }
-  #receiptPreviewModal {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    background: #FFFFFF;
-    padding: 0;
-  }
-  .no-print {
-    display: none !important;
-  }
-}
-
+/* RWD 行動端與平板適配 */
 @media (max-width: 900px) {
   body.pos-no-scroll {
     height: auto;
@@ -1345,5 +1587,29 @@ body.store-mode-active .container {
   }
   .charts-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 80mm 熱感應出單機列印專用樣式 */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receiptPrintModal,
+  #receiptPrintModal .thermal-receipt-paper,
+  #receiptPrintModal .thermal-receipt-paper * {
+    visibility: visible;
+  }
+  #receiptPrintModal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #FFFFFF !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .no-print {
+    display: none !important;
   }
 }
