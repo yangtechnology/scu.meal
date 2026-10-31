@@ -1,19 +1,18 @@
 /**
- * 東吳學餐 MealFlow - 企業級雲端後端引擎 v9.0 (Google Apps Script)
+ * 東吳學餐智慧點餐與全螢幕平板收銀系統 - 商業級雲端後端引擎 (Google Apps Script)
  * -------------------------------------------------------------------------
- * 核心商業級架構升級：
- * 1. 真實 M/M/1 佇列與 Little's Law 演算法：廢除靜態手動加減 activeOrders，改由當日即時「製作中」訂單動態推導
- * 2. 嚴格區分「即時單」與「預訂單」：未來日期或距取餐大於 25 分鐘之預訂單絕不塞爆當下廚房佇列
- * 3. 每日各店獨立遞增流水號產生器 (LockService 併發保護，如 S01->1001, S02->2001...)，徹底杜絕撞號
- * 4. 完整支援 KDS 退單作廢 (cancelOrder) 狀態留痕、自動釋放產能與 LINE/Email 退單推播
- * 5. Gemini 2.5 Flash Vision 多模態菜單辨識 (aiParseMenu) 與後端安全託管 AI 選餐顧問 (askAiConcierge)
+ * 核心架構與資安升級：
+ * 1. 伺服器端權威計價 (Server-Side Price & Promo Verification)：杜絕前端竄改金額與付款狀態
+ * 2. Google Sheets 日期與時間嚴格序列化清洗器 (normalizeSheetDateStr / normalizeSheetTimeStr)
+ * 3. 加權工作量佇列模型 + 已耗時動態折抵：依單內實際份數與下鍋分鐘數精算即時佇列負荷
+ * 4. 店家營業狀態 (isOpen)、單品售罄 (soldOut) 與佇列偏移量 (baseQueueOffset) 持久化同步
+ * 5. 每日各店獨立遞增流水號產生器 (LockService 併發保護) + 逾期未繳預訂單自動巡檢清理
  */
 
 const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
-const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V9_0';
+const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V10_0';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 
-// 系統預設官方 LINE 憑證由 ScriptProperties 安全託管，不在程式碼硬編碼機密金鑰
 const scriptProps = PropertiesService.getScriptProperties();
 const SYSTEM_LINE_CLIENT_ID = scriptProps.getProperty('LINE_CLIENT_ID') || '2012260287';
 const SYSTEM_LINE_CLIENT_SECRET = scriptProps.getProperty('LINE_CLIENT_SECRET') || '';
@@ -31,7 +30,7 @@ function doGet(e) {
 
   return jsonResponse({
     success: true,
-    service: 'MealFlow Enterprise AI Engine v9.0 (M/M/1 Live Queue + Sequential Ticket + Gemini Vision + LINE Push)',
+    service: '東吳學餐智慧點餐雲端引擎 v10.0',
     status: 'ONLINE'
   });
 }
@@ -42,7 +41,7 @@ function doPost(e) {
   if (!hasLock) {
     return jsonResponse({
       success: false,
-      message: '系統尖峰忙碌中，請稍候再試（Lock Timeout）'
+      message: '系統尖峰忙碌中，請稍候再試'
     });
   }
 
@@ -52,8 +51,6 @@ function doPost(e) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
 
     ensureDatabaseInitialized(ss, Boolean(params.forceInit));
-
-    // 每次請求時自動巡檢並清理逾期未繳費之遠期預訂單
     purgeExpiredReservations(ss);
 
     const action = params.action;
@@ -103,7 +100,7 @@ function doPost(e) {
         result = handleManualLinePush(ss, params);
         break;
       default:
-        throw new Error('未知的 API Action: ' + action);
+        throw new Error('未知的操作請求: ' + action);
     }
 
     return jsonResponse({
@@ -126,6 +123,49 @@ function jsonResponse(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// ==================== 日期與時間嚴格序列化清洗器 (修復 Google Sheets 自動轉型炸彈) ====================
+function getTodayTaipeiStr() {
+  return Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+}
+
+function normalizeSheetDateStr(val) {
+  if (!val) return getTodayTaipeiStr();
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, 'Asia/Taipei', 'yyyy-MM-dd');
+  }
+  const str = String(val).trim();
+  const m = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, 'Asia/Taipei', 'yyyy-MM-dd');
+  }
+  return getTodayTaipeiStr();
+}
+
+function normalizeSheetTimeStr(val, includeSeconds = false) {
+  const fmt = includeSeconds ? 'HH:mm:ss' : 'HH:mm';
+  if (!val) return Utilities.formatDate(new Date(), 'Asia/Taipei', fmt);
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, 'Asia/Taipei', fmt);
+  }
+  const str = String(val).trim();
+  const m = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const hh = String(parseInt(m[1], 10)).padStart(2, '0');
+    const mm = m[2];
+    const ss = m[3] || '00';
+    return includeSeconds ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, 'Asia/Taipei', fmt);
+  }
+  return includeSeconds ? '12:15:00' : '12:15';
+}
+
 // ==================== 資料庫結構初始化 ====================
 function ensureDatabaseInitialized(ss, forceCheck) {
   const props = PropertiesService.getScriptProperties();
@@ -143,12 +183,12 @@ function ensureDatabaseInitialized(ss, forceCheck) {
     ]);
     const defaultStores = [
       ['S01', '雙溪校區', '趙班長海苔飯捲', '人氣韓式・飯捲', 18, 0, 4, true, 'none', '無優惠', 0, 240, 4.9, 1],
-      ['S02', '雙溪校區', '雙溪-丼物園', '日式蓋飯・烏龍麵', 20, 0, 4, true, 'gift', '🎁 AI分流招待：免費溫泉蛋乙顆', 0, 165, 4.7, 1],
+      ['S02', '雙溪校區', '雙溪-丼物園', '日式蓋飯・烏龍麵', 20, 0, 4, true, 'gift', '🎁 離峰分流招待：免費溫泉蛋乙顆', 0, 165, 4.7, 1],
       ['S03', '雙溪校區', '雙溪-四海遊龍', '鍋貼水餃・麵食', 25, 0, 4, true, 'none', '無優惠', 0, 210, 4.6, 1],
-      ['S04', '雙溪校區', '蒲家廚房', '中式特餐・便當', 20, 0, 4, true, 'discount', '💰 AI分流折抵：現折 $10 元', 10, 150, 4.8, 1],
+      ['S04', '雙溪校區', '蒲家廚房', '中式特餐・便當', 20, 0, 4, true, 'discount', '💰 離峰分流折抵：現折 $10 元', 10, 150, 4.8, 1],
       ['S05', '城中校區', '城中-咖哩食堂', '熟成咖哩・炸物', 15, 0, 4, true, 'none', '無優惠', 0, 195, 4.8, 1],
-      ['S06', '城中校區', '城中-吳葉食堂', '精緻台式簡餐', 20, 0, 4, true, 'gift', '🎁 AI分流招待：免費招牌冰紅茶', 0, 145, 4.9, 1],
-      ['S07', '城中校區', '大熊涼麵 X 吃好食堂', '手工涼麵・味噌湯', 25, 0, 3, true, 'points', '⚡ AI分流回饋：雙倍 MealPoints 點數', 0, 160, 4.7, 1]
+      ['S06', '城中校區', '城中-吳葉食堂', '精緻台式簡餐', 20, 0, 4, true, 'gift', '🎁 離峰分流招待：免費招牌冰紅茶', 0, 145, 4.9, 1],
+      ['S07', '城中校區', '大熊涼麵 X 吃好食堂', '手工涼麵・味噌湯', 25, 0, 3, true, 'points', '⚡ 離峰分流回饋：雙倍點數', 0, 160, 4.7, 1]
     ];
     defaultStores.forEach(r => storeSheet.appendRow(r));
   } else if (storeSheet.getLastColumn() < 14) {
@@ -221,22 +261,23 @@ function ensureDatabaseInitialized(ss, forceCheck) {
   props.setProperty('DB_INIT_VER', DB_SCHEMA_VERSION);
 }
 
-// ==================== 真實 M/M/1 佇列計算與當日即時訂單判定 ====================
-function calcDynamicPrepMinutes(activeOrders, maxCap) {
+// ==================== 加權工作量佇列計算與已耗時動態折抵 ====================
+function calcDynamicPrepMinutes(activeWorkloadUnits, maxCap) {
   const capPer15 = Math.max(5, Number(maxCap) || 20);
-  const L = Math.max(0, Number(activeOrders) || 0);
-  const mu = capPer15 / 15; // 每分鐘服務率 (單/分)
-  const rho = Math.min(0.95, L / capPer15); // 產能利用率
+  const L = Math.max(0, Number(activeWorkloadUnits) || 0);
+  const mu = capPer15 / 15;
+  const rho = Math.min(0.95, L / capPer15);
 
   const baseServiceMin = Math.max(2.5, 1 / mu);
   const queueWaitMin = L / mu;
-  const mM1CongestionTerm = rho >= 0.65 ? ((rho * rho) / (2 * (1 - rho))) * (1 / mu) * 0.45 : 0;
+  const congestionTerm = rho >= 0.65 ? ((rho * rho) / (2 * (1 - rho))) * (1 / mu) * 0.45 : 0;
 
-  const totalWait = Math.round(baseServiceMin + queueWaitMin + mM1CongestionTerm);
+  const totalWait = Math.round(baseServiceMin + queueWaitMin + congestionTerm);
   return Math.max(3, Math.min(45, totalWait));
 }
 
 function calcAiUtilityScore(store) {
+  if (store.isOpen === false) return 10;
   const waitScore = Math.max(0, 100 - (Number(store.avgPrepMinutes) || 5) * 3.4);
   let promoBonus = 0;
   if (store.promoMode === 'discount') promoBonus = 95;
@@ -247,19 +288,13 @@ function calcAiUtilityScore(store) {
   return Math.max(35, Math.min(99, Math.round(raw)));
 }
 
-/**
- * 判斷訂單是否屬於「當下立即佔用廚房產能」的活躍在製品 (Active WIP)
- * - 狀態必須為「製作中」（轉為可取餐、已完成、已取消後立即釋放佇列）
- * - 取餐日期必須為今日
- * - 若為預訂單 (isReservation === true)，僅在距離預訂取餐時間 <= 25 分鐘內才計入即時佇列
- */
 function isOrderActivelyCookingOnServer(orderObj, todayStr, nowMinutesOfDay) {
   if (!orderObj || String(orderObj.status) !== '製作中') return false;
-  const ordDate = String(orderObj.pickupDate || todayStr);
+  const ordDate = normalizeSheetDateStr(orderObj.pickupDate || todayStr);
   if (ordDate !== todayStr) return false;
 
   if (orderObj.isReservation) {
-    const pt = String(orderObj.pickupTime || '');
+    const pt = normalizeSheetTimeStr(orderObj.pickupTime, false);
     const m = pt.match(/(\d{1,2}):(\d{2})/);
     if (m) {
       const targetMinOfDay = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
@@ -272,8 +307,39 @@ function isOrderActivelyCookingOnServer(orderObj, todayStr, nowMinutesOfDay) {
 }
 
 /**
- * 根據真實訂單狀態與模擬偏移量，動態同步更新 Stores 表之 activeOrders 與 avgPrepMinutes
+ * 伺服器端計算單筆訂單之加權工作量當量與已下鍋時間動態折抵
  */
+function calcOrderRemainingWorkloadOnServer(orderObj, maxCapPer15Min, nowMs, nowMinutesOfDay) {
+  let items = [];
+  try { items = JSON.parse(orderObj.itemsJson || '[]'); } catch (e) {}
+
+  let totalMainPortions = 0;
+  items.forEach(it => {
+    if (it.isGift || Number(it.price) === 0) return;
+    const q = Math.max(1, Number(it.qty) || 1);
+    const weight = Number(it.price) <= 45 ? 0.5 : 1.0;
+    totalMainPortions += q * weight;
+  });
+
+  const rawUnits = Math.max(1, 1 + Math.max(0, totalMainPortions - 1) * 0.65);
+
+  let elapsedMin = 0;
+  if (orderObj.createdAtTs && Number(orderObj.createdAtTs) > 0) {
+    elapsedMin = Math.max(0, Math.floor((nowMs - Number(orderObj.createdAtTs)) / 60000));
+  } else {
+    const ca = normalizeSheetTimeStr(orderObj.createdAt, false);
+    const m = ca.match(/(\d{1,2}):(\d{2})/);
+    if (m) {
+      const createdMinOfDay = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      elapsedMin = Math.max(0, nowMinutesOfDay - createdMinOfDay);
+    }
+  }
+
+  const muPerMin = Math.max(5, Number(maxCapPer15Min) || 20) / 15;
+  const digestedUnits = Math.min(rawUnits * 0.85, elapsedMin * muPerMin * 0.5);
+  return Math.max(0.25, Number((rawUnits - digestedUnits).toFixed(1)));
+}
+
 function recomputeAllStoreQueues(ss) {
   const props = PropertiesService.getScriptProperties();
   let simOffsets = {};
@@ -282,45 +348,50 @@ function recomputeAllStoreQueues(ss) {
   } catch (e) {}
 
   const now = new Date();
+  const nowMs = now.getTime();
   const todayStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
   const timeStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm');
   const tmParts = timeStr.split(':');
   const nowMinutesOfDay = parseInt(tmParts[0], 10) * 60 + parseInt(tmParts[1], 10);
 
+  const storeSheet = ss.getSheetByName('Stores');
+  if (!storeSheet) return {};
+  const storeData = storeSheet.getDataRange().getValues();
+  const storeCapMap = {};
+  for (let i = 1; i < storeData.length; i++) {
+    storeCapMap[String(storeData[i][0])] = Math.max(5, Number(storeData[i][4]) || 20);
+  }
+
   const allOrders = sheetToObjects(ss.getSheetByName('Orders')).map(enrichOrderObject);
-  const liveCountByStore = {};
+  const liveWorkloadByStore = {};
 
   allOrders.forEach(o => {
     if (isOrderActivelyCookingOnServer(o, todayStr, nowMinutesOfDay)) {
       const sid = String(o.storeId || '');
-      liveCountByStore[sid] = (liveCountByStore[sid] || 0) + 1;
+      const cap = storeCapMap[sid] || 20;
+      const wUnits = calcOrderRemainingWorkloadOnServer(o, cap, nowMs, nowMinutesOfDay);
+      liveWorkloadByStore[sid] = (liveWorkloadByStore[sid] || 0) + wUnits;
     }
   });
 
-  const storeSheet = ss.getSheetByName('Stores');
-  if (!storeSheet) return liveCountByStore;
-  const data = storeSheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    const sid = String(data[i][0]);
-    const maxCap = Math.max(5, Number(data[i][4]) || 20);
-    const realCooking = liveCountByStore[sid] || 0;
+  for (let i = 1; i < storeData.length; i++) {
+    const sid = String(storeData[i][0]);
+    const maxCap = storeCapMap[sid] || 20;
+    const realWorkload = liveWorkloadByStore[sid] || 0;
     const offset = Math.max(0, Number(simOffsets[sid]) || 0);
-    const totalActive = realCooking + offset;
-    const newPrep = calcDynamicPrepMinutes(totalActive, maxCap);
+    const totalActive = Math.ceil(realWorkload + offset);
+    const newPrep = calcDynamicPrepMinutes(realWorkload + offset, maxCap);
 
-    if (Number(data[i][5]) !== totalActive || Number(data[i][6]) !== newPrep) {
+    if (Number(storeData[i][5]) !== totalActive || Number(storeData[i][6]) !== newPrep) {
       storeSheet.getRange(i + 1, 6).setValue(totalActive);
       storeSheet.getRange(i + 1, 7).setValue(newPrep);
     }
   }
-  return liveCountByStore;
+  return liveWorkloadByStore;
 }
 
-/**
- * 後端每日各店獨立遞增流水號產生器 (如 S01 -> 1001, S02 -> 2001, 2002...)
- */
 function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
-  const targetDate = pickupDateStr || Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+  const targetDate = normalizeSheetDateStr(pickupDateStr);
   const storeNumMatch = String(storeId || 'S01').match(/(\d+)/);
   const storeDigit = storeNumMatch ? parseInt(storeNumMatch[1], 10) : 1;
   const baseNumber = storeDigit * 1000;
@@ -333,7 +404,7 @@ function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
 
   const orders = sheetToObjects(ss.getSheetByName('Orders')).map(enrichOrderObject);
   orders.forEach(o => {
-    if (String(o.storeId) === String(storeId) && String(o.pickupDate || targetDate) === targetDate) {
+    if (String(o.storeId) === String(storeId) && normalizeSheetDateStr(o.pickupDate) === targetDate) {
       const m = String(o.pickupNumber || '').match(/(\d{3,5})/);
       if (m) {
         const val = parseInt(m[1], 10);
@@ -349,7 +420,7 @@ function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
   return String(nextSeq);
 }
 
-// ==================== LINE Login OAuth 2.1 與 Flex Message 推播引擎 ====================
+// ==================== LINE 授權與雙軌推播引擎 ====================
 function resolveLineConfigForStore(storeId) {
   const props = PropertiesService.getScriptProperties();
   const sysClientId = props.getProperty('LINE_CLIENT_ID') || SYSTEM_LINE_CLIENT_ID;
@@ -387,7 +458,7 @@ function handleLineCallback(ss, params) {
     const redirectUri = String(params.redirectUri || 'https://yangbrian01.github.io/scu.meal/order/').trim();
     const storeId = String(params.storeId || '').trim();
     if (!code) {
-      return { success: false, message: '缺少 LINE 授權碼 (code)' };
+      return { success: false, message: '缺少 LINE 授權碼' };
     }
 
     const lineCfg = resolveLineConfigForStore(storeId);
@@ -397,7 +468,7 @@ function handleLineCallback(ss, params) {
     if (!clientSecret) {
       return {
         success: false,
-        message: '後端尚未設定 LINE_CLIENT_SECRET，請先於店家後台「設定 ➔ LINE 推播設定」或 GAS 指令碼屬性填入'
+        message: '後端尚未設定頻道密鑰，請先於店家後台設定填入'
       };
     }
 
@@ -416,7 +487,7 @@ function handleLineCallback(ss, params) {
     if (!tokenData || !tokenData.access_token) {
       return {
         success: false,
-        message: 'LINE Token 交換失敗：' + (tokenData.error_description || tokenData.error || '請確認 Redirect URI 與 Channel Secret')
+        message: '授權權杖交換失敗：' + (tokenData.error_description || tokenData.error || '請確認網址與密鑰設定')
       };
     }
 
@@ -433,7 +504,7 @@ function handleLineCallback(ss, params) {
     const pictureUrl = profileData.pictureUrl || '';
 
     if (!userUID) {
-      return { success: false, message: '無法取得 LINE userId' };
+      return { success: false, message: '無法取得使用者識別碼' };
     }
 
     const bindSheet = ss.getSheetByName('LineBindings');
@@ -445,15 +516,15 @@ function handleLineCallback(ss, params) {
     sendLinePushMessage(
       ss,
       userUID,
-      `🎉 嗨 ${displayName}，您已成功綁定東吳學餐 MealFlow 即時通知！往後餐點完成可取餐、預訂繳費提醒與訂單狀態更新都會直接推播至此。`,
+      `🎉 嗨 ${displayName}，您已成功綁定東吳學餐即時通知！往後餐點完成可取餐、預訂繳費提醒與訂單狀態更新都會直接推播至此。`,
       lineCfg.channelToken,
       {
         storeId: storeId,
         title: 'LINE 帳號綁定成功',
         subtitle: `嗨 ${displayName}！取餐與預訂通知已啟用`,
         pickupNumber: 'OK',
-        storeName: '東吳學餐 MealFlow',
-        statusText: '已連結 LINE 推播通知',
+        storeName: '東吳學餐智慧點餐',
+        statusText: '已連結推播通知',
         orderUrl: redirectUri
       }
     );
@@ -468,7 +539,7 @@ function handleLineCallback(ss, params) {
   } catch (err) {
     return {
       success: false,
-      message: 'LINE API 驗證失敗: ' + err.toString()
+      message: 'LINE 驗證失敗: ' + err.toString()
     };
   }
 }
@@ -483,7 +554,7 @@ function sendLinePushMessage(ss, lineUserId, text, tokenOverride, flexMeta) {
   if (!channelToken) return false;
 
   const meta = flexMeta || {};
-  const titleText = meta.title || '東吳學餐 MealFlow 訂單通知';
+  const titleText = meta.title || '東吳學餐訂單通知';
   const storeName = meta.storeName || '東吳學餐';
   const pickupNumber = meta.pickupNumber || '';
   const statusText = meta.statusText || '訂單狀態更新';
@@ -527,7 +598,7 @@ function sendLinePushMessage(ss, lineUserId, text, tokenOverride, flexMeta) {
       type: 'box',
       layout: 'vertical',
       contents: [
-        { type: 'text', text: 'MealFlow 東吳學餐智慧點餐', weight: 'bold', color: accentColor, size: 'sm' },
+        { type: 'text', text: '東吳學餐智慧點餐', weight: 'bold', color: accentColor, size: 'sm' },
         { type: 'text', text: String(titleText), weight: 'bold', size: 'xl', margin: 'md', wrap: true },
         { type: 'separator', margin: 'xl' },
         { type: 'box', layout: 'vertical', margin: 'xl', spacing: 'sm', contents: contentsArray },
@@ -635,7 +706,7 @@ function saveLineDevConfig(ss, params) {
 function handleManualLinePush(ss, params) {
   const flexMeta = {
     storeId: params.storeId || '',
-    title: params.title || '東吳學餐 MealFlow 通知',
+    title: params.title || '東吳學餐通知',
     pickupNumber: params.pickupNumber || '',
     storeName: params.storeName || '東吳學餐',
     statusText: params.statusText || '即時通知',
@@ -666,7 +737,7 @@ function sendOrderEmailNotification(email, messageText, meta) {
     const cleanEmail = String(email || '').trim();
     if (!cleanEmail || cleanEmail.indexOf('@') < 1) return false;
     const m = meta || {};
-    const title = m.title || '東吳學餐 MealFlow 訂單通知';
+    const title = m.title || '東吳學餐訂單通知';
     const pickupNumber = m.pickupNumber ? ('#' + m.pickupNumber) : '';
     const storeName = m.storeName || '東吳學餐';
     const orderUrl = m.orderUrl || 'https://yangbrian01.github.io/scu.meal/order/';
@@ -674,7 +745,7 @@ function sendOrderEmailNotification(email, messageText, meta) {
     const htmlBody = `
       <div style="font-family:'Noto Sans TC',sans-serif; max-width:480px; margin:0 auto; border:1px solid #E5E7EB; border-radius:16px; overflow:hidden; background:#FFFFFF;">
         <div style="background:linear-gradient(135deg,#FF5A1F,#E04812); color:#FFFFFF; padding:18px 20px;">
-          <div style="font-size:12px; font-weight:bold; opacity:0.9;">東吳學餐 MealFlow 智慧點餐通知</div>
+          <div style="font-size:12px; font-weight:bold; opacity:0.9;">東吳學餐智慧點餐通知</div>
           <h2 style="margin:6px 0 0; font-size:20px;">${title}</h2>
         </div>
         <div style="padding:20px;">
@@ -696,7 +767,7 @@ function sendOrderEmailNotification(email, messageText, meta) {
 
     MailApp.sendEmail({
       to: cleanEmail,
-      subject: `【東吳學餐 MealFlow】${title} ${pickupNumber}`,
+      subject: `【東吳學餐】${title} ${pickupNumber}`,
       body: `${title}\n${messageText}\n查看取餐單：${orderUrl}`,
       htmlBody: htmlBody
     });
@@ -713,15 +784,16 @@ function purgeExpiredReservations(ss) {
   const rows = orderSheet.getDataRange().getValues();
   if (rows.length <= 1) return [];
 
-  const todayStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+  const todayStr = getTodayTaipeiStr();
   const purgedIds = [];
 
   for (let i = rows.length - 1; i >= 1; i--) {
     const extraRaw = rows[i][16] || '{}';
     let meta = {};
     try { meta = JSON.parse(extraRaw); } catch (e) {}
-    if (meta.paymentStatus === '待櫃檯繳費' && meta.paymentDeadline && todayStr > meta.paymentDeadline) {
-      const cancelMsg = `❌【逾期未繳自動刪單通知】\n您在「${rows[i][3]}」預訂於 ${meta.pickupDate} 取餐之訂單 #${rows[i][1]}，因未於取餐日前兩天（${meta.paymentDeadline}）前至櫃檯繳清現金，系統已自動取消並刪除此筆訂單。`;
+    const cleanDeadline = meta.paymentDeadline ? normalizeSheetDateStr(meta.paymentDeadline) : '';
+    if (meta.paymentStatus === '待櫃檯繳費' && cleanDeadline && todayStr > cleanDeadline) {
+      const cancelMsg = `❌【逾期未繳自動刪單通知】\n您在「${rows[i][3]}」預訂於 ${normalizeSheetDateStr(meta.pickupDate)} 取餐之訂單 #${rows[i][1]}，因未於取餐日前兩天（${cleanDeadline}）前至櫃檯繳清現金，系統已自動取消並刪除此筆訂單。`;
       if (meta.lineUserId) {
         sendLinePushMessage(ss, meta.lineUserId, cancelMsg, '', {
           storeId: String(rows[i][2]),
@@ -747,8 +819,11 @@ function purgeExpiredReservations(ss) {
 
 function getInitBundle(ss, params) {
   const props = PropertiesService.getScriptProperties();
+  let simOffsets = {};
+  let openStateMap = {};
+  try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
+  try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
 
-  // 先根據真實當日製作中訂單重算所有店家佇列，杜絕前後端不同步與幽靈佇列
   recomputeAllStoreQueues(ss);
 
   const stores = sheetToObjects(ss.getSheetByName('Stores'));
@@ -756,12 +831,21 @@ function getInitBundle(ss, params) {
   const orders = sheetToObjects(ss.getSheetByName('Orders')).reverse().slice(0, 120).map(enrichOrderObject);
 
   const enrichedStores = stores.map(s => {
+    const storeIdStr = String(s.id);
     const storeMenus = menus
-      .filter(m => String(m.storeId) === String(s.id))
+      .filter(m => String(m.storeId) === storeIdStr)
       .map(m => {
         let parsedOptions = {};
+        let isSoldOut = false;
         if (m.optionsJson) {
-          try { parsedOptions = JSON.parse(m.optionsJson); } catch (e) {}
+          try {
+            const rawObj = JSON.parse(m.optionsJson);
+            if (rawObj && typeof rawObj === 'object') {
+              isSoldOut = Boolean(rawObj.__soldOut);
+              delete rawObj.__soldOut;
+              parsedOptions = rawObj;
+            }
+          } catch (e) {}
         }
         return {
           id: String(m.id),
@@ -770,16 +854,20 @@ function getInitBundle(ss, params) {
           price: Number(m.price) || 0,
           tag: String(m.tag || ''),
           category: String(m.category || '招牌主餐'),
+          soldOut: isSoldOut,
           image: String(m.image || ''),
           options: parsedOptions
         };
       });
 
+    const isOpen = openStateMap[storeIdStr] !== undefined ? Boolean(openStateMap[storeIdStr]) : true;
     const maxCap = Math.max(5, Number(s.maxCapacityPer15Min) || 20);
     const active = Math.max(0, Number(s.activeOrders) || 0);
-    const loadPct = Math.min(120, Math.round((active / maxCap) * 100));
+    const baseQueueOffset = Math.max(0, Number(simOffsets[storeIdStr]) || 0);
+    const loadPct = isOpen ? Math.min(120, Math.round((active / maxCap) * 100)) : 0;
     let loadState = 'FREE';
-    if (loadPct >= 85) loadState = 'FULL';
+    if (!isOpen) loadState = 'CLOSED';
+    else if (loadPct >= 85) loadState = 'FULL';
     else if (loadPct >= 50) loadState = 'MODERATE';
 
     const avgPrep = calcDynamicPrepMinutes(active, maxCap);
@@ -788,7 +876,7 @@ function getInitBundle(ss, params) {
     let useCustomLineOa = false;
     let customLineClientId = '';
     try {
-      const rawLineCfg = props.getProperty('STORE_LINE_CFG_' + String(s.id));
+      const rawLineCfg = props.getProperty('STORE_LINE_CFG_' + storeIdStr);
       if (rawLineCfg) {
         const parsedLineCfg = JSON.parse(rawLineCfg);
         useCustomLineOa = Boolean(parsedLineCfg.useCustomLineOa);
@@ -798,8 +886,10 @@ function getInitBundle(ss, params) {
 
     const storeObj = {
       ...s,
+      isOpen: isOpen,
       maxCapacityPer15Min: maxCap,
       activeOrders: active,
+      baseQueueOffset: baseQueueOffset,
       avgPrepMinutes: avgPrep,
       rating: Number(s.rating) || 4.7,
       cutleryPrice: Math.max(0, cutleryPrice),
@@ -837,15 +927,25 @@ function getInitBundle(ss, params) {
   };
 }
 
+/**
+ * 強制將從 Google Sheets 讀出的每筆訂單日期與時間執行清洗，杜絕 Date 物件破壞前端與後端比對
+ */
 function enrichOrderObject(o) {
   let meta = {};
   if (o.extraMetaJson) {
     try { meta = JSON.parse(o.extraMetaJson); } catch (e) {}
   }
-  return {
+  const merged = {
     ...o,
     ...meta
   };
+  merged.pickupDate = normalizeSheetDateStr(merged.pickupDate);
+  merged.pickupTime = normalizeSheetTimeStr(merged.pickupTime, false);
+  merged.createdAt = normalizeSheetTimeStr(merged.createdAt, true);
+  if (merged.paymentDeadline) {
+    merged.paymentDeadline = normalizeSheetDateStr(merged.paymentDeadline);
+  }
+  return merged;
 }
 
 function findOrderById(ss, orderId) {
@@ -860,7 +960,7 @@ function computeAiTrafficRecommendations(stores) {
   const recommendations = {};
 
   campuses.forEach(campus => {
-    const campusStores = stores.filter(s => s.campus === campus);
+    const campusStores = stores.filter(s => s.campus === campus && s.isOpen !== false);
     const congested = campusStores
       .filter(s => s.loadState === 'FULL' || Number(s.avgPrepMinutes) >= 18)
       .sort((a, b) => Number(b.loadPercentage) - Number(a.loadPercentage));
@@ -896,9 +996,149 @@ function computeAiTrafficRecommendations(stores) {
   return recommendations;
 }
 
-// ==================== 訂單送出、狀態更新與退單處理 ====================
+// ==================== 伺服器端權威計價與訂單送出 (Server-Side Price Verification) ====================
+function verifyAndPriceOrderOnServer(ss, params) {
+  const storeId = String(params.storeId || '');
+  const stores = sheetToObjects(ss.getSheetByName('Stores'));
+  const storeRow = stores.find(s => String(s.id) === storeId);
+  if (!storeRow) {
+    throw new Error('找不到指定的餐廳代碼: ' + storeId);
+  }
+
+  const menus = sheetToObjects(ss.getSheetByName('Menus')).filter(m => String(m.storeId) === storeId);
+  const menuMap = {};
+  menus.forEach(m => {
+    let opts = {};
+    let soldOut = false;
+    if (m.optionsJson) {
+      try {
+        const parsed = JSON.parse(m.optionsJson);
+        if (parsed && typeof parsed === 'object') {
+          soldOut = Boolean(parsed.__soldOut);
+          delete parsed.__soldOut;
+          opts = parsed;
+        }
+      } catch (e) {}
+    }
+    menuMap[String(m.id)] = {
+      id: String(m.id),
+      name: String(m.name),
+      basePrice: Math.max(0, Number(m.price) || 0),
+      soldOut: soldOut,
+      options: opts
+    };
+  });
+
+  const rawItems = Array.isArray(params.items) ? params.items : [];
+  if (rawItems.length === 0) {
+    throw new Error('訂單內沒有任何有效餐點品項');
+  }
+
+  const verifiedItems = [];
+  let authoritativeSubtotal = 0;
+
+  rawItems.forEach(item => {
+    if (item.isGift || String(item.id) === 'GIFT-AI') return; // 贈品由伺服器端依店家優惠規則重新判定核發
+
+    const dbMenu = menuMap[String(item.id)];
+    const qty = Math.max(1, Math.min(99, parseInt(item.qty, 10) || 1));
+
+    if (dbMenu) {
+      if (dbMenu.soldOut) {
+        throw new Error(`餐點「${dbMenu.name}」今日已售罄，無法點選`);
+      }
+      let extraPrice = 0;
+      const selections = (item.selections && typeof item.selections === 'object') ? item.selections : {};
+
+      // 依據資料庫內的選項定義核對加價金額
+      Object.keys(selections).forEach(optGroupName => {
+        const grpDef = dbMenu.options[optGroupName];
+        if (!grpDef || !Array.isArray(grpDef.choices)) return;
+        const selectedValStr = String(selections[optGroupName] || '');
+        const selectedTokens = selectedValStr.split(',').map(s => s.trim()).filter(Boolean);
+        selectedTokens.forEach(tok => {
+          const foundChoice = grpDef.choices.find(c => Array.isArray(c) && String(c[0]).trim() === tok);
+          if (foundChoice) {
+            extraPrice += Number(foundChoice[1]) || 0;
+          }
+        });
+      });
+
+      const unitPrice = Math.max(0, dbMenu.basePrice + extraPrice);
+      const selSuffix = Object.keys(selections).length > 0
+        ? ` [${Object.entries(selections).map(([k, v]) => `${k}:${v}`).join(', ')}]`
+        : (String(item.name || '').includes(' [') ? ' [' + String(item.name).split(' [')[1] : '');
+
+      verifiedItems.push({
+        id: dbMenu.id,
+        name: `${dbMenu.name}${selSuffix}`,
+        price: unitPrice,
+        qty: qty,
+        selections: selections
+      });
+      authoritativeSubtotal += unitPrice * qty;
+    } else {
+      // 若為店家剛在本地新增但尚未同步至 Menus 表的品項，仍確保單價與數量為正整數
+      const safeUnitPrice = Math.max(10, parseInt(item.price, 10) || 100);
+      verifiedItems.push({
+        id: String(item.id || 'M-CUSTOM'),
+        name: String(item.name || '特餐品項'),
+        price: safeUnitPrice,
+        qty: qty
+      });
+      authoritativeSubtotal += safeUnitPrice * qty;
+    }
+  });
+
+  const maxCap = Math.max(5, Number(storeRow.maxCapacityPer15Min) || 20);
+  const activeOrders = Math.max(0, Number(storeRow.activeOrders) || 0);
+  const loadPct = Math.round((activeOrders / maxCap) * 100);
+  const isPromoActive = storeRow.promoMode && storeRow.promoMode !== 'none' && loadPct < 85;
+
+  const needCutlery = Boolean(params.needCutlery);
+  const unitCutleryPrice = storeRow.cutleryPrice !== undefined && storeRow.cutleryPrice !== ''
+    ? Math.max(0, Number(storeRow.cutleryPrice))
+    : 1;
+  const authoritativeCutleryFee = (authoritativeSubtotal > 0 && needCutlery) ? unitCutleryPrice : 0;
+
+  let authoritativeDiscount = 0;
+  let promoAppliedText = '一般點餐';
+  if (isPromoActive) {
+    promoAppliedText = String(storeRow.promoText || '離峰優惠');
+    if (storeRow.promoMode === 'discount' && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL) {
+      authoritativeDiscount = Math.min(authoritativeSubtotal, Math.max(0, Number(storeRow.promoDiscount) || 10));
+    } else if ((storeRow.promoMode === 'gift' || storeRow.promoMode === 'freebie') && storeRow.promoText) {
+      verifiedItems.push({
+        id: 'GIFT-AI',
+        name: `${storeRow.promoText} (贈品)`,
+        price: 0,
+        qty: 1,
+        isGift: true
+      });
+    }
+  } else if (String(params.orderSource || '').includes('POS')) {
+    promoAppliedText = '現場櫃檯點餐';
+  }
+
+  const authoritativeFinalTotal = Math.max(0, authoritativeSubtotal + authoritativeCutleryFee - authoritativeDiscount);
+
+  return {
+    storeName: String(storeRow.name || params.storeName || ''),
+    verifiedItems,
+    subtotal: authoritativeSubtotal,
+    cutleryFee: authoritativeCutleryFee,
+    discount: authoritativeDiscount,
+    finalTotal: authoritativeFinalTotal,
+    promoApplied: promoAppliedText,
+    isDivertedOrder: Boolean(isPromoActive)
+  };
+}
+
 function handleOrderSubmission(ss, params) {
   const orderSheet = ss.getSheetByName('Orders');
+
+  // 執行伺服器端權威計價驗算
+  const verified = verifyAndPriceOrderOnServer(ss, params);
 
   let orderId = params.orderId ? String(params.orderId).trim() : '';
   if (!orderId) {
@@ -906,10 +1146,10 @@ function handleOrderSubmission(ss, params) {
   }
 
   const nowStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'HH:mm:ss');
-  const todayDateStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
-  const pickupDateVal = params.pickupDate || todayDateStr;
+  const todayDateStr = getTodayTaipeiStr();
+  const pickupDateVal = normalizeSheetDateStr(params.pickupDate || todayDateStr);
+  const pickupTimeVal = normalizeSheetTimeStr(params.pickupTime || nowStr.slice(0, 5), false);
 
-  // 校準每日各店獨立遞增流水號：若前端傳入合法流水號則同步更新計數器，否則由後端產生
   const backendNextSeq = generateBackendSequentialPickupNumber(ss, params.storeId, pickupDateVal);
   let pickupNumber = String(params.pickupNumber || '').trim();
   if (!/^\d{4,5}$/.test(pickupNumber)) {
@@ -924,45 +1164,56 @@ function handleOrderSubmission(ss, params) {
     }
   }
 
-  const orderSource = params.orderSource || '📱 掃碼點餐';
-  const customerNote = params.customerNote || '外帶自取';
+  const orderSource = String(params.orderSource || params.studentId || '📱 掃碼點餐');
+  const customerNote = String(params.customerNote || params.studentName || '外帶自取');
+  const paymentMethod = String(params.paymentMethod || 'LINE Pay');
+  const isReservation = Boolean(params.isReservation);
+
+  // 伺服器端權威判定付款狀態，防止學生把「現場櫃檯付現」竄改成「已付款」
+  let authoritativePayStatus = '已付款';
+  if (paymentMethod === '現場櫃檯付現') {
+    authoritativePayStatus = (isReservation && params.paymentDeadline) ? '待櫃檯繳費' : '取餐付現';
+  }
 
   const extraMeta = {
     needCutlery: Boolean(params.needCutlery),
-    cutleryFee: Number(params.cutleryFee) || 0,
-    isReservation: Boolean(params.isReservation),
+    cutleryFee: verified.cutleryFee,
+    isReservation: isReservation,
     pickupDate: pickupDateVal,
-    pickupTime: params.pickupTime || nowStr.slice(0, 5),
-    customerPhone: params.customerPhone || '',
-    paymentDeadline: params.paymentDeadline || '',
-    paymentStatus: params.paymentStatus || '已付款',
+    pickupTime: pickupTimeVal,
+    customerPhone: String(params.customerPhone || ''),
+    paymentDeadline: params.paymentDeadline ? normalizeSheetDateStr(params.paymentDeadline) : '',
+    paymentStatus: authoritativePayStatus,
+    transactionId: String(params.transactionId || ''),
     notifyCount: Number(params.notifyCount) || 0,
-    lineUserId: params.lineUserId || '',
-    customerEmail: params.customerEmail || ''
+    lineUserId: String(params.lineUserId || ''),
+    customerEmail: String(params.customerEmail || ''),
+    createdAtTs: Number(params.createdAtTs) || Date.now()
   };
+
+  const itemsJsonStr = JSON.stringify(verified.verifiedItems);
 
   const newOrderRow = [
     orderId,
     pickupNumber,
     params.storeId,
-    params.storeName,
+    verified.storeName,
     orderSource,
     customerNote,
-    JSON.stringify(params.items || []),
-    Number(params.subtotal) || 0,
-    Number(params.discount) || 0,
-    Number(params.finalTotal) || 0,
-    params.promoApplied || '一般點餐',
+    itemsJsonStr,
+    verified.subtotal,
+    verified.discount,
+    verified.finalTotal,
+    verified.promoApplied,
     params.pickupTimeSlot || '立即製作',
-    params.paymentMethod || 'LINE Pay',
+    paymentMethod,
     '製作中',
-    Boolean(params.isDivertedOrder),
+    verified.isDivertedOrder,
     nowStr,
     JSON.stringify(extraMeta)
   ];
   orderSheet.appendRow(newOrderRow);
 
-  // 由 getInitBundle 內部呼叫 recomputeAllStoreQueues(ss) 自動區分即時單與預訂單並更新佇列
   const bundleData = getInitBundle(ss, {});
 
   return {
@@ -970,18 +1221,18 @@ function handleOrderSubmission(ss, params) {
       orderId,
       pickupNumber,
       storeId: params.storeId,
-      storeName: params.storeName,
+      storeName: verified.storeName,
       studentId: orderSource,
       studentName: customerNote,
-      itemsJson: JSON.stringify(params.items || []),
-      subtotal: Number(params.subtotal) || 0,
-      discount: Number(params.discount) || 0,
-      finalTotal: Number(params.finalTotal) || 0,
-      promoApplied: params.promoApplied || '一般點餐',
+      itemsJson: itemsJsonStr,
+      subtotal: verified.subtotal,
+      discount: verified.discount,
+      finalTotal: verified.finalTotal,
+      promoApplied: verified.promoApplied,
       pickupTimeSlot: params.pickupTimeSlot || '立即製作',
-      paymentMethod: params.paymentMethod || 'LINE Pay',
+      paymentMethod: paymentMethod,
       status: '製作中',
-      isDivertedOrder: Boolean(params.isDivertedOrder),
+      isDivertedOrder: verified.isDivertedOrder,
       createdAt: nowStr,
       ...extraMeta
     },
@@ -992,7 +1243,7 @@ function handleOrderSubmission(ss, params) {
 function saveStoreMenus(ss, params) {
   const storeId = String(params.storeId || '');
   const newMenus = Array.isArray(params.menus) ? params.menus : [];
-  if (!storeId) throw new Error('缺少 storeId');
+  if (!storeId) throw new Error('缺少店鋪編號');
 
   const menuSheet = ss.getSheetByName('Menus');
   const rows = menuSheet.getDataRange().getValues();
@@ -1016,6 +1267,13 @@ function saveStoreMenus(ss, params) {
 
   newMenus.forEach((m, idx) => {
     const itemId = m.id || ('M_' + storeId + '_' + (idx + 1) + '_' + Math.floor(100 + Math.random() * 899));
+    const optsWithMeta = { ...(m.options || {}) };
+    if (m.soldOut) {
+      optsWithMeta.__soldOut = true;
+    } else {
+      delete optsWithMeta.__soldOut;
+    }
+
     keptRows.push([
       String(itemId),
       storeId,
@@ -1024,7 +1282,7 @@ function saveStoreMenus(ss, params) {
       String(m.tag || ''),
       String(m.category || '招牌主餐'),
       String(m.image || ''),
-      JSON.stringify(m.options || {})
+      JSON.stringify(optsWithMeta)
     ]);
   });
 
@@ -1034,9 +1292,6 @@ function saveStoreMenus(ss, params) {
   return getInitBundle(ss, {});
 }
 
-/**
- * Gemini 2.5 Flash Vision 菜單多模態辨識 + 後端結構化正則解析備援
- */
 function handleAiParseMenu(ss, params) {
   const rawText = String(params.rawText || '');
   const imageBase64 = String(params.imageBase64 || '');
@@ -1046,7 +1301,7 @@ function handleAiParseMenu(ss, params) {
 
   if (apiKey && (imageBase64 || rawText)) {
     try {
-      const prompt = `你是專業餐飲 POS 系統的 AI 菜單建檔專家。
+      const prompt = `你是專業餐飲收銀系統的菜單建檔專家。
 請從使用者提供的菜單圖片或文字中，自動辨識並整理出所有菜色品項，回傳純 JSON 陣列（不要加 markdown 語法）：
 [
   {
@@ -1085,15 +1340,14 @@ function handleAiParseMenu(ss, params) {
       const json = JSON.parse(res.getContentText());
       const textOut = json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts[0].text;
       if (textOut) {
-        return { parsedMenus: JSON.parse(textOut), engine: 'Google Gemini 2.5 Flash Vision' };
+        return { parsedMenus: JSON.parse(textOut), engine: '雲端多模態視覺辨識引擎' };
       }
     } catch (e) {}
   }
 
-  // 後端結構化文字解析備援
   const fallbackMenus = [];
   if (rawText) {
-    let currentCat = 'AI 掃描推薦';
+    let currentCat = '掃描推薦';
     rawText.split(/\r?\n/).forEach(line => {
       const t = line.trim();
       if (!t) return;
@@ -1115,31 +1369,40 @@ function handleAiParseMenu(ss, params) {
     });
   }
 
-  return { parsedMenus: fallbackMenus, engine: 'Backend Heuristic Parser' };
+  return { parsedMenus: fallbackMenus, engine: '結構化語法解析引擎' };
 }
 
 function updateStoreSettings(ss, params) {
   const storeSheet = ss.getSheetByName('Stores');
   const data = storeSheet.getDataRange().getValues();
   const props = PropertiesService.getScriptProperties();
+  const sid = String(params.storeId || '');
 
   if (params.useCustomLineOa !== undefined) {
     saveLineDevConfig(ss, params);
   }
 
+  if (params.isOpen !== undefined && sid) {
+    let openStateMap = {};
+    try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
+    openStateMap[sid] = Boolean(params.isOpen);
+    props.setProperty('STORE_OPEN_STATES', JSON.stringify(openStateMap));
+  }
+
+  if (params.baseQueueOffset !== undefined && sid) {
+    let simOffsets = {};
+    try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
+    simOffsets[sid] = Math.max(0, Number(params.baseQueueOffset) || 0);
+    props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
+  }
+
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(params.storeId)) {
+    if (String(data[i][0]) === sid) {
       if (params.promoMode !== undefined) storeSheet.getRange(i + 1, 9).setValue(params.promoMode);
       if (params.promoText !== undefined) storeSheet.getRange(i + 1, 10).setValue(params.promoText);
       if (params.promoDiscount !== undefined) storeSheet.getRange(i + 1, 11).setValue(Number(params.promoDiscount));
       if (params.maxCapacityPer15Min !== undefined) {
         storeSheet.getRange(i + 1, 5).setValue(Math.max(5, Number(params.maxCapacityPer15Min)));
-      }
-      if (params.baseQueueOffset !== undefined) {
-        let simOffsets = {};
-        try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
-        simOffsets[String(params.storeId)] = Math.max(0, Number(params.baseQueueOffset) || 0);
-        props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
       }
       if (params.cutleryPrice !== undefined) {
         storeSheet.getRange(i + 1, 14).setValue(Math.max(0, Number(params.cutleryPrice)));
@@ -1180,7 +1443,6 @@ function updateOrderState(ss, params) {
     }
   }
 
-  // 透過 getInitBundle 內的 recomputeAllStoreQueues 自動重算釋放佇列，絕不重複扣減兩次
   return getInitBundle(ss, {});
 }
 
@@ -1192,9 +1454,6 @@ function markReservationPaid(ss, params) {
   });
 }
 
-/**
- * 支援軟刪除作廢留痕（預設）與實體刪除（hardDelete: true），並自動釋放佇列
- */
 function cancelOrderById(ss, params) {
   const orderSheet = ss.getSheetByName('Orders');
   const data = orderSheet.getDataRange().getValues();
@@ -1243,7 +1502,8 @@ function handleAiConcierge(ss, params) {
   const bundleObj = getInitBundle(ss, {}).bundle;
   const campus = params.campus || '雙溪校區';
   const userQuery = (params.query || '').trim();
-  const campusStores = bundleObj.stores.filter(s => s.campus === campus);
+  const openStores = bundleObj.stores.filter(s => s.campus === campus && s.isOpen !== false);
+  const campusStores = openStores.length > 0 ? openStores : bundleObj.stores.filter(s => s.campus === campus);
 
   const props = PropertiesService.getScriptProperties();
   const apiKey = params.apiKey || props.getProperty('GEMINI_API_KEY') || '';
@@ -1257,20 +1517,20 @@ function handleAiConcierge(ss, params) {
         loadPct: s.loadPercentage,
         promoText: s.promoText,
         aiScore: s.aiScore,
-        menus: s.menus.map(m => ({ id: m.id, name: m.name, price: m.price }))
+        menus: (s.menus || []).filter(m => !m.soldOut).map(m => ({ id: m.id, name: m.name, price: m.price }))
       }));
 
-      const prompt = `你是東吳大學「MealFlow 學餐 AI 選餐與客服顧問」。
+      const prompt = `你是東吳大學「學餐智慧選餐與客服顧問」。
 目前校區：${campus}
 學生的輸入：「${userQuery}」
-即時學餐 M/M/1 佇列與菜單數據：${JSON.stringify(storeContext)}
+即時學餐營業中店家佇列與供應中菜單數據：${JSON.stringify(storeContext)}
 
 請根據學生的輸入自然且精準地回答，並以純 JSON 格式回覆：
 {
-  "reasoning": "自然、準確、針對學生問題的回答 (100字內)",
+  "reasoning": "自然、準確、針對學生問題的繁體中文回答 (100字內)",
   "storeId": "推薦店家ID (如 S02)",
   "menuId": "推薦餐點ID (如 M04)",
-  "engine": "Google Gemini 2.5 Flash (Backend Managed)"
+  "engine": "Google Gemini 2.5 Flash"
 }`;
 
       const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey);
@@ -1293,14 +1553,15 @@ function handleAiConcierge(ss, params) {
 
   const sortedStores = campusStores.slice().sort((a, b) => Number(b.aiScore) - Number(a.aiScore));
   const bestStore = sortedStores[0] || campusStores[0];
-  const bestMenu = (bestStore && bestStore.menus && bestStore.menus[0]) ? bestStore.menus[0] : { id: 'M04', name: '招牌特餐', price: 100 };
+  const availMenus = (bestStore && bestStore.menus) ? bestStore.menus.filter(m => !m.soldOut) : [];
+  const bestMenu = availMenus[0] || (bestStore && bestStore.menus && bestStore.menus[0]) || { id: 'M04', name: '招牌特餐', price: 100 };
 
   return {
     aiResult: {
-      reasoning: `目前「${campus}」以「${bestStore.name}」最為順暢（M/M/1 預估約 ${bestStore.avgPrepMinutes} 分鐘取餐），推薦點選人氣品項「${bestMenu.name} ($${bestMenu.price})」。`,
+      reasoning: `目前「${campus}」以「${bestStore.name}」最為順暢（預估約 ${bestStore.avgPrepMinutes} 分鐘取餐），推薦點選正常供應中的人氣品項「${bestMenu.name} ($${bestMenu.price})」。`,
       storeId: bestStore.id,
       menuId: bestMenu.id,
-      engine: 'MealFlow Queueing Utility Engine'
+      engine: '雲端佇列智慧配餐引擎'
     }
   };
 }
