@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#FFFFFF">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>東吳學餐智慧點餐與營運管制塔 (Commercial POS & KDS v11.0)</title>
+  <title>東吳學餐智慧點餐與營運管制塔 (Commercial POS & KDS v12.0 Enterprise)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -30,7 +30,7 @@
       </div>
 
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <!-- 店家後台頂部控制列（僅在通過 PIN 授權解鎖後才會顯示） -->
+        <!-- 店家後台頂部控制列（僅在通過雲端 HMAC Session 驗證解鎖後才會顯示） -->
         <div id="headerStoreControls" style="display:none; align-items:center; gap:8px; flex-wrap:wrap;">
           <button type="button" id="headerStoreOpenToggleBtn" class="store-status-toggle" onclick="toggleCurrentStoreOpenStatus()">
             🟢 營業中
@@ -39,110 +39,128 @@
           <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="openShiftZReportModal()" title="開啟今日錢箱交班日結單 (Z-Report)">
             🧾 交班日結
           </button>
-          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="syncCloud(true)">
-            🔄 同步雲端
-          </button>
-          <button type="button" class="btn-danger-soft" style="padding:6px 10px; font-size:0.78rem;" onclick="lockMerchantSession()" title="安全鎖定並卸載店家後台節點">
-            🔒 鎖定後台
+          <button type="button" class="btn-danger-soft" style="padding:6px 10px;" onclick="lockMerchantSession()" title="立即銷毀時效憑證並鎖定後台">
+            🔒 登出鎖定
           </button>
         </div>
 
-        <!-- 學生端「我的訂單匣」按鈕 -->
-        <button type="button" id="headerMyOrdersBtn" class="btn-my-orders" style="display:none;" onclick="openMyOrdersDrawer()">
-          <span>🧾 我的訂單</span>
-          <span id="headerMyOrdersCount" class="my-orders-count-badge" style="display:none;">0</span>
-        </button>
+        <!-- 學生端校區切換器 -->
+        <div id="headerCampusSwitcher" class="campus-switcher" style="display:none;">
+          <button type="button" id="btnCampus-雙溪校區" class="campus-btn active" onclick="switchCampus('雙溪校區')">雙溪校區</button>
+          <button type="button" id="btnCampus-城中校區" class="campus-btn" onclick="switchCampus('城中校區')">城中校區</button>
+        </div>
 
-        <!-- LINE 與信箱取餐通知綁定按鈕 -->
-        <button type="button" id="headerLineBindBtn" class="btn-line" style="padding:5px 11px; font-size:0.76rem;" onclick="openLineBindModal()">
+        <!-- 學生端取餐推播綁定按鈕（我的訂單按鈕會由 ensureHeaderExtraControls 自動插入在此按鈕左側） -->
+        <button type="button" id="headerLineBindBtn" class="btn-line" onclick="openLineBindModal()">
           <span id="headerLineBtnText">💬 綁定取餐通知</span>
         </button>
-
-        <!-- 校區切換器 -->
-        <div class="campus-switcher" id="headerCampusSwitcher" style="display:none;">
-          <button type="button" class="campus-btn active" id="btnCampus-雙溪校區" onclick="switchCampus('雙溪校區')">雙溪校區</button>
-          <button type="button" class="campus-btn" id="btnCampus-城中校區" onclick="switchCampus('城中校區')">城中校區</button>
-        </div>
       </div>
     </div>
   </header>
 
-  <main class="container">
-    <!-- 路由 1：根目錄角色導覽台 (/) -->
-    <section id="viewPortal" class="view-section active">
-      <div id="portalContentBox"></div>
-    </section>
+  <!-- 1. 系統入口導覽視圖 (Portal View) -->
+  <section id="viewPortal" class="view-section active">
+    <div class="page-container" id="portalContentBox"></div>
+  </section>
 
-    <!-- 路由 2：學生掃碼點餐頁 (/order/) -->
-    <section id="viewOrder" class="view-section">
+  <!-- 2. 學生線上掃碼點餐視圖 (Order View) -->
+  <section id="viewOrder" class="view-section">
+    <div class="page-container">
+      <!-- 進行中訂單橫幅 + 跨裝置手機末 3 碼／單號查詢列 -->
       <div id="activeOrderFloatingBanner"></div>
+
+      <!-- 學餐店家總覽區塊 -->
       <div id="storeDirectoryBlock">
-        <div class="ai-concierge-box">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-            <div>
-              <span style="font-size:0.72rem; font-weight:800; background:rgba(255,255,255,0.18); padding:2px 8px; border-radius:999px;">
-                ✨ 學餐智慧選餐與客服顧問 (即時佇列與庫存分析)
-              </span>
-              <h3 style="font-size:1rem; font-weight:800; margin-top:4px;">不知道吃什麼或想問取餐規則？依即時排隊狀況幫你解答與配餐</h3>
+        <!-- AI 智慧選餐與佇列分流顧問 -->
+        <div class="ai-concierge-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:1.25rem;">🤖</span>
+              <strong style="font-size:0.95rem; color:#312E81;">AI 學餐智慧選餐與免排隊顧問</strong>
             </div>
-            <button type="button" class="ai-prompt-chip" onclick="promptGeminiKeyConfig()">🔒 雲端安全託管</button>
+            <span style="font-size:0.72rem; font-weight:800; color:#4338CA; background:#E0E7FF; padding:2px 8px; border-radius:999px;">
+              即時連動各店產能與售罄狀態
+            </span>
           </div>
-          <div class="ai-chip-row">
-            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('⚡ 我只剩 10 分鐘就要上課，推薦最快拿到的主餐')">⚡ 10分鐘內趕上課快取</button>
-            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('💰 預算 100 元以內、有分流優惠的超值正餐')">💰 預算 100 元內超值正餐</button>
-            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🌶️ 想吃韓式、椒麻或辣味重口味，且不用排隊的餐點')">🌶️ 想吃辣味重口味免排隊</button>
-            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🥩 剛運動完想吃大份量肉類補充蛋白質')">🥩 大份量高蛋白肉食</button>
-            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('📋 請問預訂取餐與現金付款規則是什麼？')">📋 預訂與現金付款規則</button>
+
+          <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; margin-bottom:6px;">
+            <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem; white-space:nowrap;" onclick="askAiConcierge('趕時間！推薦目前最快不用排隊的餐點')">⚡ 趕時間免排隊</button>
+            <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem; white-space:nowrap;" onclick="askAiConcierge('預算 100 元以內推薦吃什麼？')">💰 $100內高CP值</button>
+            <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem; white-space:nowrap;" onclick="askAiConcierge('運動完想吃高蛋白質的大份量肉食主餐')">🥩 增肌高蛋白</button>
+            <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem; white-space:nowrap;" onclick="askAiConcierge('現在哪一家餐廳有離峰優惠或招待？')">🎁 哪家有優惠</button>
+            <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem; white-space:nowrap;" onclick="askAiConcierge('無痕模式怎麼找回我的訂單？')">🔎 跨裝置查單規則</button>
           </div>
-          <div style="display:flex; gap:8px; margin-top:4px;">
-            <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1; background:rgba(255,255,255,0.95); border:none;" placeholder="可多輪對話或輸入需求（例：你好、推薦 100 元內不排隊的麵、預訂怎麼付錢）..." onkeydown="if(event.key==='Enter') askAiConcierge()">
-            <button type="button" class="btn-tip-action" onclick="askAiConcierge()">🧠 傳送對話</button>
+
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1;" placeholder="問問顧問：例如「想吃辣的烏龍麵」、「哪家最快？」..." onkeydown="if(event.key==='Enter') askAiConcierge()">
+            <button type="button" class="btn-tip-action" style="background:var(--indigo); white-space:nowrap;" onclick="askAiConcierge()">詢問顧問</button>
           </div>
-          <div id="aiConciergeResponse" class="ai-response-card"></div>
+
+          <div id="aiConciergeResponse" class="ai-concierge-response"></div>
         </div>
+
+        <!-- 尖峰排隊自動分流提示卡 -->
         <div id="aiSmartTipBox"></div>
-        <div class="filter-row">
-          <button type="button" class="filter-chip active" id="filter-ALL" onclick="setFilter('ALL')">全部店家</button>
-          <button type="button" class="filter-chip" id="filter-FAST" onclick="setFilter('FAST')">⚡ 免排隊快取 (綠燈順暢)</button>
-          <button type="button" class="filter-chip" id="filter-PROMO" onclick="setFilter('PROMO')">🎁 離峰分流送優惠</button>
+
+        <!-- 餐廳快篩列 -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+          <h2 style="font-size:1.15rem; font-weight:900;">🏪 選擇學餐櫃位點餐</h2>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" id="filter-ALL" class="filter-chip active" onclick="setFilter('ALL')">全部櫃位</button>
+            <button type="button" id="filter-FAST" class="filter-chip" onclick="setFilter('FAST')">🟢 順暢免排隊</button>
+            <button type="button" id="filter-PROMO" class="filter-chip" onclick="setFilter('PROMO')">🎁 享離峰優惠</button>
+          </div>
         </div>
-        <div id="storeListContainer" class="store-list"></div>
+
+        <!-- 餐廳列表容器 -->
+        <div id="storeListContainer"></div>
       </div>
+
+      <!-- 單一餐廳店內菜單區塊 -->
       <div id="inStoreOrderingBlock" style="display:none;"></div>
-    </section>
+    </div>
+  </section>
 
-    <!-- 路由 3：專屬訂單追蹤頁 (/order/?id=ORD-xxx) -->
-    <section id="viewTicket" class="view-section">
+  <!-- 3. 訂單專屬防偽電子憑證視圖 (Ticket View) -->
+  <section id="viewTicket" class="view-section">
+    <div class="page-container">
       <div id="singleTicketContainer"></div>
-    </section>
+    </div>
+  </section>
 
-    <!-- 路由 4：店家全螢幕收銀與營運中心 (/store/) -->
-    <section id="viewStore" class="view-section">
-      <div class="store-shell-layout">
-        <aside class="store-left-rail">
-          <button type="button" class="store-rail-btn active" id="railBtn-pos" onclick="switchStoreTabMode('pos')" title="櫃檯點餐">
-            <span class="rail-icon">🖥️</span><span>點餐</span>
-          </button>
-          <button type="button" class="store-rail-btn" id="railBtn-kds" onclick="switchStoreTabMode('kds')" title="訂單與備料管理">
-            <span class="rail-icon">📋</span><span>訂單</span>
-            <span id="railKdsBadge" class="tab-badge" style="display:none;">0</span>
-          </button>
-          <button type="button" class="store-rail-btn" id="railBtn-analytics" onclick="switchStoreTabMode('analytics')" title="財務與營運分析">
-            <span class="rail-icon">📊</span><span>分析</span>
-          </button>
-          <button type="button" class="store-rail-btn" id="railBtn-settings" onclick="switchStoreTabMode('settings')" title="店務設定">
-            <span class="rail-icon">⚙️</span><span>設定</span>
-          </button>
-        </aside>
-        <div class="store-stage-area">
-          <div id="storePanel-pos" style="display:block;"></div>
-          <div id="storePanel-kds" style="display:none;"></div>
-          <div id="storePanel-analytics" style="display:none;"></div>
-          <div id="storePanel-settings" style="display:none;"></div>
-        </div>
-      </div>
-    </section>
-  </main>
+  <!-- 4. 店家全螢幕平板 POS 與 KDS 控單中心視圖 (Store View) -->
+  <section id="viewStore" class="view-section">
+    <div class="store-workspace-shell">
+      <!-- 左側功能導覽軌 -->
+      <nav class="store-left-rail">
+        <button type="button" id="railBtn-pos" class="rail-nav-btn active" onclick="switchStoreTabMode('pos')">
+          <span style="font-size:1.35rem;">🖥️</span>
+          <span>櫃檯收銀</span>
+        </button>
+        <button type="button" id="railBtn-kds" class="rail-nav-btn" onclick="switchStoreTabMode('kds')">
+          <span style="font-size:1.35rem;">🍳</span>
+          <span>廚房控單</span>
+          <span id="railKdsBadge" class="rail-badge" style="display:none;">0</span>
+        </button>
+        <button type="button" id="railBtn-analytics" class="rail-nav-btn" onclick="switchStoreTabMode('analytics')">
+          <span style="font-size:1.35rem;">📊</span>
+          <span>財務分析</span>
+        </button>
+        <button type="button" id="railBtn-settings" class="rail-nav-btn" onclick="switchStoreTabMode('settings')">
+          <span style="font-size:1.35rem;">⚙️</span>
+          <span>店務設定</span>
+        </button>
+      </nav>
+
+      <!-- 右側主工作台（未通過 HMAC Session 驗證前由 JS 強制鎖定不渲染內容） -->
+      <main class="store-main-stage">
+        <div id="storePanel-pos"></div>
+        <div id="storePanel-kds" style="display:none;"></div>
+        <div id="storePanel-analytics" style="display:none;"></div>
+        <div id="storePanel-settings" style="display:none;"></div>
+      </main>
+    </div>
+  </section>
 
   <script src="./app.js"></script>
 </body>
