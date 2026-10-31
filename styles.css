@@ -1,4 +1,4 @@
-/* 東吳學餐 MealFlow v9.0 Enterprise Edition - 商業級學餐智慧點餐 & 全螢幕平板 POS 系統樣式表 */
+/* 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業專業版樣式表 */
 :root {
   --brand: #FF5A1F;
   --brand-light: #FFF3EE;
@@ -12,6 +12,9 @@
   --indigo: #4F46E5;
   --indigo-bg: #EEF2FF;
   --slate-dark: #0F172A;
+
+  --linepay-green: #00C300;
+  --jkopay-red: #E60012;
 
   --bg-page: #F4F6F9;
   --bg-card: #FFFFFF;
@@ -44,8 +47,7 @@ body {
   overflow-x: hidden;
 }
 
-/* 僅在「店家端 ➔ 櫃檯點餐 (POS)」分頁鎖定外層不捲動，確保平板收銀滿版穩定；
-   切換至「訂單管理」、「AI 分析」、「店務設定」或學生頁面皆可自由捲動 */
+/* 僅在「店家端 ➔ 櫃檯點餐」分頁鎖定外層不捲動，確保平板收銀滿版穩定 */
 body.pos-no-scroll {
   height: 100dvh;
   overflow: hidden;
@@ -158,6 +160,57 @@ input, select, textarea {
   box-shadow: 0 2px 6px rgba(255, 90, 31, 0.3);
 }
 
+/* 學生端頂部「我的訂單匣」按鈕 */
+.btn-my-orders {
+  background: #FFFFFF;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: 0.15s;
+}
+
+.btn-my-orders:hover {
+  border-color: var(--brand);
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
+.my-orders-count-badge {
+  background: var(--brand);
+  color: #FFFFFF;
+  font-size: 0.68rem;
+  font-weight: 900;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* 店家營業狀態快速切換按鈕 */
+.store-status-toggle {
+  border: 1.5px solid var(--green);
+  background: var(--green-bg);
+  color: #065F46;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: 0.15s;
+}
+
+.store-status-toggle.closed {
+  border-color: var(--red);
+  background: var(--red-bg);
+  color: #991B1B;
+}
+
 /* ==================== 主容器與視圖路由 ==================== */
 .container {
   max-width: 760px;
@@ -228,7 +281,7 @@ body.store-mode-active .container {
   font-size: 1.05rem;
 }
 
-/* ==================== AI 選餐顧問（升級多輪氣泡式聊天室） ==================== */
+/* ==================== 智慧選餐顧問（多輪氣泡式聊天室） ==================== */
 .ai-concierge-box {
   background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
   color: #FFFFFF;
@@ -283,7 +336,6 @@ body.store-mode-active .container {
   animation: fadeIn 0.25s ease;
 }
 
-/* 多輪對話氣泡樣式 */
 .ai-chat-history {
   display: flex;
   flex-direction: column;
@@ -327,7 +379,7 @@ body.store-mode-active .container {
   width: 100%;
 }
 
-/* M/M/1 佇列動態分流橫幅 */
+/* 佇列動態分流橫幅 */
 .smart-tip-card {
   background: linear-gradient(135deg, #FFF3EE 0%, #FFFBEB 100%);
   border: 1.5px solid #FED7AA;
@@ -506,6 +558,12 @@ body.store-mode-active .container {
   background: linear-gradient(to right, #FFFFFF 80%, #FFF7ED 100%);
 }
 
+.store-card.store-closed {
+  opacity: 0.75;
+  background: #F8FAFC;
+  border-style: dashed;
+}
+
 .store-thumb {
   width: 72px;
   height: 72px;
@@ -577,6 +635,11 @@ body.store-mode-active .container {
   color: var(--red);
 }
 
+.wait-closed {
+  background: #E2E8F0;
+  color: #475569;
+}
+
 .store-meta {
   font-size: 0.8rem;
   color: var(--text-secondary);
@@ -610,7 +673,7 @@ body.store-mode-active .container {
   border-radius: 6px;
 }
 
-/* ==================== 學生端進入餐廳後的分類菜單與購物車橫條 ==================== */
+/* ==================== 學生端進入餐廳後的分類菜單與售罄狀態 ==================== */
 .in-store-banner {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
@@ -642,6 +705,7 @@ body.store-mode-active .container {
   cursor: pointer;
   transition: all 0.15s ease;
   box-shadow: var(--shadow-sm);
+  position: relative;
 }
 
 .menu-item-card:hover {
@@ -651,6 +715,32 @@ body.store-mode-active .container {
 
 .menu-item-card:active {
   transform: scale(0.985);
+}
+
+/* 單品售罄樣式 */
+.menu-item-card.sold-out,
+.pos-dish-tile.sold-out {
+  opacity: 0.58;
+  background: #F8FAFC;
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.menu-item-card.sold-out:hover,
+.pos-dish-tile.sold-out:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--border);
+}
+
+.sold-out-ribbon {
+  display: inline-block;
+  background: #475569;
+  color: #FFFFFF;
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
 
 .menu-img-box {
@@ -822,7 +912,7 @@ body.store-mode-active .container {
   width: 100%;
 }
 
-/* 店家 POS 點餐雙欄工作區：剛好塞滿一頁平板高度 */
+/* 店家 POS 點餐雙欄工作區 */
 .pos-modern-workspace {
   display: grid;
   grid-template-columns: 1fr 395px;
@@ -886,7 +976,7 @@ body.store-mode-active .container {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-  grid-auto-rows: 114px;
+  grid-auto-rows: 118px;
   gap: 10px;
   align-content: start;
   padding-right: 4px;
@@ -903,6 +993,7 @@ body.store-mode-active .container {
   cursor: pointer;
   transition: all 0.14s ease;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  position: relative;
 }
 
 .pos-dish-tile:hover {
@@ -1082,7 +1173,7 @@ body.store-mode-active .container {
   font-size: 1.05rem;
 }
 
-/* ==================== 訂單管理 (KDS 分天檢視 & 退單/印單支援) ==================== */
+/* ==================== 訂單管理 (KDS 分天檢視 & 逾時計時器) ==================== */
 .kds-panel-wrap {
   display: flex;
   flex-direction: column;
@@ -1135,7 +1226,25 @@ body.store-mode-active .container {
   opacity: 0.72;
 }
 
-/* ==================== AI 營運分析與設定面板 ==================== */
+.kds-elapsed-badge {
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #DBEAFE;
+  color: #1E40AF;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.kds-elapsed-badge.overdue {
+  background: #FEE2E2;
+  color: #DC2626;
+  animation: pulse 1.2s infinite;
+}
+
+/* ==================== 營運分析與設定面板 ==================== */
 .analytics-panel-wrap,
 .settings-panel-wrap {
   display: flex;
@@ -1194,7 +1303,7 @@ body.store-mode-active .container {
   position: relative;
 }
 
-/* ==================== 修復 Bug 7：互動式圖表動畫與懸浮提示框 ==================== */
+/* ==================== 互動式圖表動畫與懸浮提示框 ==================== */
 .chart-interactive-bar {
   cursor: pointer;
   transition: opacity 0.18s ease, filter 0.18s ease, transform 0.18s ease;
@@ -1241,7 +1350,6 @@ body.store-mode-active .container {
   transition: background 0.15s ease, transform 0.15s ease;
 }
 
-/* 同時相容 .active 與 .active-legend，徹底修復滑鼠移過圓餅圖圖例無反應的 Bug */
 .legend-interactive-row:hover,
 .legend-interactive-row.active,
 .legend-interactive-row.active-legend {
@@ -1265,13 +1373,12 @@ body.store-mode-active .container {
   min-width: 180px;
 }
 
-/* 補齊原本遺漏的 .show 顯示規則，讓圖表 Tooltip 正常浮現 */
 .chart-floating-tooltip.show {
   display: block;
   animation: fadeIn 0.12s ease;
 }
 
-/* ==================== AI 視覺菜單掃描可編輯表格 & 進階菜單管理 ==================== */
+/* ==================== 視覺菜單掃描可編輯表格 & 進階菜單管理 ==================== */
 .ai-scan-table-wrap {
   overflow-x: auto;
   border: 1px solid #C7D2FE;
@@ -1306,7 +1413,7 @@ body.store-mode-active .container {
   border-bottom: none;
 }
 
-/* ==================== 80mm 熱感應出單機收據預覽樣式 (`#receiptPrintModal`) ==================== */
+/* ==================== 80mm 熱感應出單機收據預覽樣式 ==================== */
 .thermal-receipt-paper {
   width: 100%;
   max-width: 320px;
@@ -1326,6 +1433,50 @@ body.store-mode-active .container {
   margin: 10px 0;
 }
 
+/* ==================== 第三方行動支付收銀台與 PIN 安全鎖卡片 ==================== */
+.payment-gateway-header {
+  padding: 16px 20px;
+  color: #FFFFFF;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.payment-gateway-header.linepay {
+  background: linear-gradient(135deg, #00C300 0%, #059669 100%);
+}
+
+.payment-gateway-header.jkopay {
+  background: linear-gradient(135deg, #E60012 0%, #B91C1C 100%);
+}
+
+.pin-dots-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.pin-dot-box {
+  width: 48px;
+  height: 54px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: #F8FAFC;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.pin-dot-box.filled {
+  border-color: var(--brand);
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
 /* ==================== 彈窗共用遮罩與嚴格圖層順序 ==================== */
 .modal-overlay {
   position: fixed;
@@ -1339,9 +1490,10 @@ body.store-mode-active .container {
   padding: 16px;
 }
 
-#cartModal { z-index: 8000 !important; }
+#cartModal, #myOrdersDrawerModal { z-index: 8000 !important; }
 #optionsModal, #menuEditModal, #receiptPrintModal { z-index: 9500 !important; }
-#posCashNumpadModal, #orderPayModal, #lineBindModal { z-index: 9600 !important; }
+#posCashNumpadModal, #orderPayModal, #lineBindModal, #onlinePaymentModal { z-index: 9600 !important; }
+#storePinModal { z-index: 9700 !important; }
 #pickupAlertModal { z-index: 9800 !important; }
 
 .modal-overlay.open {
@@ -1507,7 +1659,7 @@ body.store-mode-active .container {
   color: #FFFFFF;
 }
 
-/* ==================== Toast & LINE 推播按鈕 ==================== */
+/* ==================== 推播提示訊息 & 通知按鈕 ==================== */
 .toast {
   position: fixed;
   top: 20px;
@@ -1561,7 +1713,7 @@ body.store-mode-active .container {
   80% { transform: rotate(10deg) scale(1.08); }
 }
 
-/* RWD 行動端與平板適配 */
+/* 行動端與平板自適應配置 */
 @media (max-width: 900px) {
   body.pos-no-scroll {
     height: auto;
