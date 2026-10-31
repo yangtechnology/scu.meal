@@ -12,10 +12,7 @@
 </head>
 <body class="store-mode-active pos-no-scroll">
 
-  <div id="toast" class="toast"></div>
-  <div id="analyticsChartTooltip" class="chart-floating-tooltip"></div>
-
-  <!-- 頂部導覽列：店家模式下右上角直接放置「切換店鋪下拉選單 + 同步雲端」，不顯示綁定 LINE 按鈕 -->
+  <!-- 頂部導覽列 -->
   <header class="app-header">
     <div class="header-inner">
       <div class="brand-title-group">
@@ -48,13 +45,10 @@
   </header>
 
   <main class="container">
-
-    <!-- ==================== 路由 1：根目錄角色導覽台 (/) ==================== -->
     <section id="viewPortal" class="view-section">
       <div id="portalContentBox"></div>
     </section>
 
-    <!-- ==================== 路由 2：學生掃碼點餐頁 (/order/) ==================== -->
     <section id="viewOrder" class="view-section">
       <div id="activeOrderFloatingBanner"></div>
       <div id="storeDirectoryBlock">
@@ -64,36 +58,28 @@
       <div id="inStoreOrderingBlock" style="display:none;"></div>
     </section>
 
-    <!-- ==================== 路由 3：專屬訂單追蹤頁 (/order/?id=ORD-xxx) ==================== -->
     <section id="viewTicket" class="view-section">
       <div id="singleTicketContainer"></div>
     </section>
 
-    <!-- ==================== 路由 4：現代化美型店家 POS + 左側垂直圖示導覽 + 訂單分天 + 互動式 AI 分析 (/store/) ==================== -->
+    <!-- 路由 4：店家全螢幕 POS 與營運中心 (/store/) -->
     <section id="viewStore" class="view-section active">
       <div class="store-shell-layout">
-        <!-- 左側現代化白色垂直圖示導覽欄 -->
         <aside class="store-left-rail">
           <button type="button" class="store-rail-btn active" id="railBtn-pos" onclick="switchStoreTabMode('pos')" title="櫃檯點餐 (POS)">
-            <span class="rail-icon">🖥️</span>
-            <span>點餐</span>
+            <span class="rail-icon">🖥️</span><span>點餐</span>
           </button>
           <button type="button" class="store-rail-btn" id="railBtn-kds" onclick="switchStoreTabMode('kds')" title="訂單管理">
-            <span class="rail-icon">📋</span>
-            <span>訂單</span>
+            <span class="rail-icon">📋</span><span>訂單</span>
             <span id="railKdsBadge" class="tab-badge" style="display:none;">0</span>
           </button>
           <button type="button" class="store-rail-btn" id="railBtn-analytics" onclick="switchStoreTabMode('analytics')" title="AI 營運分析">
-            <span class="rail-icon">📊</span>
-            <span>分析</span>
+            <span class="rail-icon">📊</span><span>分析</span>
           </button>
           <button type="button" class="store-rail-btn" id="railBtn-settings" onclick="switchStoreTabMode('settings')" title="店務設定">
-            <span class="rail-icon">⚙️</span>
-            <span>設定</span>
+            <span class="rail-icon">⚙️</span><span>設定</span>
           </button>
         </aside>
-
-        <!-- 右側主工作區：僅 storePanel-pos 鎖定一頁不捲動，其餘面板可自由上下捲動 -->
         <div class="store-stage-area">
           <div id="storePanel-pos" style="display:block;"></div>
           <div id="storePanel-kds" style="display:none;"></div>
@@ -102,158 +88,9 @@
         </div>
       </div>
     </section>
-
   </main>
 
-  <!-- ==================== 學生端底部固定懸浮「查看購物車」橫條 ==================== -->
-  <div id="floatingCartBar" class="floating-cart-bar" style="display:none;">
-    <div class="floating-cart-inner">
-      <button type="button" id="viewCartBtn" class="btn-view-cart" onclick="openCartModal()" disabled>
-        <span id="cartItemCountBadge" class="cart-count-pill">0 份</span>
-        <span>🛒 查看購物車・選取餐與預訂時間</span>
-        <span id="cartPreviewTotal" style="font-size:1.2rem; font-weight:900;">NT$ 0</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- ==================== 彈窗 A：購物車抽屜 Modal (`#cartModal`, z-index: 8000) ==================== -->
-  <div id="cartModal" class="modal-overlay bottom-sheet" onclick="if(event.target===this) closeCartModal()">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h2 style="font-size:1.3rem; font-weight:900; display:flex; align-items:center; gap:8px;">
-          <span>🛒</span> 確認購物車明細與預訂設定
-        </h2>
-        <button type="button" onclick="closeCartModal()" style="border:none; background:#F3F4F6; width:36px; height:36px; border-radius:50%; font-size:1.2rem; font-weight:900;">✕</button>
-      </div>
-      <div class="modal-body" style="background:var(--bg-page);" id="cartPageList"></div>
-      <div class="modal-footer">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <span style="font-size:1.05rem; font-weight:800;">應付總計金額</span>
-          <span id="cartModalTotal" style="font-size:1.55rem; font-weight:900; color:var(--red);">NT$ 0</span>
-        </div>
-        <button type="button" id="finalSubmitOrderBtn" class="btn-tip-action" style="width:100%; padding:15px; font-size:1.05rem;" onclick="submitStudentCartOrder()">
-          確認餐點並送出訂單
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== 彈窗 B：餐點客製化選項 Modal (`#optionsModal`, z-index: 9500) ==================== -->
-  <div id="optionsModal" class="modal-overlay" onclick="if(event.target===this) closeOptionsModal()">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div>
-          <h3 style="font-size:1.2rem; font-weight:900;" id="optModalTitle">餐點名稱</h3>
-          <div style="font-size:0.78rem; color:var(--text-secondary);" id="optModalSubtitle">基本價格</div>
-        </div>
-        <button type="button" onclick="closeOptionsModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-size:1.1rem; font-weight:900;">✕</button>
-      </div>
-      <div class="modal-body" id="optModalContent"></div>
-      <div class="modal-footer">
-        <button type="button" id="confirmOptionsBtn" class="btn-tip-action" style="width:100%; padding:14px; font-size:1rem;" onclick="confirmOptionsModal()">
-          確認加入
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== 彈窗 C1：POS 櫃檯實收金額「觸控數字鍵盤」視窗 (`#posCashNumpadModal`, z-index: 9600) ==================== -->
-  <div id="posCashNumpadModal" class="modal-overlay" onclick="if(event.target===this) closePosCashNumpadModal()">
-    <div class="modal-card" style="max-width:420px;">
-      <div class="modal-header">
-        <div>
-          <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">POS Touch Keypad</span>
-          <h3 style="font-size:1.15rem; font-weight:900;">🔢 點選輸入顧客實收金額</h3>
-        </div>
-        <button type="button" onclick="closePosCashNumpadModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
-      </div>
-      <div class="modal-body" id="posCashNumpadBody"></div>
-    </div>
-  </div>
-
-  <!-- ==================== 彈窗 C2：預訂/待收款訂單「觸控數字鍵盤收款」視窗 (`#orderPayModal`, z-index: 9600) ==================== -->
-  <div id="orderPayModal" class="modal-overlay" onclick="if(event.target===this) closeOrderPayModal()">
-    <div class="modal-card" style="max-width:440px;">
-      <div class="modal-header">
-        <div>
-          <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">Order Payment Collection</span>
-          <h3 style="font-size:1.15rem; font-weight:900;">💵 訂單收款與觸控找零</h3>
-        </div>
-        <button type="button" onclick="closeOrderPayModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
-      </div>
-      <div class="modal-body" id="orderPayModalBody"></div>
-    </div>
-  </div>
-
-  <!-- ==================== 彈窗 D：💚 LINE Login OAuth 2.1 官方帳號綁定中心 (`#lineBindModal`, z-index: 9600) ==================== -->
-  <div id="lineBindModal" class="modal-overlay" onclick="if(event.target===this) closeLineBindModal()">
-    <div class="modal-card" style="max-width:500px;">
-      <div class="modal-header" style="background:#06C755; color:#FFFFFF;">
-        <div>
-          <span style="font-size:0.7rem; font-weight:800; background:rgba(255,255,255,0.22); padding:2px 8px; border-radius:999px;">LINE Login OAuth 2.1 + Flex Message Push</span>
-          <h3 style="font-size:1.15rem; font-weight:900; margin-top:3px;">💬 綁定 LINE 接收取餐通知</h3>
-        </div>
-        <button type="button" onclick="closeLineBindModal()" style="border:none; background:rgba(255,255,255,0.22); color:#fff; width:32px; height:32px; border-radius:50%; font-weight:900;">✕</button>
-      </div>
-      <div class="modal-body">
-        <div id="lineBindStatusBanner"></div>
-
-        <div style="background:#F0FDF4; border:1.5px solid #86EFAC; border-radius:12px; padding:14px; margin-bottom:12px;">
-          <div style="font-size:0.88rem; font-weight:900; color:#065F46; margin-bottom:6px;">
-            📲 一鍵透過 LINE Login 授權綁定 (免 Webhook)
-          </div>
-          <p style="font-size:0.78rem; color:#047857; line-height:1.45; margin-bottom:10px;">
-            點擊下方按鈕將跳轉至 LINE 官方授權畫面，授權後系統會自動取得您的 <code>userId</code>。當餐點製作完成或預訂需繳費時，官方帳號將自動推播精美 Flex Message 通知卡給您！
-          </p>
-          <button type="button" class="btn-line" style="width:100%; justify-content:center; padding:11px; font-size:0.92rem;" onclick="startLineOAuthLogin()">
-            🚀 使用 LINE 帳號一鍵授權綁定
-          </button>
-        </div>
-
-        <div style="background:#F8FAFC; border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:12px;">
-          <div style="font-size:0.8rem; font-weight:900; color:var(--text-primary); margin-bottom:8px;">
-            📧 綁定 Email 免費無限量取餐通知 / 或手動填入 LINE User ID
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1.3fr; gap:8px; margin-bottom:8px;">
-            <div>
-              <label class="field-label">👤 顯示名稱</label>
-              <input type="text" id="lineInputName" class="select-input" placeholder="例如：王小明">
-            </div>
-            <div>
-              <label class="field-label">📧 Email 信箱 (免額度限制推薦)</label>
-              <input type="email" id="lineInputEmail" class="select-input" placeholder="student@scu.edu.tw">
-            </div>
-          </div>
-          <div style="margin-bottom:8px;">
-            <label class="field-label">🆔 LINE User ID (選填，U開頭 33 碼)</label>
-            <input type="text" id="lineInputId" class="select-input" placeholder="若已用上方按鈕授權會自動帶入">
-          </div>
-          <div style="display:flex; gap:8px;">
-            <button type="button" class="btn-line" style="flex:1; justify-content:center; padding:9px;" onclick="saveLineBindConfig()">
-              💾 儲存通知設定
-            </button>
-            <button type="button" class="filter-chip" onclick="requestBrowserNotificationPermission()">
-              🔔 開啟網頁震動響鈴
-            </button>
-          </div>
-        </div>
-
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <strong style="font-size:0.84rem; color:#166534;">📬 最近 LINE 推播紀錄匣</strong>
-          <button type="button" onclick="unbindLineAccount()" style="border:none; background:transparent; color:var(--text-muted); font-size:0.74rem; text-decoration:underline; cursor:pointer;">解除綁定</button>
-        </div>
-        <div id="lineLogsContainer" style="max-height:140px; overflow-y:auto;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== 彈窗 E：🔔 學生取餐手機震動與響鈴全螢幕強提醒 (`#pickupAlertModal`) ==================== -->
-  <div id="pickupAlertModal" class="modal-overlay" onclick="if(event.target===this) closePickupAlertModal()">
-    <div class="modal-card" style="max-width:400px; border:3px solid var(--green);">
-      <div class="modal-body" id="pickupAlertContent"></div>
-    </div>
-  </div>
-
+  <!-- 所有共用 Modal 與懸浮購物車皆由 app.js 內之 ensureSharedModalsMounted() 統一動態掛載 -->
   <script src="../app.js"></script>
 </body>
 </html>
