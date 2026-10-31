@@ -1,7 +1,7 @@
 /**
  * ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業專業版前端核心引擎 (Commercial v11.0)
- * Part 1 / 2：核心常數、正規化訂單 Schema、五階段狀態機、無後門資安鎖、離線 SVG 防偽憑證
+ * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業專業版前端核心引擎 (Commercial v12.0 Enterprise)
+ * Part 1 / 2：核心常數、正規化訂單 Schema、五階段狀態機、後端 HMAC Session 驗證、真實動態排隊演算法
  * ============================================================================
  */
 
@@ -47,7 +47,7 @@ function getDumplingSetOptions() {
 const DEFAULT_STORES = [
   {
     id: 'S01', campus: '雙溪校區', name: '趙班長海苔飯捲', category: '人氣韓式・飯捲',
-    isOpen: true, maxCapacityPer15Min: 18, baseQueueOffset: 0, avgPrepMinutes: 5, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 18, baseQueueOffset: 0, basePrepMinutes: 4, avgPrepMinutes: 4, cutleryPrice: 1,
     promoMode: 'none', promoText: '無優惠', promoDiscount: 0, predictedDailyOrders: 240, rating: 4.9,
     menus: [
       { id: 'M01', category: '韓式海苔飯捲', name: '特製韓式泡菜燒肉飯捲', price: 75, tag: '🔥 必點人氣', soldOut: false, image: '', options: getStdRiceOptions() },
@@ -59,11 +59,11 @@ const DEFAULT_STORES = [
   },
   {
     id: 'S02', campus: '雙溪校區', name: '雙溪-丼物園', category: '日式蓋飯・烏龍麵',
-    isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, avgPrepMinutes: 4, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, basePrepMinutes: 5, avgPrepMinutes: 5, cutleryPrice: 1,
     promoMode: 'gift', promoText: '🎁 離峰分流招待：免費溫泉蛋乙顆', promoDiscount: 0, predictedDailyOrders: 165, rating: 4.7,
     menus: [
       { id: 'M04', category: '炙燒日式丼飯', name: '炙燒起司牛五花丼', price: 115, tag: '🔥 招牌必點', soldOut: false, image: '', options: getStdRiceOptions() },
-      { id: 'M05', category: '炙燒日式丼飯', name: '黃金厚切豬排滑蛋丼', price: 120, tag: '⭐ 飽足首選', soldOut: false, image: '', options: getStdRiceOptions() },
+      { id: 'M05', category: '黃金厚切豬排滑蛋丼', name: '黃金厚切豬排滑蛋丼', price: 120, tag: '⭐ 飽足首選', soldOut: false, image: '', options: getStdRiceOptions() },
       { id: 'M06', category: '讚岐烏龍麵', name: '讚岐胡麻冷烏龍麵', price: 95, tag: '⚡ 3分極速出餐', soldOut: false, image: '', options: getStdNoodleOptions() },
       { id: 'M19', category: '單點炸物與茶飲', name: '日式唐揚炸雞 (5塊)', price: 55, tag: '🍗 人氣單點', soldOut: false, image: '', options: { '調味粉': { type: 'radio', choices: [['原味胡椒', 0], ['日式七味粉', 0], ['泰式酸辣醬', 5]] } } },
       { id: 'M23', category: '單點炸物與茶飲', name: '靜岡無糖玄米綠茶', price: 30, tag: '🍵 解膩首選', soldOut: false, image: '', options: {} }
@@ -71,7 +71,7 @@ const DEFAULT_STORES = [
   },
   {
     id: 'S03', campus: '雙溪校區', name: '雙溪-四海遊龍', category: '鍋貼水餃・麵食',
-    isOpen: true, maxCapacityPer15Min: 25, baseQueueOffset: 0, avgPrepMinutes: 5, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 25, baseQueueOffset: 0, basePrepMinutes: 6, avgPrepMinutes: 6, cutleryPrice: 1,
     promoMode: 'none', promoText: '無優惠', promoDiscount: 0, predictedDailyOrders: 210, rating: 4.6,
     menus: [
       { id: 'M07', category: '手工鍋貼與水餃', name: '招牌脆皮鍋貼 (10顆)', price: 70, tag: '🔥 經典酥脆', soldOut: false, image: '', options: getDumplingSetOptions() },
@@ -83,7 +83,7 @@ const DEFAULT_STORES = [
   },
   {
     id: 'S04', campus: '雙溪校區', name: '蒲家廚房', category: '中式特餐・便當',
-    isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, avgPrepMinutes: 4, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, basePrepMinutes: 4, avgPrepMinutes: 4, cutleryPrice: 1,
     promoMode: 'discount', promoText: '💰 離峰分流折抵：現折 $10 元', promoDiscount: 10, predictedDailyOrders: 150, rating: 4.8,
     menus: [
       { id: 'M09', category: '人氣特餐便當', name: '秘製椒麻雞腿飯 (含3配菜)', price: 110, tag: '🔥 銷量冠軍', soldOut: false, image: '', options: getStdRiceOptions() },
@@ -93,7 +93,7 @@ const DEFAULT_STORES = [
   },
   {
     id: 'S05', campus: '城中校區', name: '城中-咖哩食堂', category: '熟成咖哩・炸物',
-    isOpen: true, maxCapacityPer15Min: 15, baseQueueOffset: 0, avgPrepMinutes: 5, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 15, baseQueueOffset: 0, basePrepMinutes: 5, avgPrepMinutes: 5, cutleryPrice: 1,
     promoMode: 'none', promoText: '無優惠', promoDiscount: 0, predictedDailyOrders: 195, rating: 4.8,
     menus: [
       { id: 'M11', category: '熟成濃咖哩', name: '唐揚炸雞熟成咖哩飯', price: 125, tag: '🔥 排隊人氣', soldOut: false, image: '', options: getStdRiceOptions() },
@@ -103,7 +103,7 @@ const DEFAULT_STORES = [
   },
   {
     id: 'S06', campus: '城中校區', name: '城中-吳葉食堂', category: '精緻台式簡餐',
-    isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, avgPrepMinutes: 4, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, basePrepMinutes: 6, avgPrepMinutes: 6, cutleryPrice: 1,
     promoMode: 'gift', promoText: '🎁 離峰分流招待：免費招牌冰紅茶', promoDiscount: 0, predictedDailyOrders: 145, rating: 4.9,
     menus: [
       { id: 'M13', category: '主廚鐵板與簡餐', name: '蔥爆牛肉鐵板簡餐', price: 115, tag: '🔥 現點現做', soldOut: false, image: '', options: getStdRiceOptions() },
@@ -113,7 +113,7 @@ const DEFAULT_STORES = [
   },
   {
     id: 'S07', campus: '城中校區', name: '大熊涼麵 X 吃好食堂', category: '手工涼麵・味噌湯',
-    isOpen: true, maxCapacityPer15Min: 25, baseQueueOffset: 0, avgPrepMinutes: 3, cutleryPrice: 1,
+    isOpen: true, maxCapacityPer15Min: 25, baseQueueOffset: 0, basePrepMinutes: 2, avgPrepMinutes: 2, cutleryPrice: 1,
     promoMode: 'points', promoText: '⚡ 離峰分流回饋：雙倍點數', promoDiscount: 0, predictedDailyOrders: 160, rating: 4.7,
     menus: [
       { id: 'M16', category: '手工現拌涼麵', name: '川味麻辣雞絲涼麵 (大)', price: 75, tag: '⚡ 2分秒取', soldOut: false, image: '', options: getStdNoodleOptions() },
@@ -122,17 +122,38 @@ const DEFAULT_STORES = [
   }
 ];
 
-// ==================== 日期、時間清洗器與真實營業時段產生器 ====================
+// ==================== 商業級重構 10：標準 Asia/Taipei 日期與跨語系安全時間計算器 ====================
+function getTaipeiDateObj(sourceDate = new Date()) {
+  try {
+    const str = sourceDate.toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
+    return new Date(str);
+  } catch (e) {
+    return new Date(sourceDate.getTime());
+  }
+}
+
 function getTodayDateStr() {
-  const d = new Date();
+  const d = getTaipeiDateObj();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function getTaipeiTimeHHMMSS(sourceDate = new Date()) {
+  const d = getTaipeiDateObj(sourceDate);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+function getTaipeiTimeHHMM(sourceDate = new Date()) {
+  return getTaipeiTimeHHMMSS(sourceDate).slice(0, 5);
+}
+
 function getDateOffsetStr(offsetDays) {
-  const d = new Date();
+  const d = getTaipeiDateObj();
   d.setDate(d.getDate() + offsetDays);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -164,9 +185,10 @@ function normalizeDateStr(val) {
   }
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
-    const yyyy = parsed.getFullYear();
-    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
-    const dd = String(parsed.getDate()).padStart(2, '0');
+    const td = getTaipeiDateObj(parsed);
+    const yyyy = td.getFullYear();
+    const mm = String(td.getMonth() + 1).padStart(2, '0');
+    const dd = String(td.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   }
   return getTodayDateStr();
@@ -175,13 +197,19 @@ function normalizeDateStr(val) {
 function normalizeTimeStr(val, fallback = '12:15') {
   if (!val) return fallback;
   const str = String(val).trim();
+  const isPM = /下午|PM|pm/.test(str);
+  const isAM = /上午|AM|am/.test(str);
   const m = str.match(/(\d{1,2}):(\d{2})/);
   if (m) {
-    return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
+    let hh = parseInt(m[1], 10);
+    if (isPM && hh < 12) hh += 12;
+    if (isAM && hh === 12) hh = 0;
+    if (hh === 24) hh = 0;
+    return `${String(hh).padStart(2, '0')}:${m[2]}`;
   }
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
-    return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`;
+    return getTaipeiTimeHHMM(parsed);
   }
   return fallback;
 }
@@ -192,7 +220,7 @@ function calcDiffDaysFromToday(targetDateStr) {
   const targetParts = normalizeDateStr(targetDateStr).split('-').map(Number);
   const t0 = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]).getTime();
   const t1 = new Date(targetParts[0], targetParts[1] - 1, targetParts[2]).getTime();
-  return Math.max(0, Math.round((t1 - t0) / 86400000));
+  return Math.round((t1 - t0) / 86400000);
 }
 
 function parseTimeMinutesFromNow(pickupDateStr, pickupTimeStr) {
@@ -200,22 +228,23 @@ function parseTimeMinutesFromNow(pickupDateStr, pickupTimeStr) {
   const cleanDate = normalizeDateStr(pickupDateStr);
   if (cleanDate !== todayStr) {
     const diffDays = calcDiffDaysFromToday(cleanDate);
-    return diffDays > 0 ? diffDays * 1440 : -1440;
+    return diffDays * 1440;
   }
   const cleanTime = normalizeTimeStr(pickupTimeStr, '');
   if (!cleanTime) return 0;
   const m = cleanTime.match(/(\d{1,2}):(\d{2})/);
   if (!m) return 0;
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(m[1], 10), parseInt(m[2], 10), 0);
-  return Math.round((target.getTime() - now.getTime()) / 60000);
+  const now = getTaipeiDateObj();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const targetMins = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  return targetMins - nowMins;
 }
 
 function getValidPickupTimeSlots(targetDateStr) {
   const cleanDate = normalizeDateStr(targetDateStr);
   const todayStr = getTodayDateStr();
   const isToday = cleanDate === todayStr;
-  const now = new Date();
+  const now = getTaipeiDateObj();
   const minAllowedMinutesOfDay = isToday ? (now.getHours() * 60 + now.getMinutes() + 25) : 0;
 
   const slots = [];
@@ -242,25 +271,43 @@ function getOrderElapsedMinutes(order) {
   }
   const todayStr = getTodayDateStr();
   if (normalizeDateStr(order.pickupDate) !== todayStr) return 0;
-  const m = String(order.createdAt || '').match(/(\d{1,2}):(\d{2})/);
+  const cleanCreated = normalizeTimeStr(order.createdAt || '', '');
+  const m = cleanCreated.match(/(\d{1,2}):(\d{2})/);
   if (!m) return 0;
-  const now = new Date();
-  const created = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(m[1], 10), parseInt(m[2], 10), 0);
-  const diff = Math.floor((now.getTime() - created.getTime()) / 60000);
+  const now = getTaipeiDateObj();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const createdMins = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  const diff = nowMins - createdMins;
   return diff >= 0 ? diff : 0;
 }
 
-// ==================== 商業級重構 3 & 4：正規化訂單資料模型 (Order Schema) 與五階段狀態機 ====================
+// ==================== 商業級重構 3：防偽核銷碼與正規化訂單資料模型 (Order Schema) ====================
 /**
- * 正規化單一品項結構：將菜名 baseName 與客製化規格 selections 完全分離儲存，同時相容舊資料解析
+ * 計算訂單確定性 6 碼防偽核銷碼（若伺服器已核發 HMAC verificationCode 則優先採用伺服器版本）
  */
+function generateClientFallbackVerificationCode(orderId, pickupNumber, finalTotal) {
+  const raw = `${orderId || ''}|${pickupNumber || ''}|${finalTotal || 0}`;
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = '';
+  let val = (h >>> 0);
+  for (let i = 0; i < 6; i++) {
+    code += alphabet[val % alphabet.length];
+    val = Math.floor(val / alphabet.length) ^ (val >>> 3);
+  }
+  return code;
+}
+
 function normalizeOrderItemEntry(rawItem) {
   if (!rawItem) return { id: 'M00', baseName: '未知餐點', name: '未知餐點', price: 0, qty: 1, selections: {}, isGift: false };
   const rawNameStr = String(rawItem.name || rawItem.baseName || '餐點');
   let baseName = rawItem.baseName ? String(rawItem.baseName).trim() : rawNameStr.split(' [')[0].trim();
   let selections = (rawItem.selections && typeof rawItem.selections === 'object') ? { ...rawItem.selections } : {};
 
-  // 若舊版資料把 [主食份量:大盛加飯] 塞在 name 裡，自動萃取回結構化 selections
   if (Object.keys(selections).length === 0 && rawNameStr.includes(' [')) {
     const bracketMatch = rawNameStr.match(/\[(.+?)\]/);
     if (bracketMatch) {
@@ -320,9 +367,6 @@ function evaluateOrderLifecycleStatus(order) {
   return '製作中';
 }
 
-/**
- * 正規化整筆訂單 Schema：拆離 dineType, customerNote, cashReceived, changeGiven, manualDiscount, structuredItems
- */
 function sanitizeIncomingOrder(o) {
   if (!o) return o;
 
@@ -334,7 +378,6 @@ function sanitizeIncomingOrder(o) {
   }
   const structuredItems = rawItems.map(normalizeOrderItemEntry);
 
-  // 相容舊版被塞進 studentName 的字串拼接資料並拆離成獨立結構欄位
   const legacyStr = String(o.studentName || '');
   let dineType = o.dineType || (legacyStr.includes('內用') ? '內用自取' : '外帶自取');
   let customerNote = o.customerNote !== undefined ? String(o.customerNote) : '';
@@ -363,6 +406,9 @@ function sanitizeIncomingOrder(o) {
     ? Math.max(0, Number(o.finalTotal))
     : Math.max(0, subtotal + cutleryFee - discount - manualDiscount);
 
+  const verificationCode = String(o.verificationCode || '').trim() ||
+    generateClientFallbackVerificationCode(o.orderId, o.pickupNumber, finalTotal);
+
   const normalized = {
     ...o,
     pickupDate: cleanDate,
@@ -370,6 +416,7 @@ function sanitizeIncomingOrder(o) {
     paymentDeadline: o.paymentDeadline ? normalizeDateStr(o.paymentDeadline) : '',
     dineType,
     customerNote,
+    customerPhone: String(o.customerPhone || '').trim(),
     cashReceived,
     changeGiven,
     subtotal,
@@ -378,9 +425,9 @@ function sanitizeIncomingOrder(o) {
     manualDiscount,
     manualDiscountReason: String(o.manualDiscountReason || ''),
     finalTotal,
+    verificationCode,
     structuredItems,
     itemsJson: JSON.stringify(structuredItems),
-    // 產生乾淨的人類可讀摘要供舊版相容顯示
     studentName: formatCleanOrderMetaSummary(dineType, Boolean(o.needCutlery), cutleryFee, customerNote)
   };
 
@@ -395,9 +442,6 @@ function formatCleanOrderMetaSummary(dineType, needCutlery, cutleryFee, customer
   return parts.join(' ・ ');
 }
 
-/**
- * 自動排程引擎：將距離取餐時間 ≤ 25 分鐘之「已接單待排程」預訂單自動升格為「製作中」並排入 KDS 廚房佇列
- */
 function autoPromoteScheduledOrdersToCooking() {
   let changed = false;
   state.orders.forEach(o => {
@@ -417,10 +461,10 @@ function autoPromoteScheduledOrdersToCooking() {
   }
 }
 
-// ==================== 商業級重構 9：預設乾淨生產環境 (Clean Production State) 與沙盒工具 ====================
+// ==================== 預設乾淨生產環境與沙盒工具 ====================
 function loadLocalStores() {
   try {
-    const saved = localStorage.getItem('mealflow_stores_v11');
+    const saved = localStorage.getItem('mealflow_stores_v12');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -431,13 +475,13 @@ function loadLocalStores() {
 
 function saveLocalStores(stores) {
   try {
-    localStorage.setItem('mealflow_stores_v11', JSON.stringify(stores));
+    localStorage.setItem('mealflow_stores_v12', JSON.stringify(stores));
   } catch (e) {}
 }
 
 function loadMyOrderHistoryIds() {
   try {
-    const raw = localStorage.getItem('mealflow_my_order_ids_v11');
+    const raw = localStorage.getItem('mealflow_my_order_ids_v12') || localStorage.getItem('mealflow_my_order_ids_v11');
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) return arr;
@@ -453,19 +497,16 @@ function addOrderToMyHistory(orderId) {
   if (!state.myOrderHistoryIds.includes(orderId)) {
     state.myOrderHistoryIds.unshift(orderId);
   }
-  state.myOrderHistoryIds = state.myOrderHistoryIds.slice(0, 30);
+  state.myOrderHistoryIds = state.myOrderHistoryIds.slice(0, 35);
   try {
     sessionStorage.setItem('mealflow_my_created_order_id', orderId);
-    localStorage.setItem('mealflow_my_order_ids_v11', JSON.stringify(state.myOrderHistoryIds));
+    localStorage.setItem('mealflow_my_order_ids_v12', JSON.stringify(state.myOrderHistoryIds));
   } catch (e) {}
 }
 
-/**
- * 正式生產環境預設為空陣列（同步雲端真實資料），不再主動塞入假訂單污染帳務！
- */
 function loadCachedOrders() {
   try {
-    const raw = localStorage.getItem('mealflow_orders_v11');
+    const raw = localStorage.getItem('mealflow_orders_v12') || localStorage.getItem('mealflow_orders_v11');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -478,19 +519,16 @@ function loadCachedOrders() {
 
 function saveCachedOrders(orders) {
   try {
-    localStorage.setItem('mealflow_orders_v11', JSON.stringify(orders.slice(0, 200)));
+    localStorage.setItem('mealflow_orders_v12', JSON.stringify(orders.slice(0, 200)));
   } catch (e) {}
 }
 
-/**
- * 沙盒展示工具：僅在店員於「店務設定 ➔ 測試沙盒」主動點擊時才載入模擬數據，並可一鍵徹底清除
- */
 function buildSandboxDemoOrders() {
   const today = getTodayDateStr();
   const yesterday = getDateOffsetStr(-1);
   const minus2 = getDateOffsetStr(-2);
   const tomorrow = getDateOffsetStr(1);
-  const recentTimeStr = new Date(Date.now() - 3 * 60000).toLocaleTimeString('zh-TW', { hour12: false });
+  const recentTimeStr = getTaipeiTimeHHMMSS(new Date(Date.now() - 3 * 60000));
 
   return [
     {
@@ -504,8 +542,8 @@ function buildSandboxDemoOrders() {
       subtotal: 280, cutleryFee: 0, needCutlery: false, discount: 0, manualDiscount: 0, finalTotal: 280,
       promoApplied: '🎁 離峰分流招待：免費溫泉蛋乙顆',
       pickupTimeSlot: '⚡ 立即製作 (約5分)', paymentMethod: 'LINE Pay', status: '製作中',
-      isReservation: false, pickupDate: today, pickupTime: recentTimeStr.slice(0, 5), customerPhone: '',
-      paymentStatus: '已付款', transactionId: 'LP-202610319821', notifyCount: 0,
+      isReservation: false, pickupDate: today, pickupTime: recentTimeStr.slice(0, 5), customerPhone: '0912345678',
+      paymentStatus: '已付款 (沙盒授權)', transactionId: 'SBX-LP-982104', notifyCount: 0,
       isDivertedOrder: true, isSeedSample: true, createdAt: recentTimeStr, createdAtTs: Date.now() - 180000, cookingStartedAtTs: Date.now() - 180000
     },
     {
@@ -532,8 +570,8 @@ function buildSandboxDemoOrders() {
       subtotal: 220, cutleryFee: 0, needCutlery: false, discount: 0, manualDiscount: 0, finalTotal: 220,
       promoApplied: '🎁 離峰分流招待：免費溫泉蛋乙顆',
       pickupTimeSlot: '⚡ 立即製作 (約5分)', paymentMethod: '街口支付', status: '已完成',
-      isReservation: false, pickupDate: today, pickupTime: '10:45', customerPhone: '',
-      paymentStatus: '已付款', transactionId: 'JK-202610315512', notifyCount: 1,
+      isReservation: false, pickupDate: today, pickupTime: '10:45', customerPhone: '0988111222',
+      paymentStatus: '已付款', transactionId: 'SBX-JK-551209', notifyCount: 1,
       isDivertedOrder: true, isSeedSample: true, createdAt: '10:42:00'
     },
     {
@@ -644,34 +682,26 @@ function saveLineLogs(logs) {
   } catch (e) {}
 }
 
-// ==================== 商業級重構 1：SHA-256 雜湊驗證與權限 Token 管理 ====================
-// 預設雜湊對應管理碼 (不在前端儲存任何明文密碼)
-const DEFAULT_PIN_SHA256 = '2926a2731f4b312c086829f8f972f939e141620f242c57011e8724b5314380c5';
-
-async function computeSha256Hex(text) {
-  const str = String(text || '');
-  if (window.crypto && window.crypto.subtle) {
-    try {
-      const buf = new TextEncoder().encode('MEALFLOW_SALT_V11_' + str);
-      const hashBuf = await window.crypto.subtle.digest('SHA-256', buf);
-      return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch (e) {}
+// ==================== 商業級重構 1：零前端密碼與後端簽發時效性 HMAC Session Token ====================
+/**
+ * 前端絕不儲存任何 Salt、絕不儲存預設密碼 Hash、絕不進行本地密碼比對！
+ * 所有 PIN 驗證一律送交後端 verifyMerchantPin 驗證並取得具備時效性 (TTL) 的 HMAC SessionToken。
+ */
+function isMerchantSessionValidNow() {
+  const token = state.merchantAuthToken || sessionStorage.getItem('mealflow_merchant_session_v12') || '';
+  const exp = Number(state.merchantSessionExpiresAt || sessionStorage.getItem('mealflow_merchant_exp_v12') || 0);
+  if (!token || !token.includes('.') || exp <= Date.now()) {
+    return false;
   }
-  // 離線或非 HTTPS 環境之確定性雜湊備援
-  let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
-  for (let i = 0, ch; i < str.length; i++) {
-    ch = str.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+  return true;
 }
 
 function getMerchantAuthPayload() {
+  if (!isMerchantSessionValidNow()) {
+    return { merchantAuthToken: '' };
+  }
   return {
-    merchantAuthToken: state.merchantAuthToken || sessionStorage.getItem('mealflow_merchant_token_v11') || ''
+    merchantAuthToken: state.merchantAuthToken || sessionStorage.getItem('mealflow_merchant_session_v12') || ''
   };
 }
 
@@ -681,6 +711,8 @@ let state = {
   trackingOrderId: null,
   myCreatedOrderId: sessionStorage.getItem('mealflow_my_created_order_id') || null,
   myOrderHistoryIds: loadMyOrderHistoryIds(),
+  savedCustomerPhone: localStorage.getItem('mealflow_saved_customer_phone_v12') || '',
+  studentLookupQuery: '',
   campus: '雙溪校區',
   filter: 'ALL',
   stores: loadLocalStores(),
@@ -693,11 +725,12 @@ let state = {
   lastLocalStoreConfigUpdateTs: 0,
   knownStoreOrderIds: new Set(),
 
-  // 商業級資安：店家後台授權 Token（未解鎖前絕不渲染後台 DOM）
-  isMerchantUnlocked: Boolean(sessionStorage.getItem('mealflow_merchant_token_v11')),
-  merchantAuthToken: sessionStorage.getItem('mealflow_merchant_token_v11') || '',
-  merchantPinHash: localStorage.getItem('mealflow_merchant_pin_hash_v11') || '',
+  // 商業級資安：後端核發之具備時效性 HMAC Session Token
+  merchantAuthToken: sessionStorage.getItem('mealflow_merchant_session_v12') || '',
+  merchantSessionExpiresAt: Number(sessionStorage.getItem('mealflow_merchant_exp_v12') || 0),
+  isMerchantUnlocked: false,
   pinInputBuffer: '',
+  isVerifyingPin: false,
 
   // 學生點餐與結帳狀態
   selectedStoreId: null,
@@ -710,7 +743,7 @@ let state = {
   checkoutTimeMode: 'NOW',
   checkoutReserveDate: getTodayDateStr(),
   checkoutReserveTime: '12:15',
-  checkoutPhone: '',
+  checkoutPhone: localStorage.getItem('mealflow_saved_customer_phone_v12') || '',
   checkoutPayMethod: 'LINE Pay',
   checkoutNote: '',
   pendingPaymentResolver: null,
@@ -724,7 +757,7 @@ let state = {
   merchantStoreId: 'S02',
   kdsSoundEnabled: true,
 
-  // 店家櫃檯 POS 狀態（含商業級手動折讓與招待功能）
+  // 店家櫃檯 POS 狀態
   posSelectedCategory: '全部',
   posCart: [],
   posDineType: '內用自取',
@@ -739,13 +772,15 @@ let state = {
   posPayment: '現場現金',
   posCashReceived: '',
 
-  // 訂單管理 (KDS) 分天檢視與收款狀態
+  // 訂單管理 (KDS) 分天檢視、快速核銷碼與收款攔截狀態
   kdsSelectedDate: getTodayDateStr(),
   kdsStatusFilter: 'ALL',
   kdsSearchQuery: '',
+  kdsVerifyCodeInput: '',
   payingOrderId: null,
   payingOrderMethod: '現場現金',
   payingOrderCashInput: '',
+  completeAfterPay: false, // 當點擊「完成結單」遇到未付款時，收完款自動完成結單
   printingOrderId: null,
 
   // 營運分析時間維度：'DAY' | 'WEEK' | 'MONTH'
@@ -765,7 +800,9 @@ let state = {
   pollTimer: null
 };
 
-// ==================== 工具、離線備援單號與加權工作量佇列演算法 ====================
+state.isMerchantUnlocked = isMerchantSessionValidNow();
+
+// ==================== 工具、視覺憑證與商業級動態排隊等待時間演算法 ====================
 function escapeHtml(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;')
@@ -783,7 +820,7 @@ function generateOrderToken() {
 }
 
 /**
- * 商業級重構 8：純前端確定性 SVG 數位憑證條碼產生器（100% 離線可用，無外部 API 依賴）
+ * 數位防偽視覺識別章 (搭配 6 碼 HMAC Verification Code 供櫃檯快速核銷)
  */
 function generateDeterministicQrSvg(dataString, size = 96) {
   const str = String(dataString || 'MEALFLOW');
@@ -838,9 +875,6 @@ function generateDeterministicQrSvg(dataString, size = 96) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${gridSize} ${gridSize}" width="${size}" height="${size}" shape-rendering="crispEdges" style="display:block; border-radius:6px;">${rects}</svg>`;
 }
 
-/**
- * 離線備援流水號（連線狀態下優先由後端 LockService 權威核發單號，離線才使用本地推進）
- */
 function generateOfflineFallbackPickupNumber(storeId, pickupDateStr) {
   const targetDate = normalizeDateStr(pickupDateStr);
   const storeNumMatch = String(storeId || 'S01').match(/(\d+)/);
@@ -895,38 +929,71 @@ function isOrderActivelyCookingNow(order) {
   return ordDate === todayStr;
 }
 
+/**
+ * 商業級重構 9：真實餐點複雜度與佇列工作量計算（考慮品項類型、客製化加料數與已下鍋消化速率）
+ */
+function calcItemComplexityWeight(item) {
+  if (!item || item.isGift || Number(item.price) === 0) return 0.15;
+  const name = String(item.baseName || item.name || '');
+  const selCount = item.selections ? Object.keys(item.selections).length : 0;
+  const customFactor = Math.min(0.35, selCount * 0.08);
+
+  if (name.includes('茶') || name.includes('飲') || name.includes('豆漿')) {
+    return 0.25 + customFactor;
+  }
+  if (name.includes('湯') || name.includes('豆腐') || name.includes('起司條') || name.includes('炸雞')) {
+    return 0.55 + customFactor;
+  }
+  if (name.includes('鐵板') || name.includes('鍋貼') || name.includes('水餃') || name.includes('炸蝦') || name.includes('豬排') || name.includes('漢堡排')) {
+    return 1.25 + customFactor;
+  }
+  if (name.includes('涼麵')) {
+    return 0.65 + customFactor;
+  }
+  return 1.0 + customFactor;
+}
+
 function calcOrderRemainingWorkloadUnits(order, maxCapPer15Min) {
   if (!isOrderActivelyCookingNow(order)) return 0;
   const items = Array.isArray(order.structuredItems) ? order.structuredItems : [];
 
-  let totalMainPortions = 0;
+  let totalWeightedUnits = 0;
   items.forEach(it => {
-    if (it.isGift || Number(it.price) === 0) return;
     const q = Math.max(1, Number(it.qty) || 1);
-    const weight = Number(it.price) <= 45 ? 0.5 : 1.0;
-    totalMainPortions += q * weight;
+    const w = calcItemComplexityWeight(it);
+    totalWeightedUnits += q * w;
   });
 
-  const rawUnits = Math.max(1, 1 + Math.max(0, totalMainPortions - 1) * 0.65);
+  // 同單多份具備批次下鍋規模效應，但仍忠實反映複雜度
+  const rawUnits = Math.max(0.6, 0.7 + totalWeightedUnits * 0.75);
   const elapsedMin = getOrderElapsedMinutes(order);
   const muPerMin = Math.max(5, Number(maxCapPer15Min) || 20) / 15;
-  const digestedUnits = Math.min(rawUnits * 0.85, elapsedMin * muPerMin * 0.5);
+  const digestedUnits = Math.min(rawUnits * 0.85, elapsedMin * muPerMin * 0.6);
 
-  return Math.max(0.25, Number((rawUnits - digestedUnits).toFixed(1)));
+  return Math.max(0.25, Number((rawUnits - digestedUnits).toFixed(2)));
 }
 
-function calcPrepMinutes(activeWorkloadUnits, maxCap) {
+/**
+ * 商業級重構 9：結合店家真實基礎出餐時間 (basePrepMinutes)、15 分鐘產能上限與排隊擁塞指數的平滑預估時間
+ */
+function calcPrepMinutes(activeWorkloadUnits, maxCap, storeBasePrepMin = 4) {
   const capPer15 = Math.max(5, Number(maxCap) || 20);
   const L = Math.max(0, Number(activeWorkloadUnits) || 0);
-  const mu = capPer15 / 15;
-  const rho = Math.min(0.95, L / capPer15);
+  const muPerMin = capPer15 / 15; // 每分鐘平均可完成的工作量單位
+  const baseMin = Math.max(2, Number(storeBasePrepMin) || 4);
 
-  const baseServiceMin = Math.max(2.5, 1 / mu);
-  const queueWaitMin = L / mu;
-  const congestionTerm = rho >= 0.65 ? ((rho * rho) / (2 * (1 - rho))) * (1 / mu) * 0.45 : 0;
+  if (L <= 0.1) {
+    return Math.round(baseMin);
+  }
 
-  const totalWait = Math.round(baseServiceMin + queueWaitMin + congestionTerm);
-  return Math.max(3, Math.min(45, totalWait));
+  const rho = Math.min(0.96, L / capPer15);
+  // 前方佇列消化時間 (考慮雙爐/雙線並行係數 0.78)
+  const queueWaitMin = (L / muPerMin) * 0.78;
+  // 高負載非線性擁塞延遲 (Kingman M/G/1 近似修正)
+  const congestionPenalty = rho >= 0.6 ? ((rho * rho) / (1.05 - rho)) * 1.35 : 0;
+
+  const totalWait = Math.round(baseMin + queueWaitMin + congestionPenalty);
+  return Math.max(baseMin, Math.min(50, totalWait));
 }
 
 function calcAiUtilityScore(store) {
@@ -941,32 +1008,25 @@ function calcAiUtilityScore(store) {
   return Math.max(35, Math.min(99, Math.round(raw)));
 }
 
+/**
+ * 商業級重構 6：徹底拔除「根據菜名關鍵字強行塞回預設飯量/辣度」的菜單自動污染 Bug！
+ * 100% 尊重資料庫與店家的真實設定，店家把選項清空就是空物件 {}。
+ */
 function normalizeMenuItem(m, fallbackStoreId) {
   let opts = m.options || {};
   if (typeof opts === 'string') {
     try { opts = JSON.parse(opts); } catch (e) { opts = {}; }
   }
-  if (opts && opts['選擇顆數']) delete opts['選擇顆數'];
-
-  let nameStr = String(m.name || '招牌餐點');
-  let priceNum = Number(m.price) || 0;
-  let catStr = String(m.category || m.cat || '招牌主餐').replace(/\(八方計價模式\)|\(按顆計價\)/g, '').trim();
-
-  if ((nameStr.includes('鍋貼') || nameStr.includes('水餃')) && priceNum <= 15) {
-    priceNum = priceNum * 10;
-    if (!nameStr.includes('顆')) nameStr += ' (10顆)';
+  if (!opts || typeof opts !== 'object' || Array.isArray(opts)) {
+    opts = {};
+  }
+  if (opts['__soldOut'] !== undefined) {
+    delete opts['__soldOut'];
   }
 
-  const hasOpts = opts && Object.keys(opts).length > 0;
-  if (!hasOpts && m.autoDefaultOptions !== false) {
-    if (nameStr.includes('鍋貼') || nameStr.includes('水餃')) {
-      opts = getDumplingSetOptions();
-    } else if (nameStr.includes('麵') || nameStr.includes('抄手')) {
-      opts = getStdNoodleOptions();
-    } else if (nameStr.includes('飯') || nameStr.includes('丼') || nameStr.includes('便當') || nameStr.includes('咖哩') || nameStr.includes('簡餐') || nameStr.includes('特餐')) {
-      opts = getStdRiceOptions();
-    }
-  }
+  const nameStr = String(m.name || '招牌餐點').trim();
+  const priceNum = Math.max(0, Number(m.price) || 0);
+  const catStr = String(m.category || m.cat || '招牌主餐').replace(/\(八方計價模式\)|\(按顆計價\)/g, '').trim();
 
   return {
     id: String(m.id || `M-${Date.now()}-${Math.floor(Math.random() * 1000)}`),
@@ -974,7 +1034,7 @@ function normalizeMenuItem(m, fallbackStoreId) {
     category: catStr || '招牌主餐',
     name: nameStr,
     price: priceNum,
-    tag: String(m.tag || '').replace(/按顆計價/g, '經典必點'),
+    tag: String(m.tag || '').trim(),
     soldOut: Boolean(m.soldOut),
     image: String(m.image || ''),
     options: opts
@@ -991,6 +1051,8 @@ function enrichStoresAndAi() {
 
     const isOpen = s.isOpen !== false;
     const cap = Math.max(5, Number(s.maxCapacityPer15Min) || 20);
+    const storeBasePrep = Number(s.basePrepMinutes) || (defStore ? defStore.basePrepMinutes : 4);
+
     const activeOrdersList = state.orders.filter(o => o.storeId === s.id && isOrderActivelyCookingNow(o));
     const liveCookingCount = activeOrdersList.length;
     const liveWorkloadUnits = activeOrdersList.reduce((sum, o) => sum + calcOrderRemainingWorkloadUnits(o, cap), 0);
@@ -1005,13 +1067,14 @@ function enrichStoresAndAi() {
     else if (loadPct >= 85) loadState = 'FULL';
     else if (loadPct >= 50) loadState = 'MODERATE';
 
-    const avgPrep = calcPrepMinutes(activeWorkload, cap);
+    const avgPrep = calcPrepMinutes(activeWorkload, cap, storeBasePrep);
     const cutleryPrice = s.cutleryPrice !== undefined && s.cutleryPrice !== '' ? Math.max(0, Number(s.cutleryPrice)) : 1;
 
     const obj = {
       ...s,
       isOpen,
       maxCapacityPer15Min: cap,
+      basePrepMinutes: storeBasePrep,
       activeOrders: activeDisplayCount,
       activeWorkload,
       liveCookingCount,
@@ -1030,7 +1093,7 @@ function enrichStoresAndAi() {
   ['雙溪校區', '城中校區'].forEach(campus => {
     const campusStores = state.stores.filter(s => s.campus === campus && s.isOpen !== false);
     const congested = campusStores
-      .filter(s => s.loadState === 'FULL' || s.avgPrepMinutes >= 18)
+      .filter(s => s.loadState === 'FULL' || s.avgPrepMinutes >= 16)
       .sort((a, b) => b.loadPercentage - a.loadPercentage || b.avgPrepMinutes - a.avgPrepMinutes);
     const availableWithPromo = campusStores
       .filter(s => s.loadState === 'FREE' && s.promoMode !== 'none')
@@ -1124,7 +1187,7 @@ function triggerStudentPickupAlert(order) {
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(`🔔 取餐號 #${order.pickupNumber} 餐點好囉！`, {
-        body: `【${order.storeName}】請直接前往櫃檯出示畫面領取餐點。`,
+        body: `【${order.storeName}】防偽核銷碼 ${order.verificationCode || ''}，請前往櫃檯領取餐點。`,
         tag: `pickup-${order.orderId}-${order.notifyCount || 1}`
       });
     }
@@ -1140,10 +1203,11 @@ function triggerStudentPickupAlert(order) {
           📳 手機震動與響鈴呼叫中（第 ${order.notifyCount || 1} 次呼叫）
         </div>
         <h2 style="font-size:1.45rem; font-weight:900; color:var(--text-primary); margin-bottom:4px;">您的餐點已經做好囉！</h2>
-        <p style="font-size:0.88rem; color:var(--text-secondary); margin-bottom:14px;">請前往「<strong>${escapeHtml(order.storeName)}</strong>」櫃檯自取</p>
+        <p style="font-size:0.88rem; color:var(--text-secondary); margin-bottom:14px;">請前往「<strong>${escapeHtml(order.storeName)}</strong>」櫃檯出示核銷碼自取</p>
         <div style="background:var(--green-bg); border:2px solid var(--green); border-radius:16px; padding:16px; margin-bottom:16px;">
           <div style="font-size:0.78rem; color:var(--green); font-weight:800;">櫃檯自取號碼牌</div>
           <div style="font-size:3.4rem; font-weight:900; color:var(--green); line-height:1.1;">#${escapeHtml(order.pickupNumber)}</div>
+          <div style="margin-top:6px; font-size:0.84rem; font-weight:900; color:#065F46;">🛡️ 防偽核銷碼：${escapeHtml(order.verificationCode || '')}</div>
         </div>
         <button type="button" class="btn-tip-action" style="width:100%; background:var(--green); padding:14px; font-size:1rem;" onclick="closePickupAlertModal()">
           👌 我知道了，立即前往櫃檯領取
@@ -1177,7 +1241,7 @@ function requestBrowserNotificationPermission() {
 }
 
 async function pushLineNotification(eventType, title, message, order = null) {
-  const nowStr = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  const nowStr = getTaipeiTimeHHMMSS();
   const targetUserId = (order && order.lineUserId) || state.lineProfile.lineUserId || '';
   const targetEmail = (order && order.customerEmail) || state.lineProfile.email || '';
   const storeObj = order ? state.stores.find(s => s.id === order.storeId) : state.stores.find(s => s.id === state.selectedStoreId);
@@ -1383,7 +1447,7 @@ function renderLineLogsInModal() {
   `).join('');
 }
 
-// ==================== 共用 Modal 動態掛載引擎（含交班 Z-Report 與安全鎖） ====================
+// ==================== 共用 Modal 動態掛載引擎 ====================
 function ensureSharedModalsMounted() {
   if (!document.getElementById('toast')) {
     document.body.insertAdjacentHTML('afterbegin', `<div id="toast" class="toast"></div>`);
@@ -1476,7 +1540,7 @@ function ensureSharedModalsMounted() {
         <div class="modal-card" style="max-width:440px;">
           <div class="modal-header">
             <div>
-              <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">櫃檯訂單收款結帳</span>
+              <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">櫃檯訂單收款與防呆結帳</span>
               <h3 style="font-size:1.15rem; font-weight:900;">💵 訂單收款與觸控找零</h3>
             </div>
             <button type="button" onclick="closeOrderPayModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
@@ -1607,7 +1671,7 @@ function ensureSharedModalsMounted() {
         <div class="modal-card" style="max-width:420px;">
           <div id="onlinePaymentHeader" class="payment-gateway-header linepay">
             <div>
-              <div style="font-size:0.72rem; font-weight:800; opacity:0.9;">第三方行動支付安全收銀台</div>
+              <div style="font-size:0.72rem; font-weight:800; opacity:0.9;">行動支付收銀授權（測試沙盒／櫃檯核銷碼）</div>
               <h3 style="font-size:1.2rem; font-weight:900;" id="onlinePaymentTitle">LINE Pay 付款確認</h3>
             </div>
             <button type="button" onclick="cancelOnlinePaymentModal()" style="border:none; background:rgba(255,255,255,0.22); color:#fff; width:32px; height:32px; border-radius:50%; font-weight:900;">✕</button>
@@ -1621,11 +1685,11 @@ function ensureSharedModalsMounted() {
   if (!document.getElementById('myOrdersDrawerModal')) {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="myOrdersDrawerModal" class="modal-overlay bottom-sheet" onclick="if(event.target===this) closeMyOrdersDrawer()">
-        <div class="modal-card" style="height:80vh;">
+        <div class="modal-card" style="height:84vh;">
           <div class="modal-header">
             <div>
-              <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">支援跨店多筆訂單同時追蹤</span>
-              <h3 style="font-size:1.2rem; font-weight:900;">🧾 我的點餐紀錄與號碼牌匣</h3>
+              <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">支援跨裝置手機末 3 碼／單號找回</span>
+              <h3 style="font-size:1.2rem; font-weight:900;">🧾 我的點餐紀錄與跨裝置訂單查詢</h3>
             </div>
             <button type="button" onclick="closeMyOrdersDrawer()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
           </div>
@@ -1641,7 +1705,7 @@ function ensureSharedModalsMounted() {
         <div class="modal-card" style="max-width:390px;">
           <div class="modal-header" style="background:#0F172A; color:#FFFFFF;">
             <div>
-              <span style="font-size:0.72rem; font-weight:800; color:#38BDF8;">店務管理權限保護</span>
+              <span style="font-size:0.72rem; font-weight:800; color:#38BDF8;">雲端 HMAC 時效簽章驗證</span>
               <h3 style="font-size:1.15rem; font-weight:900;">🔒 店家營運管理授權驗證</h3>
             </div>
             <button type="button" onclick="exitStoreToStudentOrder()" style="border:none; background:rgba(255,255,255,0.18); color:#fff; padding:4px 10px; border-radius:8px; font-size:0.74rem; font-weight:800;">返回點餐頁</button>
@@ -1778,6 +1842,8 @@ function isUserEditingFormInput() {
   }
   if (document.getElementById('menuEditModal')?.classList.contains('open')) return true;
   if (document.getElementById('onlinePaymentModal')?.classList.contains('open')) return true;
+  if (document.getElementById('orderPayModal')?.classList.contains('open')) return true;
+  if (document.getElementById('posCashNumpadModal')?.classList.contains('open')) return true;
   return false;
 }
 
@@ -1795,12 +1861,11 @@ window.addEventListener('DOMContentLoaded', () => {
   checkLineOAuthCallbackOnLoad();
   syncCloud(false);
 
-  // 每秒更新電子取餐憑證上的防截圖動態時鐘
   if (state.liveClockTimer) clearInterval(state.liveClockTimer);
   state.liveClockTimer = setInterval(() => {
     const clockEl = document.getElementById('ticketAntiFraudClock');
     if (clockEl) {
-      clockEl.textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+      clockEl.textContent = getTaipeiTimeHHMMSS();
     }
   }, 1000);
 });
@@ -1834,7 +1899,7 @@ function applyCloudBundle(data) {
         customLineClientId: cloudStore.customLineClientId || (localMatch ? localMatch.customLineClientId : '') || '',
         customLineClientSecret: '',
         customLineChannelToken: '',
-        menus: (Array.isArray(cloudStore.menus) && cloudStore.menus.length > 0)
+        menus: Array.isArray(cloudStore.menus)
           ? cloudStore.menus.map(cm => {
               const localMenu = localMatch && Array.isArray(localMatch.menus)
                 ? localMatch.menus.find(lm => String(lm.id) === String(cm.id))
@@ -1926,6 +1991,8 @@ function applyCloudBundle(data) {
 }
 
 async function syncCloud(showSuccessToast = false) {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
   setSyncState('syncing', '同步中...');
   try {
     const res = await fetch(GAS_URL, {
@@ -1950,6 +2017,9 @@ async function syncCloud(showSuccessToast = false) {
           } else {
             renderMerchantView();
           }
+        }
+        if (!showSuccessToast) {
+          window.scrollTo(scrollX, scrollY);
         }
       } else if (state.routeMode === 'store' && state.isMerchantUnlocked) {
         updateMerchantHeaderBadgesOnly();
@@ -1991,7 +2061,7 @@ function ensureHeaderExtraControls() {
   if (lineBtn && !document.getElementById('headerMyOrdersBtn')) {
     lineBtn.insertAdjacentHTML('beforebegin', `
       <button type="button" id="headerMyOrdersBtn" class="btn-my-orders" style="display:none;" onclick="openMyOrdersDrawer()">
-        <span>🧾 我的訂單</span>
+        <span>🧾 我的訂單 / 查單</span>
         <span id="headerMyOrdersCount" class="my-orders-count-badge" style="display:none;">0</span>
       </button>
     `);
@@ -2029,6 +2099,7 @@ function applyRouteView() {
   ensureSharedModalsMounted();
   ensureHeaderExtraControls();
   enrichStoresAndAi();
+  state.isMerchantUnlocked = isMerchantSessionValidNow();
   updateBodyScrollLock();
   updateHeaderMyOrdersBadge();
 
@@ -2125,10 +2196,98 @@ function setFilter(f) {
   renderStudentOrderExperience();
 }
 
-// ==================== 學生「我的訂單匣」與商業級無後門「店家安全 PIN 碼鎖」 ====================
+// ==================== 商業級重構 8：學生「我的訂單匣」與跨裝置「手機末 3 碼／取餐號／訂單編號查詢」 ====================
 function getMyTrackedOrdersList() {
   const idSet = new Set([state.trackingOrderId, state.myCreatedOrderId, ...state.myOrderHistoryIds].filter(Boolean));
-  return state.orders.filter(o => idSet.has(o.orderId));
+  const savedPhoneDigits = String(state.savedCustomerPhone || '').replace(/\D/g, '');
+  return state.orders.filter(o => {
+    if (idSet.has(o.orderId)) return true;
+    if (savedPhoneDigits.length >= 3) {
+      const ordPhone = String(o.customerPhone || '').replace(/\D/g, '');
+      if (ordPhone && ordPhone.endsWith(savedPhoneDigits.slice(-3))) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+async function searchOrderAcrossDevices(rawQuery) {
+  const q = String(rawQuery ?? document.getElementById('drawerOrderSearchInput')?.value ?? state.studentLookupQuery ?? '').trim();
+  if (!q) {
+    showToast('🔍 請輸入手機號碼末 3 碼、4 位數取餐號或 ORD 訂單編號！');
+    return;
+  }
+  state.studentLookupQuery = q;
+
+  // 先在本地已同步之訂單池比對
+  const cleanQ = q.toUpperCase().replace(/^#/, '');
+  const matchedLocal = state.orders.filter(o => {
+    const ordId = String(o.orderId || '').toUpperCase();
+    const pickNum = String(o.pickupNumber || '').toUpperCase();
+    const phoneDigits = String(o.customerPhone || '').replace(/\D/g, '');
+    const verCode = String(o.verificationCode || '').toUpperCase();
+    if (ordId === cleanQ || ordId.endsWith(cleanQ)) return true;
+    if (pickNum === cleanQ) return true;
+    if (verCode === cleanQ) return true;
+    if (/^\d{3,10}$/.test(cleanQ) && phoneDigits && phoneDigits.endsWith(cleanQ)) return true;
+    return false;
+  });
+
+  if (matchedLocal.length > 0) {
+    matchedLocal.forEach(m => addOrderToMyHistory(m.orderId));
+    updateHeaderMyOrdersBadge();
+    if (document.getElementById('myOrdersDrawerModal')?.classList.contains('open')) {
+      openMyOrdersDrawer();
+    }
+    if (matchedLocal.length === 1) {
+      closeMyOrdersDrawer();
+      navigateToOrderTicket(matchedLocal[0].orderId);
+      showToast(`🎉 已找回訂單 #${matchedLocal[0].pickupNumber}！`);
+    } else {
+      openMyOrdersDrawer();
+      showToast(`🎉 共找回 ${matchedLocal.length} 筆符合的訂單！`);
+    }
+    return;
+  }
+
+  // 若本地快取無此單，直接呼叫後端 lookupOrders 跨裝置檢索
+  try {
+    showToast('⏳ 正在向雲端資料庫檢索您的訂單...');
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'lookupOrders',
+        query: cleanQ
+      })
+    });
+    const data = await res.json();
+    const foundList = (data && Array.isArray(data.orders)) ? data.orders.map(sanitizeIncomingOrder) : [];
+    if (foundList.length > 0) {
+      foundList.forEach(fo => {
+        if (!state.orders.some(x => x.orderId === fo.orderId)) {
+          state.orders.unshift(fo);
+        }
+        addOrderToMyHistory(fo.orderId);
+      });
+      saveCachedOrders(state.orders);
+      updateHeaderMyOrdersBadge();
+      if (foundList.length === 1) {
+        closeMyOrdersDrawer();
+        navigateToOrderTicket(foundList[0].orderId);
+        showToast(`🎉 從雲端成功找回訂單 #${foundList[0].pickupNumber}！`);
+      } else {
+        openMyOrdersDrawer();
+        showToast(`🎉 從雲端成功找回 ${foundList.length} 筆訂單！`);
+      }
+    } else {
+      showToast('⚠️ 查無符合此手機末碼或單號的訂單，請確認輸入是否正確');
+    }
+  } catch (e) {
+    showToast('⚠️ 目前處於離線模式，僅能查詢本機快取訂單');
+  }
 }
 
 function openMyOrdersDrawer() {
@@ -2138,17 +2297,29 @@ function openMyOrdersDrawer() {
   if (!body || !modal) return;
 
   const list = getMyTrackedOrdersList();
+  const searchBarHtml = `
+    <div style="background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:14px; padding:12px; margin-bottom:14px; box-shadow:var(--shadow-sm);">
+      <div style="font-size:0.8rem; font-weight:900; color:var(--text-primary); margin-bottom:6px;">
+        🔍 跨裝置 / 無痕視窗找回訂單（輸入手機末 3 碼、取餐號 #2001 或防偽碼）
+      </div>
+      <div style="display:flex; gap:8px;">
+        <input type="search" id="drawerOrderSearchInput" class="select-input" style="flex:1;" placeholder="例：678 或 2003 或 ORD-..." value="${escapeHtml(state.studentLookupQuery)}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices(this.value)">
+        <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 16px;" onclick="searchOrderAcrossDevices()">找回訂單</button>
+      </div>
+    </div>
+  `;
+
   if (list.length === 0) {
-    body.innerHTML = `
-      <div style="text-align:center; padding:48px 16px;">
+    body.innerHTML = searchBarHtml + `
+      <div style="text-align:center; padding:36px 16px;">
         <div style="font-size:2.8rem; margin-bottom:8px;">🧾</div>
-        <h4 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">目前尚無點餐紀錄</h4>
-        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">當您送出訂單後，無論點了幾家不同餐廳，都能在此隨時切換查看取餐號碼牌！</p>
+        <h4 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">目前本機尚無綁定之點餐紀錄</h4>
+        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">若您剛才使用 LINE 內建瀏覽器或無痕視窗點餐，請直接在上方輸入「手機末 3 碼」或「取餐號碼」即可跨裝置找回訂單！</p>
         <button type="button" class="btn-tip-action" onclick="closeMyOrdersDrawer()">前往挑選餐點</button>
       </div>
     `;
   } else {
-    body.innerHTML = list.map(o => {
+    body.innerHTML = searchBarHtml + list.map(o => {
       const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
       const itemStr = items.map(i => `${i.baseName || i.name} ×${i.qty || 1}`).join('、');
       const isReady = o.status === '可取餐';
@@ -2162,6 +2333,7 @@ function openMyOrdersDrawer() {
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:1.35rem; font-weight:950; color:${isReady ? 'var(--green)' : 'var(--brand-dark)'};">#${escapeHtml(o.pickupNumber)}</span>
               <span style="font-weight:900; font-size:0.95rem;">${escapeHtml(o.storeName)}</span>
+              <span style="font-family:monospace; font-size:0.72rem; font-weight:900; background:#EEF2FF; color:#312E81; padding:2px 6px; border-radius:6px;">核銷碼:${escapeHtml(o.verificationCode || '')}</span>
             </div>
             <span style="font-size:0.74rem; font-weight:900; padding:3px 10px; border-radius:999px; background:${isCancelled ? '#FEE2E2' : isReady ? '#DCFCE7' : isCooking ? '#FEF3C7' : isScheduled ? '#DBEAFE' : '#E2E8F0'}; color:${isCancelled ? '#DC2626' : isReady ? '#047857' : isCooking ? '#B45309' : isScheduled ? '#1E40AF' : '#475569'};">
               ${isReady ? '🔔 可取餐！' : escapeHtml(o.status)}
@@ -2183,17 +2355,17 @@ function closeMyOrdersDrawer() {
   document.getElementById('myOrdersDrawerModal')?.classList.remove('open');
 }
 
-/**
- * 商業級資安閘門：移除免密後門與明文提示，並在未授權時徹底清空後台 DOM
- */
+// ==================== 商業級重構 1：後端權威 PIN 驗證與 HMAC Session Token 管理 ====================
 function checkMerchantSecurityGate() {
   const modal = document.getElementById('storePinModal');
   if (!modal) return;
-  if (state.isMerchantUnlocked && state.merchantAuthToken) {
+  if (isMerchantSessionValidNow()) {
+    state.isMerchantUnlocked = true;
     modal.classList.remove('open');
     return;
   }
   state.isMerchantUnlocked = false;
+  state.merchantAuthToken = '';
   state.pinInputBuffer = '';
   renderStorePinModal(false);
   modal.classList.add('open');
@@ -2206,25 +2378,26 @@ function renderStorePinModal(hasError = false) {
   body.innerHTML = `
     <div style="text-align:center;">
       <p style="font-size:0.84rem; color:var(--text-secondary); font-weight:700;">
-        請輸入 4 位數店務管理授權碼以解鎖收銀與控單系統
+        ${state.isVerifyingPin ? '⏳ 正在向雲端伺服器請求 HMAC 簽章授權...' : '請輸入 4 ~ 8 位數店務管理授權碼以向伺服器申請時效憑證'}
       </p>
       <div class="pin-dots-row ${hasError ? 'shake-error' : ''}">
         ${[0, 1, 2, 3].map(i => `<div class="pin-dot-box ${i < len ? 'filled' : ''}">${i < len ? '●' : ''}</div>`).join('')}
       </div>
       <div class="pos-numpad-grid" style="margin-bottom:8px;">
-        ${['1','2','3','4','5','6','7','8','9'].map(k => `<button type="button" class="pos-numpad-key" onclick="tapStorePinKey('${k}')">${k}</button>`).join('')}
-        <button type="button" class="pos-numpad-key clear" onclick="tapStorePinKey('C')">清除</button>
-        <button type="button" class="pos-numpad-key" onclick="tapStorePinKey('0')">0</button>
-        <button type="button" class="pos-numpad-key back" onclick="tapStorePinKey('BACK')">⌫</button>
+        ${['1','2','3','4','5','6','7','8','9'].map(k => `<button type="button" class="pos-numpad-key" ${state.isVerifyingPin ? 'disabled' : ''} onclick="tapStorePinKey('${k}')">${k}</button>`).join('')}
+        <button type="button" class="pos-numpad-key clear" ${state.isVerifyingPin ? 'disabled' : ''} onclick="tapStorePinKey('C')">清除</button>
+        <button type="button" class="pos-numpad-key" ${state.isVerifyingPin ? 'disabled' : ''} onclick="tapStorePinKey('0')">0</button>
+        <button type="button" class="pos-numpad-key back" ${state.isVerifyingPin ? 'disabled' : ''} onclick="tapStorePinKey('BACK')">⌫</button>
       </div>
       <div style="font-size:0.74rem; color:var(--text-muted); margin-top:6px;">
-        🔒 未通過授權前，系統不會載入或渲染任何店務後台節點
+        🛡️ 密碼由雲端伺服器驗算並簽發 8 小時時效 HMAC Session Token，前端不存任何明文或雜湊
       </div>
     </div>
   `;
 }
 
 async function tapStorePinKey(key) {
+  if (state.isVerifyingPin) return;
   if (key === 'C') state.pinInputBuffer = '';
   else if (key === 'BACK') state.pinInputBuffer = state.pinInputBuffer.slice(0, -1);
   else if (state.pinInputBuffer.length < 4 && /^\d$/.test(String(key))) {
@@ -2235,26 +2408,44 @@ async function tapStorePinKey(key) {
 
   if (state.pinInputBuffer.length === 4) {
     const candidatePin = state.pinInputBuffer;
-    const inputHash = await computeSha256Hex(candidatePin);
-    const defaultTargetHash = await computeSha256Hex('8888');
-    const savedTargetHash = state.merchantPinHash || defaultTargetHash;
+    state.isVerifyingPin = true;
+    renderStorePinModal(false);
 
-    // 先比對雜湊或向後端驗證權限
-    let isAuthorized = (inputHash === savedTargetHash);
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'verifyMerchantPin',
+          pin: candidatePin,
+          storeId: state.merchantStoreId
+        })
+      });
+      const data = await res.json();
 
-    if (isAuthorized) {
-      state.isMerchantUnlocked = true;
-      state.merchantAuthToken = inputHash;
-      try {
-        sessionStorage.setItem('mealflow_merchant_token_v11', inputHash);
-      } catch (e) {}
-      document.getElementById('storePinModal')?.classList.remove('open');
-      applyRouteView();
-      showToast('🔓 店務管理權限驗證通過');
-    } else {
-      try { if ('vibrate' in navigator) navigator.vibrate([120, 80, 120]); } catch (e) {}
-      showToast('❌ 授權碼錯誤，請重新輸入');
+      if (data && data.success && data.sessionToken) {
+        const expiresAt = Number(data.expiresAt) || (Date.now() + 8 * 3600 * 1000);
+        state.isMerchantUnlocked = true;
+        state.merchantAuthToken = data.sessionToken;
+        state.merchantSessionExpiresAt = expiresAt;
+        try {
+          sessionStorage.setItem('mealflow_merchant_session_v12', data.sessionToken);
+          sessionStorage.setItem('mealflow_merchant_exp_v12', String(expiresAt));
+        } catch (e) {}
+        state.isVerifyingPin = false;
+        state.pinInputBuffer = '';
+        document.getElementById('storePinModal')?.classList.remove('open');
+        applyRouteView();
+        showToast('🔓 雲端 HMAC 時效憑證核發通過！');
+      } else {
+        throw new Error((data && data.message) || '授權碼驗證失敗');
+      }
+    } catch (err) {
+      state.isVerifyingPin = false;
       state.pinInputBuffer = '';
+      try { if ('vibrate' in navigator) navigator.vibrate([120, 80, 120]); } catch (e) {}
+      showToast(`❌ ${err.message || '授權碼錯誤或無法連線至驗證伺服器'}`);
       renderStorePinModal(true);
     }
   }
@@ -2263,15 +2454,18 @@ async function tapStorePinKey(key) {
 function lockMerchantSession() {
   state.isMerchantUnlocked = false;
   state.merchantAuthToken = '';
+  state.merchantSessionExpiresAt = 0;
   state.pinInputBuffer = '';
-  try { sessionStorage.removeItem('mealflow_merchant_token_v11'); } catch (e) {}
-  // 立即清空所有後台 DOM 節點，防止透過開發者工具檢視或操作
+  try {
+    sessionStorage.removeItem('mealflow_merchant_session_v12');
+    sessionStorage.removeItem('mealflow_merchant_exp_v12');
+  } catch (e) {}
   ['pos', 'kds', 'analytics', 'settings'].forEach(m => {
     const p = document.getElementById(`storePanel-${m}`);
     if (p) p.innerHTML = '';
   });
   applyRouteView();
-  showToast('🔒 已安全鎖定並卸載店家後台畫面');
+  showToast('🔒 已安全登出並銷毀時效憑證');
 }
 
 function exitStoreToStudentOrder() {
@@ -2279,7 +2473,7 @@ function exitStoreToStudentOrder() {
   navigateToOrderMenu();
 }
 
-// ==================== 第三方行動支付授權收銀台 ====================
+// ==================== 商業級重構 2：誠實標示之「行動支付收銀授權（測試沙盒／櫃檯核銷碼）」 ====================
 function requestOnlinePaymentGateway(payMethod, amount, storeName) {
   return new Promise((resolve) => {
     ensureSharedModalsMounted();
@@ -2288,43 +2482,46 @@ function requestOnlinePaymentGateway(payMethod, amount, storeName) {
     const title = document.getElementById('onlinePaymentTitle');
     const body = document.getElementById('onlinePaymentBody');
     if (!modal || !body) {
-      resolve({ approved: true, transactionId: 'TX-' + Date.now() });
+      resolve({ approved: true, transactionId: 'SBX-' + Date.now() });
       return;
     }
 
     const isLine = payMethod === 'LINE Pay';
     header.className = 'payment-gateway-header ' + (isLine ? 'linepay' : 'jkopay');
-    title.innerText = isLine ? '💚 LINE Pay 安全授權收銀台' : '❤️ 街口支付 安全授權收銀台';
+    title.innerText = isLine ? '💚 LINE Pay 行動支付收銀授權 (沙盒)' : '❤️ 街口支付 行動支付收銀授權 (沙盒)';
 
-    const mockTxNo = (isLine ? 'LP-' : 'JK-') + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.floor(100000 + Math.random() * 900000);
+    const sandboxAuthNo = (isLine ? 'SBX-LP-' : 'SBX-JK-') + getTodayDateStr().replace(/-/g, '') + '-' + Math.floor(100000 + Math.random() * 900000);
 
     body.innerHTML = `
       <div style="text-align:center; padding:8px 4px;">
+        <div style="display:inline-block; background:#FEF3C7; color:#92400E; border:1px solid #F59E0B; font-size:0.74rem; font-weight:900; padding:3px 10px; border-radius:999px; margin-bottom:8px;">
+          🧪 行動支付收銀授權（測試沙盒／櫃檯核銷碼模式）
+        </div>
         <div style="font-size:0.8rem; font-weight:800; color:var(--text-secondary);">特約商店：東吳學餐 — ${escapeHtml(storeName)}</div>
         <div style="font-size:2.2rem; font-weight:950; color:var(--text-primary); margin:6px 0;">NT$ ${amount}</div>
         <div style="display:inline-block; background:#F1F5F9; color:#475569; font-size:0.74rem; font-weight:800; padding:3px 10px; border-radius:999px; margin-bottom:14px;">
-          交易序號預覽：${mockTxNo}
+          沙盒授權序號：${sandboxAuthNo}
         </div>
 
         <div style="background:#F8FAFC; border:1.5px dashed #CBD5E1; border-radius:14px; padding:14px; margin-bottom:16px; text-align:left; font-size:0.8rem; color:var(--text-secondary);">
           <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span>扣款方式</span>
-            <strong style="color:var(--text-primary);">${escapeHtml(payMethod)} 綁定帳戶</strong>
+            <span>支付管道</span>
+            <strong style="color:var(--text-primary);">${escapeHtml(payMethod)} (測試沙盒預授權)</strong>
           </div>
           <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span>伺服器端計價驗算</span>
-            <strong style="color:var(--green);">✓ 金額受後端權威保護</strong>
+            <span>伺服器白名單計價驗算</span>
+            <strong style="color:var(--green);">✓ 嚴格核對 Menus 資料表單價與必選規格</strong>
           </div>
           <div style="display:flex; justify-content:space-between;">
-            <span>雲端權威流水號核發</span>
-            <strong style="color:var(--text-primary);">付款後由伺服器互斥鎖核發單號</strong>
+            <span>防偽核銷憑證</span>
+            <strong style="color:var(--indigo);">送出後由伺服器簽發 6 碼 HMAC 核銷碼</strong>
           </div>
         </div>
 
         <div style="display:flex; gap:10px;">
-          <button type="button" class="btn-outline" style="flex:1;" onclick="cancelOnlinePaymentModal()">取消付款</button>
-          <button type="button" id="confirmGatewayPayBtn" class="btn-tip-action" style="flex:2; background:${isLine ? '#00C300' : '#E60012'}; padding:13px; font-size:0.96rem;" onclick="approveOnlinePaymentModal('${mockTxNo}')">
-            🔒 確認授權付款 (NT$ ${amount})
+          <button type="button" class="btn-outline" style="flex:1;" onclick="cancelOnlinePaymentModal()">取消授權</button>
+          <button type="button" id="confirmGatewayPayBtn" class="btn-tip-action" style="flex:2; background:${isLine ? '#00C300' : '#E60012'}; padding:13px; font-size:0.94rem;" onclick="approveOnlinePaymentModal('${sandboxAuthNo}')">
+            🔒 確認沙盒授權並送單 (NT$ ${amount})
           </button>
         </div>
       </div>
@@ -2339,7 +2536,7 @@ function approveOnlinePaymentModal(txId) {
   const btn = document.getElementById('confirmGatewayPayBtn');
   if (btn) {
     btn.disabled = true;
-    btn.innerText = '⏳ 正在驗證交易授權碼...';
+    btn.innerText = '⏳ 正在產生沙盒授權憑證...';
   }
   setTimeout(() => {
     document.getElementById('onlinePaymentModal')?.classList.remove('open');
@@ -2348,7 +2545,7 @@ function approveOnlinePaymentModal(txId) {
       state.pendingPaymentResolver = null;
       r({ approved: true, transactionId: txId });
     }
-  }, 420);
+  }, 300);
 }
 
 function cancelOnlinePaymentModal() {
@@ -2370,11 +2567,11 @@ function renderPortalView() {
   box.innerHTML = `
     <div style="text-align:center; padding: 14px 0 22px;">
       <div style="display:inline-block; background:#EEF2FF; color:#4338CA; font-weight:800; font-size:0.78rem; padding:4px 12px; border-radius:999px; margin-bottom:10px;">
-        🧠 雲端權威單號核發 × 五階段廚房排程 × KDS 備料匯總 × 交班日結 Z-Report
+        🛡️ HMAC 時效憑證 × 伺服器白名單計價 × KDS 規格拆解備料看板 × 跨裝置查單
       </div>
       <h1 style="font-size:1.55rem; font-weight:900; margin-bottom:8px;">東吳學餐智慧點餐與營運管制塔</h1>
       <p style="font-size:0.86rem; color:var(--text-secondary); max-width:640px; margin:0 auto;">
-        整合<strong>學生線上掃碼點餐 (<code>/order/</code>)</strong>、<strong>防偽動態電子取餐憑證</strong>，以及<strong>全螢幕平板 POS + KDS 備料匯總看板 + 交班對帳後台 (<code>/store/</code>)</strong>。
+        整合<strong>學生線上掃碼點餐 (<code>/order/</code>)</strong>、<strong>伺服器簽章 6 碼防偽核銷憑證</strong>，以及<strong>全螢幕平板 POS + KDS 規格拆解備料看板 + 收款防呆攔截後台 (<code>/store/</code>)</strong>。
       </p>
     </div>
 
@@ -2391,7 +2588,7 @@ function renderPortalView() {
               /scu.meal/order/
             </code>
             <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:14px;">
-              多輪氣泡式選餐顧問、小額預訂免跑櫃檯、行動支付安全收銀台、離線防偽 SVG 條碼與動態時鐘憑證。
+              支援跨裝置「手機末 3 碼／取餐號查詢訂單」、動態產能候餐預估、多輪選餐顧問與 6 碼防偽核銷憑證。
             </p>
           </div>
           <div class="btn-tip-action" style="text-align:center; width:100%;">進入學生掃碼點餐 ➔</div>
@@ -2405,12 +2602,12 @@ function renderPortalView() {
               <span style="font-size:2.2rem;">🖥️</span>
               <span class="wait-pill" style="background:#E2E8F0; color:#0F172A;">商用全螢幕平板收銀</span>
             </div>
-            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">店家全螢幕收銀・KDS 備料・財務日結</h2>
+            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">店家全螢幕收銀・KDS 規格備料・財務日結</h2>
             <code style="display:block; font-size:0.76rem; color:#0F172A; background:#F1F5F9; padding:5px 8px; border-radius:6px; margin-bottom:10px;">
               /scu.meal/store/
             </code>
             <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:14px;">
-              支援櫃檯手動折讓/招待、錢箱交班日結單 (Z-Report)、KDS 單品備料匯總看板、80mm 熱感應出單與真實損益分析。
+              具備雲端 HMAC 時效 Session 保護、KDS 客製規格拆解匯總、未收款結單強制防呆攔截與交班 Z-Report。
             </p>
           </div>
           <div class="btn-tip-action" style="text-align:center; width:100%; background:#0F172A; box-shadow:none;">進入店家營運中心 ➔</div>
@@ -2461,12 +2658,14 @@ function renderStudentOrderExperience() {
   const activeBannerBox = document.getElementById('activeOrderFloatingBanner');
   if (activeBannerBox) {
     const myActiveOrders = getMyTrackedOrdersList().filter(o => o.status !== '已完成' && !String(o.status).includes('已取消'));
+    let bannerHtml = '';
+
     if (myActiveOrders.length > 0) {
       const primaryOrder = myActiveOrders.find(o => o.status === '可取餐') || myActiveOrders[0];
       const isReady = primaryOrder.status === '可取餐';
       const isScheduled = primaryOrder.status === '已接單待排程' || primaryOrder.status === '待付款確認';
       const extraCount = myActiveOrders.length - 1;
-      activeBannerBox.innerHTML = `
+      bannerHtml += `
         <div class="active-order-strip ${isReady ? 'ready' : ''}" onclick="${extraCount > 0 ? 'openMyOrdersDrawer()' : `navigateToOrderTicket('${escapeHtml(primaryOrder.orderId)}')`}">
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="strip-num">#${escapeHtml(primaryOrder.pickupNumber)}</span>
@@ -2476,16 +2675,25 @@ function renderStudentOrderExperience() {
                 ${extraCount > 0 ? `<span style="background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:999px; font-size:0.74rem; margin-left:4px;">共 ${myActiveOrders.length} 筆進行中</span>` : ''}
               </div>
               <div style="font-size:0.74rem; opacity:0.9;">
-                ${escapeHtml(primaryOrder.storeName)} ・ 點此查看專屬防偽號碼牌憑證
+                ${escapeHtml(primaryOrder.storeName)} ・ 核銷碼 ${escapeHtml(primaryOrder.verificationCode || '')} ・ 點此查看憑證
               </div>
             </div>
           </div>
           <span style="font-weight:800; font-size:0.82rem;">${extraCount > 0 ? '開啟訂單匣 ➔' : '查看取餐單 ➔'}</span>
         </div>
       `;
-    } else {
-      activeBannerBox.innerHTML = '';
     }
+
+    // 商業級重構 8：首頁直接提供跨裝置 / 無痕模式「輸入手機末 3 碼／取餐號查詢訂單」捷徑列
+    bannerHtml += `
+      <div class="order-lookup-bar">
+        <span style="font-size:0.8rem; font-weight:900; color:var(--text-primary); white-space:nowrap;">🔎 查詢/找回已點訂單：</span>
+        <input type="search" id="inlineOrderLookupInput" class="select-input" style="flex:1; min-width:170px; padding:6px 10px; font-size:0.82rem;" placeholder="輸入手機末 3 碼、取餐號 (如 2003) 或防偽碼..." value="${escapeHtml(state.studentLookupQuery)}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices(this.value)">
+        <button type="button" class="filter-chip active" style="padding:6px 12px; font-size:0.8rem;" onclick="searchOrderAcrossDevices(document.getElementById('inlineOrderLookupInput')?.value)">🔍 立即查單</button>
+      </div>
+    `;
+
+    activeBannerBox.innerHTML = bannerHtml;
   }
 
   const directoryBlock = document.getElementById('storeDirectoryBlock');
@@ -2666,7 +2874,7 @@ function renderInStoreMenuCards() {
         </div>
         <div>
           <h2 style="font-size:1.35rem; font-weight:900;">${escapeHtml(store.name)}</h2>
-          <div style="font-size:0.82rem; color:var(--text-secondary);">${escapeHtml(store.campus)} ・ ${escapeHtml(store.category)} ・ ⭐ ${store.rating} ・ 櫃檯叫號自取</div>
+          <div style="font-size:0.82rem; color:var(--text-secondary);">${escapeHtml(store.campus)} ・ ${escapeHtml(store.category)} ・ ⭐ ${store.rating} ・ 基礎出餐 ${store.basePrepMinutes} 分</div>
         </div>
       </div>
 
@@ -2972,8 +3180,8 @@ function setCheckoutMode(field, val) {
 }
 /**
  * ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業專業版前端核心引擎 (Commercial v11.0)
- * Part 2 / 2：權威單號核發、合規預訂規則、KDS 備料匯總看板、POS 折讓與 Z-Report、真實財務分析
+ * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業專業版前端核心引擎 (Commercial v12.0 Enterprise)
+ * Part 2 / 2：權威單號與防偽碼核發、KDS 規格拆解備料看板、未收款結單防呆攔截、快速核銷、真實財務分析
  * ============================================================================
  */
 
@@ -3007,7 +3215,6 @@ function updateCartUI() {
     }
   }
 
-  // 商業級重構 4：一般小額預訂 (< $500) 支援線上支付或取餐付現；大額團訂 (>= $500) 需線上支付或提前付訂確認
   const isLargeOrderReserve = isReserve && finalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD;
 
   const viewCartBtn = document.getElementById('viewCartBtn');
@@ -3128,7 +3335,7 @@ function updateCartUI() {
 
       ${isReserve ? `
         <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px; padding:12px; margin-bottom:12px;">
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
             <div>
               <label class="field-label">📅 取餐日期 *</label>
               <input type="date" class="select-input" min="${getTodayDateStr()}" value="${escapeHtml(state.checkoutReserveDate)}" onchange="setCheckoutMode('checkoutReserveDate', this.value)">
@@ -3140,24 +3347,28 @@ function updateCartUI() {
               </select>
             </div>
           </div>
-          <div>
-            <label class="field-label" style="color:var(--red);">📱 聯絡電話號碼 *（預訂必填，供取餐聯絡）</label>
-            <input type="tel" id="checkoutPhoneInput" class="select-input" placeholder="請輸入手機號碼，例如：0912345678" value="${escapeHtml(state.checkoutPhone)}" oninput="state.checkoutPhone=this.value">
-          </div>
           ${isLargeOrderReserve && state.checkoutPayMethod === '現場櫃檯付現' ? `
             <div style="margin-top:8px; background:#FFFBEB; border:1px solid #F59E0B; color:#92400E; padding:8px 10px; border-radius:8px; font-size:0.76rem; font-weight:800;">
-              💡 大額團訂（滿 NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}）選擇現金付款時，訂單狀態將列為「待付款確認」，請於取餐前至櫃檯確認或改選線上支付立即排程。
+              💡 大額團訂（滿 NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}）選擇現金付款時，訂單狀態將列為「待付款確認」，請於取餐前至櫃檯確認或改選行動支付授權。
             </div>
           ` : ''}
         </div>
       ` : ''}
 
+      <!-- 商業級重構 8：無論立即製作或預訂，皆支援輸入手機號碼/末3碼供跨裝置找回訂單與叫號聯繫 -->
+      <div style="margin-bottom:12px;">
+        <label class="field-label" style="color:${isReserve ? 'var(--red)' : 'var(--brand-dark)'};">
+          📱 聯絡手機號碼 / 手機末 3 碼 ${isReserve ? '*（預訂必填）' : '（選填，推薦填寫以便跨裝置或無痕模式找回取餐單）'}
+        </label>
+        <input type="tel" id="checkoutPhoneInput" class="select-input" placeholder="${isReserve ? '請輸入完整手機號碼，例如：0912345678' : '輸入手機號碼或末 3 碼（如 678），清除快取也能找回訂單'}" value="${escapeHtml(state.checkoutPhone)}" oninput="state.checkoutPhone=this.value">
+      </div>
+
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
         <div>
           <label class="field-label">💳 付款方式</label>
           <select class="select-input" onchange="setCheckoutMode('checkoutPayMethod', this.value)">
-            <option value="LINE Pay" ${state.checkoutPayMethod === 'LINE Pay' ? 'selected' : ''}>LINE Pay (線上授權・立即排程)</option>
-            <option value="街口支付" ${state.checkoutPayMethod === '街口支付' ? 'selected' : ''}>街口支付 (線上授權・立即排程)</option>
+            <option value="LINE Pay" ${state.checkoutPayMethod === 'LINE Pay' ? 'selected' : ''}>LINE Pay (沙盒收銀授權)</option>
+            <option value="街口支付" ${state.checkoutPayMethod === '街口支付' ? 'selected' : ''}>街口支付 (沙盒收銀授權)</option>
             <option value="現場櫃檯付現" ${state.checkoutPayMethod === '現場櫃檯付現' ? 'selected' : ''}>
               ${isLargeOrderReserve ? '現場櫃檯付訂確認 (大額團訂)' : '取餐時櫃檯付現'}
             </option>
@@ -3184,10 +3395,6 @@ function updateCartUI() {
   }
 }
 
-/**
- * 商業級重構 2 & 3：雲端權威單號核發 + 正規化 Order Schema 送單流程
- * 連線狀態下一律等待伺服器 LockService 核發權威單號與驗算金額後，才入庫與發送 LINE 推播，徹底根除撞號！
- */
 async function submitStudentCartOrder() {
   const store = state.stores.find(s => s.id === state.selectedStoreId);
   if (!store || state.cartItems.length === 0) return;
@@ -3219,10 +3426,15 @@ async function submitStudentCartOrder() {
       return;
     }
     if (cleanPhone.length < 8) {
-      showToast('⚠️ 預訂取餐請填寫有效的聯絡電話號碼！');
+      showToast('⚠️ 預訂取餐請填寫有效的完整聯絡電話號碼！');
       document.getElementById('checkoutPhoneInput')?.focus();
       return;
     }
+  }
+
+  if (cleanPhone.length >= 3) {
+    state.savedCustomerPhone = state.checkoutPhone.trim();
+    try { localStorage.setItem('mealflow_saved_customer_phone_v12', state.savedCustomerPhone); } catch (e) {}
   }
 
   const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
@@ -3254,17 +3466,17 @@ async function submitStudentCartOrder() {
   const btn = document.getElementById('finalSubmitOrderBtn');
   if (btn) {
     btn.disabled = true;
-    btn.innerText = '⏳ 正在向雲端伺服器申請權威取餐單號...';
+    btn.innerText = '⏳ 正在向伺服器進行白名單驗算與申請單號...';
   }
 
   const isLargeOrderCashReserve = isReserve && finalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && state.checkoutPayMethod === '現場櫃檯付現';
   const paymentDeadline = isLargeOrderCashReserve ? normalizeDateStr(state.checkoutReserveDate) : '';
   const paymentStatus = isLargeOrderCashReserve
     ? '待櫃檯繳費'
-    : (state.checkoutPayMethod === '現場櫃檯付現' ? '取餐付現' : '已付款');
+    : (state.checkoutPayMethod === '現場櫃檯付現' ? '取餐付現' : '已付款 (沙盒授權)');
 
   const pickupDateVal = isReserve ? normalizeDateStr(state.checkoutReserveDate) : getTodayDateStr();
-  const nowTime = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  const nowTime = getTaipeiTimeHHMMSS();
   const pickupTimeVal = isReserve ? state.checkoutReserveTime : nowTime.slice(0, 5);
   const pickupTimeSlot = isReserve
     ? `📅 預訂 ${pickupDateVal} ${state.checkoutReserveTime}`
@@ -3291,7 +3503,7 @@ async function submitStudentCartOrder() {
 
   const draftOrder = sanitizeIncomingOrder({
     orderId: generateOrderToken(),
-    pickupNumber: '', // 交由伺服器 LockService 權威配號
+    pickupNumber: '',
     storeId: store.id,
     storeName: store.name,
     studentId: isReserve ? '📅 預訂點餐' : '📱 掃碼點餐',
@@ -3310,7 +3522,7 @@ async function submitStudentCartOrder() {
     isReservation: isReserve,
     pickupDate: pickupDateVal,
     pickupTime: pickupTimeVal,
-    customerPhone: isReserve ? state.checkoutPhone.trim() : '',
+    customerPhone: (state.checkoutPhone || '').trim(),
     paymentDeadline,
     paymentStatus,
     transactionId,
@@ -3339,7 +3551,7 @@ async function submitStudentCartOrder() {
     });
     const data = await res.json();
     if (!data || !data.success) {
-      throw new Error((data && data.message) || '伺服器驗算拒絕');
+      throw new Error((data && data.message) || '伺服器白名單計價驗算拒絕');
     }
     if (data.order) {
       draftOrder.orderId = data.order.orderId || draftOrder.orderId;
@@ -3348,13 +3560,23 @@ async function submitStudentCartOrder() {
       if (data.order.subtotal !== undefined) draftOrder.subtotal = Number(data.order.subtotal);
       if (data.order.discount !== undefined) draftOrder.discount = Number(data.order.discount);
       if (data.order.status) draftOrder.status = data.order.status;
+      if (data.order.paymentStatus) draftOrder.paymentStatus = data.order.paymentStatus;
+      if (data.order.verificationCode) draftOrder.verificationCode = data.order.verificationCode;
       if (data.order.itemsJson) draftOrder.itemsJson = data.order.itemsJson;
       syncLocalSeqWithAuthoritativeNumber(store.id, pickupDateVal, draftOrder.pickupNumber);
     }
     setSyncState('online', '已同步');
   } catch (e) {
-    // 僅在網路斷線時才啟用離線備援流水號
+    if (e && e.message && (e.message.includes('售罄') || e.message.includes('不存在') || e.message.includes('必選') || e.message.includes('拒絕'))) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerText = '確認餐點並送出訂單';
+      }
+      showToast(`🚫 結帳失敗：${e.message}`);
+      return;
+    }
     draftOrder.pickupNumber = generateOfflineFallbackPickupNumber(store.id, pickupDateVal);
+    draftOrder.verificationCode = generateClientFallbackVerificationCode(draftOrder.orderId, draftOrder.pickupNumber, draftOrder.finalTotal);
     draftOrder.isOfflinePending = true;
     setSyncState('offline', '離線備援單號模式');
   } finally {
@@ -3375,19 +3597,18 @@ async function submitStudentCartOrder() {
   enrichStoresAndAi();
   saveLocalStores(state.stores);
 
-  // 取得權威單號後才觸發 LINE 推播，確保推播內的號碼與櫃檯 KDS 100% 一致
   if (isLargeOrderCashReserve) {
     pushLineNotification(
       'ORDER_RESERVE_UNPAID',
       `⏳ 大額預訂單 #${finalOrder.pickupNumber} 待確認`,
-      `您已預訂 ${finalOrder.pickupDate} ${finalOrder.pickupTime}【${store.name}】共 NT$${finalOrder.finalTotal}。請於取餐前至櫃檯付訂確認以排入廚房製程。`,
+      `您已預訂 ${finalOrder.pickupDate} ${finalOrder.pickupTime}【${store.name}】共 NT$${finalOrder.finalTotal}（核銷碼 ${finalOrder.verificationCode}）。請於取餐前至櫃檯付訂確認。`,
       finalOrder
     );
   } else {
     pushLineNotification(
       'ORDER_CREATED',
       `🟢 訂單 #${finalOrder.pickupNumber} 已成立 (${finalOrder.status})`,
-      `【${store.name}】${pickupTimeSlot}，應付 NT$${finalOrder.finalTotal} (${finalOrder.paymentMethod}${transactionId ? ' / 授權碼:' + transactionId : ''})。`,
+      `【${store.name}】${pickupTimeSlot}，應付 NT$${finalOrder.finalTotal} (${finalOrder.paymentMethod})，防偽核銷碼：${finalOrder.verificationCode}。`,
       finalOrder
     );
   }
@@ -3396,10 +3617,10 @@ async function submitStudentCartOrder() {
   state.checkoutNote = '';
   closeCartModal();
   navigateToOrderTicket(finalOrder.orderId);
-  showToast(`🎉 點餐成功！取餐流水號：#${finalOrder.pickupNumber}`);
+  showToast(`🎉 點餐成功！單號 #${finalOrder.pickupNumber}（核銷碼 ${finalOrder.verificationCode}）`);
 }
 
-// ==================== 4. 智慧選餐顧問（自動過濾休息中店家與已售罄品項） ====================
+// ==================== 4. 智慧選餐顧問 ====================
 async function askAiConcierge(presetQuery) {
   const inputEl = document.getElementById('aiUserQueryInput');
   const query = (presetQuery || (inputEl ? inputEl.value.trim() : '')).trim();
@@ -3413,7 +3634,7 @@ async function askAiConcierge(presetQuery) {
   state.aiChatMessages.push({
     role: 'user',
     text: query,
-    time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })
+    time: getTaipeiTimeHHMM()
   });
 
   const respBox = document.getElementById('aiConciergeResponse');
@@ -3454,7 +3675,7 @@ async function askAiConcierge(presetQuery) {
   if (/^(你好|您好|哈囉|嗨|hi|hello|hey|在嗎|你是誰|測試|早安|午安|晚安|幹嘛|能做什麼)[！!？?\s]*$/i.test(q)) {
     const storeNames = activeStoresPool.map(s => `${s.name}(約${s.avgPrepMinutes}分)`).join('、');
     appendAiAssistantReply({
-      reasoning: `👋 你好！我是東吳學餐智慧選餐顧問。目前「${state.campus}」正常營業中的餐廳有：${storeNames}。你可以直接問我：「推薦 $100 內不排隊的餐」、「想吃辣的麵」、「哪家有送優惠？」或「預訂怎麼付錢？」，我會自動幫你排除已售罄品項與休息中店家！`,
+      reasoning: `👋 你好！我是東吳學餐智慧選餐顧問。目前「${state.campus}」正常營業中的餐廳有：${storeNames}。你可以直接問我：「推薦 $100 內不排隊的餐」、「想吃辣的麵」、「哪家有送優惠？」或「無痕模式怎麼找回訂單？」，我會自動幫你排除已售罄品項與休息中店家！`,
       storeId: fastestStore.id,
       menuId: firstAvailDish.id,
       engine: '智慧語意選餐顧問'
@@ -3462,9 +3683,9 @@ async function askAiConcierge(presetQuery) {
     return;
   }
 
-  if (q.includes('預訂') || q.includes('預約') || q.includes('現金') || q.includes('付錢') || q.includes('付款') || q.includes('餐具') || q.includes('低消')) {
+  if (q.includes('預訂') || q.includes('預約') || q.includes('現金') || q.includes('付錢') || q.includes('付款') || q.includes('餐具') || q.includes('找回') || q.includes('查單')) {
     appendAiAssistantReply({
-      reasoning: `📋 學餐取餐與優惠規則說明：1️⃣ 內用與外帶皆為「櫃檯叫號自取」，如需免洗餐具可於結帳勾選。2️⃣ 預訂取餐時段為 10:30～19:30（將於取餐前 25 分鐘自動排入廚房下鍋）；一般小額預訂（<$${LARGE_ORDER_DEPOSIT_THRESHOLD}）支援線上支付或取餐付現，滿 $${LARGE_ORDER_DEPOSIT_THRESHOLD} 團訂可選線上支付或至櫃檯付訂確認。3️⃣ 離峰現金折抵需餐點滿 NT$${AI_DISCOUNT_MIN_SUBTOTAL} 即可折抵！`,
+      reasoning: `📋 學餐取餐與查單說明：1️⃣ 結帳時填寫手機號碼或末 3 碼，就算清除快取或換手機，也能在首頁上方輸入「手機末 3 碼或取餐號」找回取餐單。2️⃣ 每張取餐單皆附有伺服器簽發之「6 碼 HMAC 防偽核銷碼」供櫃檯秒速核銷。3️⃣ 離峰現金折抵需餐點滿 NT$${AI_DISCOUNT_MIN_SUBTOTAL} 即可折抵！`,
       storeId: fastestStore.id,
       menuId: firstAvailDish.id,
       engine: '學餐規則知識庫'
@@ -3559,7 +3780,7 @@ function appendAiAssistantReply(aiResult) {
   state.aiChatMessages.push({
     role: 'assistant',
     aiResult,
-    time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })
+    time: getTaipeiTimeHHMM()
   });
   renderAiChatRoom(false);
 }
@@ -3659,7 +3880,7 @@ function promptGeminiKeyConfig() {
   showToast('🔒 智慧配餐金鑰已由雲端伺服器安全託管，無須於前端手動輸入！');
 }
 
-// ==================== 5. 專屬訂單追蹤頁（內建離線 SVG 條碼與動態防截圖時鐘） ====================
+// ==================== 5. 專屬訂單追蹤頁（內建伺服器 HMAC 6 碼防偽核銷碼與動態時鐘） ====================
 function renderSingleTicketView() {
   const box = document.getElementById('singleTicketContainer') || document.getElementById('singleOrderTicketBox');
   if (!box) return;
@@ -3671,8 +3892,12 @@ function renderSingleTicketView() {
     box.innerHTML = `
       <div class="ticket-hero-card">
         <div style="font-size:3rem; margin-bottom:10px;">🔍</div>
-        <h2 style="font-size:1.3rem; font-weight:900; margin-bottom:6px;">找不到此訂單 (${escapeHtml(orderId || '未知')})</h2>
-        <p style="font-size:0.86rem; color:var(--text-secondary); margin-bottom:20px;">請確認您的訂單連結是否完整，或開啟「我的訂單匣」切換其他訂單。</p>
+        <h2 style="font-size:1.3rem; font-weight:900; margin-bottom:6px;">正在同步或找不到此訂單 (${escapeHtml(orderId || '未知')})</h2>
+        <p style="font-size:0.86rem; color:var(--text-secondary); margin-bottom:16px;">您可以直接輸入手機末 3 碼或取餐號從雲端找回訂單：</p>
+        <div style="display:flex; gap:8px; max-width:360px; margin:0 auto 18px;">
+          <input type="search" id="ticketMissingLookupInput" class="select-input" placeholder="輸入手機末 3 碼或取餐號..." value="${escapeHtml(orderId || '')}">
+          <button type="button" class="btn-tip-action" style="white-space:nowrap;" onclick="searchOrderAcrossDevices(document.getElementById('ticketMissingLookupInput')?.value)">找回</button>
+        </div>
         <div style="display:flex; gap:10px; justify-content:center;">
           <button class="btn-outline" onclick="openMyOrdersDrawer()">🧾 開啟我的訂單匣</button>
           <button class="btn-primary-full" style="max-width:200px;" onclick="navigateToOrderMenu()">← 返回點餐首頁</button>
@@ -3699,7 +3924,7 @@ function renderSingleTicketView() {
   }).join('');
 
   const shareUrl = `${window.location.origin}${getOrderPageUrl('id=' + encodeURIComponent(o.orderId))}`;
-  const inlineQrSvg = generateDeterministicQrSvg(`${o.orderId}|${o.pickupNumber}|${o.finalTotal}`, 96);
+  const inlineQrSvg = generateDeterministicQrSvg(`${o.orderId}|${o.pickupNumber}|${o.verificationCode || ''}`, 88);
 
   const isCompleted = o.status === '已完成';
   const isReady = o.status === '可取餐';
@@ -3732,11 +3957,10 @@ function renderSingleTicketView() {
   }
 
   const myTrackedCount = getMyTrackedOrdersList().length;
-  const liveNowClock = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  const liveNowClock = getTaipeiTimeHHMMSS();
 
   box.innerHTML = `
     <div class="ticket-hero-card" style="${isReady ? 'border:2.5px solid var(--green); box-shadow:0 0 0 6px rgba(16,185,129,0.12);' : ''}">
-      <!-- 商業級重構 8：防截圖動態呼吸驗證橫幅 -->
       <div class="live-verify-banner">
         <span><span class="live-clock-pulse"></span>防偽動態電子取餐憑證 (${escapeHtml(o.pickupDate)})</span>
         <span id="ticketAntiFraudClock" style="font-family:monospace; font-size:0.9rem; letter-spacing:0.5px;">${liveNowClock}</span>
@@ -3761,14 +3985,24 @@ function renderSingleTicketView() {
       <div style="font-size:0.84rem; color:var(--text-secondary); margin-top:12px; font-weight:700;">您的專屬取餐流水號</div>
       <div class="ticket-Serial" style="color:${statusColor};">#${escapeHtml(o.pickupNumber)}</div>
       <div style="font-size:1rem; font-weight:900; color:${statusColor}; margin-bottom:6px;">${escapeHtml(statusHeadline)}</div>
+
+      <!-- 商業級重構 3：伺服器簽發之 6 碼防偽核銷碼 (取代假 QR 馬賽克之實質核銷機制) -->
+      <div class="hmac-verify-badge-box">
+        <div style="text-align:left;">
+          <div style="font-size:0.74rem; font-weight:900; color:#4338CA;">🛡️ 櫃檯防偽核銷驗證碼 (HMAC 簽章短碼)</div>
+          <div style="font-size:0.72rem; color:#475569;">領餐時請供店員核對或輸入此 6 碼快速核銷</div>
+        </div>
+        <div class="hmac-code-digits">${escapeHtml(o.verificationCode || '')}</div>
+      </div>
+
       <div style="font-size:0.78rem; color:var(--text-muted);">
         訂單憑證：${escapeHtml(o.orderId)} ・ 下單時間：${escapeHtml(o.createdAt)}
-        ${o.transactionId ? ` ・ 授權碼：${escapeHtml(o.transactionId)}` : ''}
+        ${o.customerPhone ? ` ・ 手機末碼：${escapeHtml(String(o.customerPhone).slice(-3))}` : ''}
       </div>
 
       ${isReady ? `
         <div style="margin-top:12px; background:#ECFDF5; border:1.5px solid #10B981; color:#065F46; padding:12px; border-radius:12px; font-weight:800; font-size:0.9rem;">
-          🎉 櫃檯已按下「通知取餐」！請出示此動態防偽畫面取餐號 <strong>#${escapeHtml(o.pickupNumber)}</strong> 領取餐點。
+          🎉 櫃檯已按下「通知取餐」！請出示取餐號 <strong>#${escapeHtml(o.pickupNumber)}</strong> 與核銷碼 <strong>${escapeHtml(o.verificationCode || '')}</strong> 領取餐點。
         </div>
       ` : ''}
 
@@ -3824,11 +4058,11 @@ function renderSingleTicketView() {
       </div>
 
       <div style="display:flex; align-items:center; justify-content:center; gap:16px; background:#FFFFFF; border:1px dashed var(--border); border-radius:14px; padding:14px; margin-bottom:16px; flex-wrap:wrap;">
-        <div class="svg-qr-box" title="純前端離線防偽核銷碼">${inlineQrSvg}</div>
-        <div style="text-align:left; max-width:260px;">
-          <div style="font-size:0.85rem; font-weight:800; color:var(--text-primary); margin-bottom:4px;">🔗 離線防偽數位核銷條碼</div>
+        <div class="svg-qr-box" title="數位憑證視覺圖章">${inlineQrSvg}</div>
+        <div style="text-align:left; max-width:270px;">
+          <div style="font-size:0.85rem; font-weight:800; color:var(--text-primary); margin-bottom:4px;">🔗 數位憑證圖章與連結備份</div>
           <p style="font-size:0.76rem; color:var(--text-secondary); line-height:1.4; margin-bottom:8px;">
-            內建純前端向量條碼與上方動態防偽時鐘，即使學餐地下室網路訊號不佳亦不會破圖。
+            可複製專屬憑證連結保存，或直接以「手機末 3 碼 / 防偽核銷碼 ${escapeHtml(o.verificationCode || '')}」於任何裝置查詢。
           </p>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="copyOrderUrl('${escapeHtml(shareUrl)}')">📋 複製訂單網址</button>
@@ -3855,7 +4089,7 @@ function copyOrderUrl(url) {
 
 // ==================== 6. 店家端營運管理系統 (`/store/` 嚴格權限守門) ====================
 function switchStoreTabMode(mode) {
-  if (!state.isMerchantUnlocked) {
+  if (!isMerchantSessionValidNow()) {
     checkMerchantSecurityGate();
     return;
   }
@@ -3888,7 +4122,10 @@ function switchMerchantStore(storeId) {
 }
 
 async function toggleCurrentStoreOpenStatus() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
 
@@ -3923,7 +4160,10 @@ async function toggleCurrentStoreOpenStatus() {
 
 async function toggleMenuItemSoldOut(menuIdx, evt) {
   if (evt) evt.stopPropagation();
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store || !store.menus[menuIdx]) return;
 
@@ -3937,24 +4177,22 @@ async function toggleMenuItemSoldOut(menuIdx, evt) {
   showToast(item.soldOut ? `🚫 已將「${item.name}」標記為今日售罄` : `🟢 已將「${item.name}」恢復正常供應`);
 }
 
-/**
- * 商業級重構 1：在未通過 PIN 碼授權前，絕不渲染任何後台 DOM 節點！
- */
 function renderMerchantView() {
   enrichStoresAndAi();
   ensureHeaderExtraControls();
+  state.isMerchantUnlocked = isMerchantSessionValidNow();
   updateBodyScrollLock();
 
-  if (!state.isMerchantUnlocked || !state.merchantAuthToken) {
+  if (!state.isMerchantUnlocked) {
     ['pos', 'kds', 'analytics', 'settings'].forEach(m => {
       const panel = document.getElementById(`storePanel-${m}`);
       if (panel) {
         panel.innerHTML = m === state.storeTabMode ? `
           <div class="auth-locked-stage">
             <div style="font-size:3rem; margin-bottom:10px;">🔒</div>
-            <h3 style="font-size:1.25rem; font-weight:900; color:var(--text-primary); margin-bottom:6px;">店務營運後台受保護中</h3>
-            <p style="font-size:0.86rem; margin-bottom:16px;">未完成店員安全授權前，系統禁止載入收銀、退單與營業報表節點。</p>
-            <button type="button" class="btn-tip-action" onclick="checkMerchantSecurityGate()">🔑 輸入店務授權碼解鎖</button>
+            <h3 style="font-size:1.25rem; font-weight:900; color:var(--text-primary); margin-bottom:6px;">店務營運後台受雲端時效憑證保護中</h3>
+            <p style="font-size:0.86rem; margin-bottom:16px;">未持有有效 HMAC Session Token 前，系統禁止渲染收銀、退單與營業報表節點。</p>
+            <button type="button" class="btn-tip-action" onclick="checkMerchantSecurityGate()">🔑 輸入店務授權碼驗證</button>
           </div>
         ` : '';
       }
@@ -3990,7 +4228,7 @@ function renderMerchantView() {
   }
 }
 
-// ==================== 6.1 平板收銀櫃檯點餐 (POS) — 支援手動折讓/招待與交班日結 Z-Report ====================
+// ==================== 6.1 平板收銀櫃檯點餐 (POS) ====================
 function selectPosCategory(cat) {
   state.posSelectedCategory = cat;
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
@@ -4275,7 +4513,6 @@ function renderPosCashierPanel(store) {
             </button>
           </div>
 
-          <!-- 商業級重構 7：櫃檯單筆手動折讓 / 教職員優惠 / 招待 -->
           <div class="pos-discount-strip">
             <span style="font-size:0.72rem; font-weight:900; color:var(--text-secondary); white-space:nowrap;">🏷️ 櫃檯折讓:</span>
             <button type="button" class="pos-chip-btn ${state.posManualDiscount === 10 ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(10, '教職員/熟客折$10')">折$10</button>
@@ -4362,7 +4599,10 @@ function generatePreviewNextSeq(storeId, pickupDateStr) {
 }
 
 async function submitMerchantPosOrder() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store || state.posCart.length === 0) return;
 
@@ -4385,7 +4625,7 @@ async function submitMerchantPosOrder() {
   const changeAmount = state.posPayment === '現場現金' ? Math.max(0, cashReceivedNum - finalTotal) : 0;
 
   const pickupDateVal = isReserve ? normalizeDateStr(state.posReserveDate) : getTodayDateStr();
-  const nowTime = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  const nowTime = getTaipeiTimeHHMMSS();
 
   const structuredItems = state.posCart.map(i => normalizeOrderItemEntry({
     id: i.id,
@@ -4477,6 +4717,7 @@ async function submitMerchantPosOrder() {
     const data = await res.json();
     if (data && data.order && data.order.pickupNumber) {
       draftOrder.pickupNumber = String(data.order.pickupNumber);
+      if (data.order.verificationCode) draftOrder.verificationCode = data.order.verificationCode;
       syncLocalSeqWithAuthoritativeNumber(store.id, pickupDateVal, draftOrder.pickupNumber);
       saveCachedOrders(state.orders);
       renderMerchantView();
@@ -4484,9 +4725,11 @@ async function submitMerchantPosOrder() {
   } catch (e) {}
 }
 
-/**
- * 商業級重構 7：錢箱交班日結單 (Shift Z-Report) 核算與 80mm 出單列印
- */
+function isOrderConsiderPaid(order) {
+  const ps = String(order?.paymentStatus || '');
+  return ps.startsWith('已付款');
+}
+
 function openShiftZReportModal() {
   ensureSharedModalsMounted();
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
@@ -4496,8 +4739,8 @@ function openShiftZReportModal() {
   const todayStoreOrders = state.orders.filter(o => o.storeId === store.id && normalizeDateStr(o.pickupDate) === todayStr);
   const validOrders = todayStoreOrders.filter(o => !String(o.status).includes('已取消'));
   const cancelledOrders = todayStoreOrders.filter(o => String(o.status).includes('已取消'));
-  const paidOrders = validOrders.filter(o => o.paymentStatus === '已付款');
-  const unpaidOrders = validOrders.filter(o => o.paymentStatus !== '已付款');
+  const paidOrders = validOrders.filter(o => isOrderConsiderPaid(o));
+  const unpaidOrders = validOrders.filter(o => !isOrderConsiderPaid(o));
 
   const grossSubtotal = paidOrders.reduce((s, o) => s + (Number(o.subtotal) || 0) + (Number(o.cutleryFee) || 0), 0);
   const promoDiscountSum = paidOrders.reduce((s, o) => s + (Number(o.discount) || 0), 0);
@@ -4534,7 +4777,7 @@ function openShiftZReportModal() {
 
         <div style="font-size:0.76rem; line-height:1.5;">
           <div>營業日期：${todayStr}</div>
-          <div>出表時間：${new Date().toLocaleTimeString('zh-TW', { hour12: false })}</div>
+          <div>出表時間：${getTaipeiTimeHHMMSS()}</div>
           <div>有效已結單數：${paidOrders.length} 筆 (內用 ${dineInCount} / 外帶 ${takeoutCount})</div>
         </div>
 
@@ -4553,8 +4796,8 @@ function openShiftZReportModal() {
         <div style="font-size:0.8rem; font-weight:900; margin-bottom:4px;">【二、錢箱與各支付管道清點】</div>
         <table class="z-report-table">
           <tr><td>💵 錢箱應有現金 (${cashOrders.length}筆)</td><td>NT$ ${cashTotal.toLocaleString()}</td></tr>
-          <tr><td>💚 LINE Pay 實收 (${linePayOrders.length}筆)</td><td>NT$ ${linePayTotal.toLocaleString()}</td></tr>
-          <tr><td>❤️ 街口支付 實收 (${jkoPayOrders.length}筆)</td><td>NT$ ${jkoPayTotal.toLocaleString()}</td></tr>
+          <tr><td>💚 LINE Pay 授權 (${linePayOrders.length}筆)</td><td>NT$ ${linePayTotal.toLocaleString()}</td></tr>
+          <tr><td>❤️ 街口支付 授權 (${jkoPayOrders.length}筆)</td><td>NT$ ${jkoPayTotal.toLocaleString()}</td></tr>
         </table>
 
         <div class="thermal-divider"></div>
@@ -4576,7 +4819,7 @@ function openShiftZReportModal() {
   document.getElementById('receiptPrintModal')?.classList.add('open');
 }
 
-// ==================== 6.2 廚房控單與訂單管理 (KDS) — 內建即時單品備料匯總看板 ====================
+// ==================== 6.2 廚房控單 (KDS) — 升級「客製化規格與內外帶拆解看板」+「防偽碼快速核銷」 ====================
 function setKdsDateFilter(dateVal) {
   state.kdsSelectedDate = dateVal === 'ALL' ? 'ALL' : normalizeDateStr(dateVal);
   renderMerchantOrdersOnly();
@@ -4605,9 +4848,41 @@ function handleKdsSearchInput(val) {
 }
 
 /**
- * 商業級重構 5：允許廚師將「已接單待排程」的預訂單手動提前轉入「製作中」下鍋
+ * 商業級重構 3：KDS 櫃檯輸入或掃描 6 碼防偽核銷碼快速取餐結單
  */
+function quickVerifyAndCompleteByCode(rawInput) {
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
+  const code = String(rawInput ?? document.getElementById('kdsQuickVerifyInput')?.value ?? '').trim().toUpperCase().replace(/^#/, '');
+  if (!code) {
+    showToast('🛡️ 請輸入顧客憑證上的 6 碼防偽核銷碼或取餐號！');
+    return;
+  }
+
+  const storeOrders = state.orders.filter(o => o.storeId === state.merchantStoreId && !String(o.status).includes('已取消'));
+  const target = storeOrders.find(o =>
+    String(o.verificationCode || '').toUpperCase() === code ||
+    String(o.pickupNumber || '').toUpperCase() === code ||
+    String(o.orderId || '').toUpperCase() === code
+  );
+
+  if (!target) {
+    showToast(`❌ 查無核銷碼或單號為「${code}」的有效本店訂單！`);
+    return;
+  }
+
+  state.kdsVerifyCodeInput = '';
+  // 直接呼叫具備未收款防呆攔截的 completeOrderFinal
+  completeOrderFinal(target.orderId);
+}
+
 async function forceStartCookingScheduledOrder(orderId) {
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const order = state.orders.find(o => o.orderId === orderId);
   if (!order) return;
   order.status = '製作中';
@@ -4641,18 +4916,28 @@ function renderMerchantOrdersOnly(storeObj) {
   const todayStr = getTodayDateStr();
   const tomorrowStr = getFutureDateStr(1);
 
-  // 🔥 商業級重構 5：計算當前所有「製作中」訂單的單品備料匯總 (All-Day Production Batch View)
+  // 🔥 商業級重構 7：KDS 爐上備料匯總看板同時統計「主餐總數」與「客製化規格 + 內外帶拆解」
   const activeCookingOrders = storeOrders.filter(o => o.status === '製作中');
   const batchItemMap = {};
   let totalActivePortions = 0;
+
   activeCookingOrders.forEach(o => {
+    const dineShort = (o.dineType && o.dineType.includes('內用')) ? '內用' : '外帶';
     const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
     items.forEach(it => {
       const bName = it.baseName || String(it.name || '餐點').split(' [')[0];
       const q = Math.max(1, Number(it.qty) || 1);
-      if (!batchItemMap[bName]) batchItemMap[bName] = { name: bName, qty: 0, isGift: Boolean(it.isGift) };
+      if (!batchItemMap[bName]) {
+        batchItemMap[bName] = { name: bName, qty: 0, isGift: Boolean(it.isGift), specsMap: {} };
+      }
       batchItemMap[bName].qty += q;
       totalActivePortions += q;
+
+      const selValues = (it.selections && Object.keys(it.selections).length > 0)
+        ? Object.values(it.selections).join('/')
+        : '標準原味';
+      const specKey = `${dineShort}・${selValues}`;
+      batchItemMap[bName].specsMap[specKey] = (batchItemMap[bName].specsMap[specKey] || 0) + q;
     });
   });
   const sortedBatchItems = Object.values(batchItemMap).sort((a, b) => b.qty - a.qty);
@@ -4670,7 +4955,7 @@ function renderMerchantOrdersOnly(storeObj) {
   }
 
   if (state.kdsStatusFilter === 'UNPAID') {
-    filtered = filtered.filter(o => (o.paymentStatus !== '已付款' || o.status === '待付款確認') && !String(o.status).includes('已取消'));
+    filtered = filtered.filter(o => (!isOrderConsiderPaid(o) || o.status === '待付款確認') && !String(o.status).includes('已取消'));
   } else if (state.kdsStatusFilter === 'SCHEDULED') {
     filtered = filtered.filter(o => o.status === '已接單待排程');
   } else if (state.kdsStatusFilter === 'COOKING') {
@@ -4685,6 +4970,7 @@ function renderMerchantOrdersOnly(storeObj) {
   if (q) {
     filtered = filtered.filter(o =>
       String(o.pickupNumber || '').toLowerCase().includes(q) ||
+      String(o.verificationCode || '').toLowerCase().includes(q) ||
       String(o.customerPhone || '').toLowerCase().includes(q) ||
       String(o.customerNote || '').toLowerCase().includes(q) ||
       String(o.orderId || '').toLowerCase().includes(q)
@@ -4693,30 +4979,52 @@ function renderMerchantOrdersOnly(storeObj) {
 
   panel.innerHTML = `
     <div class="kds-panel-wrap">
-      <!-- 🔥 KDS 頂部即時廚房單品備料匯總看板 -->
+      <!-- 🔥 KDS 頂部即時廚房單品與規格拆解備料匯總看板 -->
       <div class="kds-batch-summary-bar">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.95rem; font-weight:950; color:#FBBF24;">🔥 即時廚房爐上備料匯總看板 (All-Day Batch View)</span>
+            <span style="font-size:0.95rem; font-weight:950; color:#FBBF24;">🔥 即時廚房爐上備料與規格拆解看板 (All-Day Batch View)</span>
             <span style="font-size:0.75rem; background:rgba(255,255,255,0.16); padding:2px 10px; border-radius:999px; font-weight:800;">
               製作中 ${activeCookingOrders.length} 單 ・ 合共 ${totalActivePortions} 份餐點
             </span>
           </div>
-          <span style="font-size:0.74rem; color:#CBD5E1;">預訂單將於取餐前 25 分鐘自動排入此看板</span>
+          <span style="font-size:0.74rem; color:#CBD5E1;">同時顯示主餐總數與飯量/辣度/內外帶拆解，方便師傅批次下鍋盛飯</span>
         </div>
         <div class="batch-items-scroll">
           ${sortedBatchItems.length === 0 ? `
             <div style="font-size:0.82rem; color:#94A3B8; padding:4px 0;">目前爐上無製作中單品，廚房順暢待命</div>
-          ` : sortedBatchItems.map(bi => `
-            <div class="batch-item-pill">
-              <span style="font-weight:800; font-size:0.88rem;">${escapeHtml(bi.name)}</span>
-              <span class="batch-qty">× ${bi.qty}</span>
-            </div>
-          `).join('')}
+          ` : sortedBatchItems.map(bi => {
+            const specEntries = Object.entries(bi.specsMap || {});
+            return `
+              <div class="batch-item-pill">
+                <div class="batch-item-header">
+                  <span style="font-weight:900; font-size:0.9rem; color:#FFFFFF;">${escapeHtml(bi.name)}</span>
+                  <span class="batch-qty">共 ×${bi.qty}</span>
+                </div>
+                <div class="batch-spec-list">
+                  ${specEntries.map(([specLabel, cnt]) => `
+                    <span class="batch-spec-chip">${escapeHtml(specLabel)} ×${cnt}</span>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
 
       <div class="kds-toolbar">
+        <!-- 🛡️ 商業級重構 3：櫃檯輸入／掃描防偽核銷碼快速取餐列 -->
+        <div class="kds-verify-bar">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:0.82rem; font-weight:900; color:#312E81;">🛡️ 櫃檯快速核銷取餐：</span>
+            <span style="font-size:0.75rem; color:#4338CA;">輸入或掃描學生取餐憑證上的 6 碼防偽核銷碼（若未收款將自動彈出收銀視窗）</span>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" id="kdsQuickVerifyInput" class="select-input" style="width:210px; padding:5px 10px; font-family:monospace; font-weight:900; text-transform:uppercase;" placeholder="輸入6碼防偽碼或取餐號" value="${escapeHtml(state.kdsVerifyCodeInput)}" oninput="state.kdsVerifyCodeInput=this.value" onkeydown="if(event.key==='Enter') quickVerifyAndCompleteByCode(this.value)">
+            <button type="button" class="btn-tip-action" style="padding:6px 14px; font-size:0.8rem; background:#4F46E5;" onclick="quickVerifyAndCompleteByCode()">⚡ 核銷取餐</button>
+          </div>
+        </div>
+
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <span style="font-size:0.84rem; font-weight:900; color:var(--text-primary);">📅 取餐日期：</span>
@@ -4741,7 +5049,7 @@ function renderMerchantOrdersOnly(storeObj) {
             <button type="button" class="filter-chip ${state.kdsSoundEnabled ? 'active' : ''}" style="padding:5px 10px; font-size:0.76rem;" onclick="toggleKdsSound()">
               ${state.kdsSoundEnabled ? '🔊 新單語音播報: 開' : '🔇 新單語音播報: 關'}
             </button>
-            <input type="search" id="kdsSearchInputBox" class="select-input" style="width:200px; padding:6px 10px; font-size:0.8rem;" placeholder="🔍 搜尋電話、備註或單號..." value="${escapeHtml(state.kdsSearchQuery)}" oninput="handleKdsSearchInput(this.value)">
+            <input type="search" id="kdsSearchInputBox" class="select-input" style="width:210px; padding:6px 10px; font-size:0.8rem;" placeholder="🔍 搜尋電話、核銷碼或單號..." value="${escapeHtml(state.kdsSearchQuery)}" oninput="handleKdsSearchInput(this.value)">
           </div>
         </div>
 
@@ -4776,7 +5084,7 @@ function renderMerchantOrdersOnly(storeObj) {
           const isDone = o.status === '已完成';
           const isScheduled = o.status === '已接單待排程';
           const isCancelled = String(o.status).includes('已取消');
-          const isUnpaid = o.paymentStatus !== '已付款' && !isCancelled;
+          const isUnpaid = !isOrderConsiderPaid(o) && !isCancelled;
           const notifyCount = Number(o.notifyCount) || 0;
           const isInLiveQueue = isOrderActivelyCookingNow(o);
           const elapsedMin = getOrderElapsedMinutes(o);
@@ -4794,6 +5102,9 @@ function renderMerchantOrdersOnly(storeObj) {
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:6px;">
                   <div>
                     <span style="font-size:1.3rem; font-weight:950; color:var(--text-primary);">#${escapeHtml(o.pickupNumber)}</span>
+                    <span style="font-family:monospace; font-size:0.74rem; font-weight:900; background:#EEF2FF; color:#312E81; padding:2px 7px; border-radius:6px; margin-left:4px;">
+                      🛡️ ${escapeHtml(o.verificationCode || '')}
+                    </span>
                     <span style="font-size:0.74rem; font-weight:800; background:#F1F5F9; color:#334155; padding:2px 7px; border-radius:6px; margin-left:4px;">
                       📅 ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}
                     </span>
@@ -4823,7 +5134,7 @@ function renderMerchantOrdersOnly(storeObj) {
                 <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px dashed var(--border);">
                   <div>
                     <span style="font-size:0.75rem; font-weight:800; padding:2px 8px; border-radius:6px; background:${isCancelled ? '#FEE2E2' : isUnpaid ? '#FEF3C7' : '#DCFCE7'}; color:${isCancelled ? '#DC2626' : isUnpaid ? '#B45309' : '#047857'};">
-                      ${isCancelled ? '🚫 已作廢退單' : isUnpaid ? `⏳ ${escapeHtml(o.paymentStatus || '待收款')}` : `✅ 已付款 (${escapeHtml(o.paymentMethod)})`}
+                      ${isCancelled ? '🚫 已作廢退單' : isUnpaid ? `⏳ ${escapeHtml(o.paymentStatus || '待收款')}` : `✅ ${escapeHtml(o.paymentStatus)} (${escapeHtml(o.paymentMethod)})`}
                     </span>
                   </div>
                   <span style="font-size:1.05rem; font-weight:950; color:var(--red); ${isCancelled ? 'text-decoration:line-through;' : ''}">NT$ ${o.finalTotal}</span>
@@ -4832,7 +5143,7 @@ function renderMerchantOrdersOnly(storeObj) {
 
               <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;">
                 ${isUnpaid ? `
-                  <button type="button" onclick="openOrderPayModal('${escapeHtml(o.orderId)}')" style="flex:1 1 100%; border:none; background:#F59E0B; color:#FFFFFF; padding:8px 12px; border-radius:8px; font-weight:900; font-size:0.84rem; cursor:pointer;">
+                  <button type="button" onclick="openOrderPayModal('${escapeHtml(o.orderId)}', false)" style="flex:1 1 100%; border:none; background:#F59E0B; color:#FFFFFF; padding:8px 12px; border-radius:8px; font-weight:900; font-size:0.84rem; cursor:pointer;">
                     💵 點此收款結帳 (NT$ ${o.finalTotal})
                   </button>
                 ` : ''}
@@ -4855,7 +5166,7 @@ function renderMerchantOrdersOnly(storeObj) {
                     🔔 ${notifyCount > 0 ? `再次叫號 (${notifyCount})` : '通知取餐'}
                   </button>
                   <button type="button" onclick="completeOrderFinal('${escapeHtml(o.orderId)}')" style="flex:1; border:none; background:#10B981; color:#FFFFFF; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.78rem; cursor:pointer;">
-                    ✅ 完成結單
+                    ✅ ${isUnpaid ? '收款並結單' : '完成結單'}
                   </button>
                   <button type="button" class="btn-danger-soft" onclick="cancelMerchantOrder('${escapeHtml(o.orderId)}')">
                     🚫 退單
@@ -4871,7 +5182,10 @@ function renderMerchantOrdersOnly(storeObj) {
 }
 
 async function cancelMerchantOrder(orderId) {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const order = state.orders.find(o => o.orderId === orderId);
   if (!order) return;
 
@@ -4933,6 +5247,7 @@ function openReceiptPrintModal(orderId) {
           <div style="font-size:2.6rem; font-weight:950; line-height:1.1; margin:6px 0; border:2px solid #000000; border-radius:8px; padding:4px 0;">
             #${escapeHtml(o.pickupNumber)}
           </div>
+          <div style="font-family:monospace; font-size:0.84rem; font-weight:900;">防偽核銷碼：${escapeHtml(o.verificationCode || '')}</div>
         </div>
 
         <div style="font-size:0.76rem; line-height:1.5;">
@@ -5005,8 +5320,8 @@ function openReceiptPrintModal(orderId) {
 
         <div class="thermal-divider"></div>
         <div style="text-align:center; font-size:0.72rem; color:#4B5563;">
-          列印時間：${new Date().toLocaleString('zh-TW', { hour12: false })}<br>
-          謝謝光臨，請憑號碼牌至櫃檯取餐！
+          列印時間：${getTodayDateStr()} ${getTaipeiTimeHHMMSS()}<br>
+          謝謝光臨，請憑號碼牌與防偽碼至櫃檯取餐！
         </div>
       </div>
     `;
@@ -5020,12 +5335,16 @@ function closeReceiptPrintModal() {
   state.printingOrderId = null;
 }
 
-function openOrderPayModal(orderId) {
+/**
+ * 商業級重構 7：開啟訂單收款找零視窗（支援 completeAfterPay 攔截後自動完成結單）
+ */
+function openOrderPayModal(orderId, autoCompleteAfterPay = false) {
   const o = state.orders.find(ord => ord.orderId === orderId);
   if (!o) return;
   state.payingOrderId = orderId;
   state.payingOrderMethod = '現場現金';
   state.payingOrderCashInput = '';
+  state.completeAfterPay = Boolean(autoCompleteAfterPay);
   renderOrderPayModalContent();
   document.getElementById('orderPayModal')?.classList.add('open');
 }
@@ -5034,6 +5353,7 @@ function closeOrderPayModal() {
   document.getElementById('orderPayModal')?.classList.remove('open');
   state.payingOrderId = null;
   state.payingOrderCashInput = '';
+  state.completeAfterPay = false;
 }
 
 function orderPayTapKey(key) {
@@ -5066,12 +5386,18 @@ function renderOrderPayModalContent() {
   const isShort = state.payingOrderMethod === '現場現金' && state.payingOrderCashInput !== '' && cashNum < total;
 
   box.innerHTML = `
+    ${state.completeAfterPay ? `
+      <div style="background:#FEF2F2; border:1.5px solid #EF4444; color:#991B1B; padding:10px 12px; border-radius:10px; font-size:0.8rem; font-weight:900; margin-bottom:10px;">
+        🛑 結單防呆攔截：此訂單為「${escapeHtml(o.paymentStatus || '取餐付現')}」，嚴禁未收款直接結單！請先完成收款找零。
+      </div>
+    ` : ''}
+
     <div style="background:#F8FAFC; padding:12px; border-radius:12px; border:1px solid var(--border); margin-bottom:12px;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:900; font-size:1.1rem;">取餐號 #${escapeHtml(o.pickupNumber)}</span>
+        <span style="font-weight:900; font-size:1.1rem;">取餐號 #${escapeHtml(o.pickupNumber)} (核銷碼 ${escapeHtml(o.verificationCode || '')})</span>
         <span style="font-size:0.8rem; color:var(--text-secondary);">📅 ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}</span>
       </div>
-      ${o.customerPhone ? `<div style="font-size:0.82rem; font-weight:800; color:var(--brand-dark); margin-top:2px;">📱 預訂電話：${escapeHtml(o.customerPhone)}</div>` : ''}
+      ${o.customerPhone ? `<div style="font-size:0.82rem; font-weight:800; color:var(--brand-dark); margin-top:2px;">📱 聯絡電話：${escapeHtml(o.customerPhone)}</div>` : ''}
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);">
         <span style="font-weight:800;">應收金額</span>
         <span style="font-size:1.45rem; font-weight:950; color:var(--red);">NT$ ${total}</span>
@@ -5122,16 +5448,20 @@ function renderOrderPayModalContent() {
     ` : ''}
 
     <button type="button" class="btn-primary-full" onclick="confirmOrderPayment()" ${isShort ? 'disabled' : ''}>
-      ✅ 確認收訖 NT$ ${total} ${state.payingOrderMethod === '現場現金' && change > 0 ? `（找零 NT$ ${change}）` : ''}
+      ✅ ${state.completeAfterPay ? '確認收訖並立即完成結單' : `確認收訖 NT$ ${total}`} ${state.payingOrderMethod === '現場現金' && change > 0 ? `（找零 NT$ ${change}）` : ''}
     </button>
   `;
 }
 
 async function confirmOrderPayment() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const o = state.orders.find(ord => ord.orderId === state.payingOrderId);
   if (!o) return;
 
+  const shouldComplete = state.completeAfterPay;
   const total = Number(o.finalTotal) || 0;
   const cashNum = state.payingOrderMethod === '現場現金'
     ? (state.payingOrderCashInput !== '' ? parseFloat(state.payingOrderCashInput) : total)
@@ -5142,17 +5472,22 @@ async function confirmOrderPayment() {
   o.paymentMethod = state.payingOrderMethod;
   o.cashReceived = cashNum;
   o.changeGiven = change;
-  o.status = evaluateOrderLifecycleStatus(o);
+  o.status = shouldComplete ? '已完成' : evaluateOrderLifecycleStatus(o);
   saveCachedOrders(state.orders);
 
   closeOrderPayModal();
-  renderMerchantOrdersOnly();
-  showToast(`💵 訂單 #${o.pickupNumber} 已完成收款！目前狀態：${o.status}`);
+  enrichStoresAndAi();
+  saveLocalStores(state.stores);
+  renderMerchantView();
+
+  showToast(shouldComplete
+    ? `✅ 訂單 #${o.pickupNumber} 已收款（找零 $${change}）並完成交付結單！`
+    : `💵 訂單 #${o.pickupNumber} 已完成收款！目前狀態：${o.status}`);
 
   pushLineNotification(
-    'ORDER_PAID',
-    `💵 訂單 #${o.pickupNumber} 已完成繳費`,
-    `我們已收到您【${o.storeName}】訂單共 NT$${o.finalTotal} (${o.paymentMethod}) 的款項，將準時為您備餐！`,
+    shouldComplete ? 'ORDER_COMPLETED' : 'ORDER_PAID',
+    shouldComplete ? `✅ 訂單 #${o.pickupNumber} 已收款並完成取餐` : `💵 訂單 #${o.pickupNumber} 已完成繳費`,
+    `我們已收到您【${o.storeName}】訂單共 NT$${o.finalTotal} (${o.paymentMethod}) 的款項，感謝您的光臨！`,
     o
   );
 
@@ -5167,14 +5502,19 @@ async function confirmOrderPayment() {
         orderId: o.orderId,
         newStatus: o.status,
         paymentStatus: '已付款',
-        paymentMethod: o.paymentMethod
+        paymentMethod: o.paymentMethod,
+        cashReceived: cashNum,
+        changeGiven: change
       })
     });
   } catch (e) {}
 }
 
 async function markOrderReady(orderId) {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const order = state.orders.find(o => o.orderId === orderId);
   if (!order) return;
 
@@ -5191,7 +5531,7 @@ async function markOrderReady(orderId) {
   pushLineNotification(
     'ORDER_READY',
     `🔔 取餐通知 (#${order.pickupNumber})`,
-    `您在【${order.storeName}】點的餐點已經準備好囉！請至櫃檯出示 #${order.pickupNumber} 領取。`,
+    `您在【${order.storeName}】點的餐點已經準備好囉！請至櫃檯出示 #${order.pickupNumber}（核銷碼 ${order.verificationCode || ''}）領取。`,
     order
   );
 
@@ -5210,13 +5550,26 @@ async function markOrderReady(orderId) {
   } catch (e) {}
 }
 
+/**
+ * 商業級重構 7：結單防呆攔截！
+ * 若訂單為「取餐付現／待櫃檯繳費／未收款」，點擊「完成結單」時強制彈出收銀找零視窗完成收款，嚴禁未收款直接結單造成帳務黑洞！
+ */
 async function completeOrderFinal(orderId) {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const order = state.orders.find(o => o.orderId === orderId);
   if (!order) return;
 
+  if (!isOrderConsiderPaid(order)) {
+    try { if ('vibrate' in navigator) navigator.vibrate([100, 60, 100]); } catch (e) {}
+    showToast(`🛑 訂單 #${order.pickupNumber} 尚未收款（${order.paymentStatus}），請先於彈出視窗完成收銀找零！`);
+    openOrderPayModal(orderId, true);
+    return;
+  }
+
   order.status = '已完成';
-  order.paymentStatus = '已付款';
   saveCachedOrders(state.orders);
 
   enrichStoresAndAi();
@@ -5241,7 +5594,7 @@ async function completeOrderFinal(orderId) {
         ...getMerchantAuthPayload(),
         orderId: order.orderId,
         newStatus: '已完成',
-        paymentStatus: '已付款'
+        paymentStatus: order.paymentStatus
       })
     });
   } catch (e) {}
@@ -5260,7 +5613,7 @@ function speakOrder(text, extraText = '') {
   window.speechSynthesis.speak(utter);
 }
 
-// ==================== 6.3 商業級重構 6：真實財務與營運分析儀表板（修正時間維度與應收帳款分離） ====================
+// ==================== 6.3 商業級真實財務與營運分析儀表板 ====================
 function setAnalyticsPeriod(period) {
   state.analyticsPeriod = period;
   state.analyticsSelectedFilter = null;
@@ -5336,14 +5689,14 @@ function parseOrderHour(order) {
   const pt = normalizeTimeStr(order.pickupTime, '');
   const m1 = pt.match(/(\d{1,2}):\d{2}/);
   if (m1) return parseInt(m1[1], 10);
-  const ca = String(order.createdAt || '');
+  const ca = normalizeTimeStr(order.createdAt || '', '');
   const m2 = ca.match(/(\d{1,2}):\d{2}/);
   if (m2) return parseInt(m2[1], 10);
   return 12;
 }
 
-function calcBucketRealisticWaitMinutes(bucketOrders, maxCapPer15Min) {
-  if (!bucketOrders || bucketOrders.length === 0) return 3;
+function calcBucketRealisticWaitMinutes(bucketOrders, maxCapPer15Min, storeBasePrepMin = 4) {
+  if (!bucketOrders || bucketOrders.length === 0) return storeBasePrepMin;
   const quarterCounts = {};
   bucketOrders.forEach(o => {
     const d = normalizeDateStr(o.pickupDate);
@@ -5355,7 +5708,7 @@ function calcBucketRealisticWaitMinutes(bucketOrders, maxCapPer15Min) {
     quarterCounts[qKey] = (quarterCounts[qKey] || 0) + 1;
   });
   const maxQuarterDensity = Math.max(...Object.values(quarterCounts), 1);
-  return calcPrepMinutes(maxQuarterDensity, maxCapPer15Min);
+  return calcPrepMinutes(maxQuarterDensity, maxCapPer15Min, storeBasePrepMin);
 }
 
 function exportStoreAnalyticsCsv() {
@@ -5368,13 +5721,14 @@ function exportStoreAnalyticsCsv() {
     return;
   }
 
-  const headers = ['訂單編號', '取餐流水號', '店鋪名稱', '取餐日期', '取餐時間', '用餐方式', '來源類型', '餐點明細', '毛小計', '餐具費', '離峰折抵', '櫃檯折讓', '實收淨額', '付款方式', '付款狀態', '交易授權碼', '訂單狀態', '聯絡電話', '顧客備註', '建立時間'];
+  const headers = ['訂單編號', '取餐流水號', '防偽核銷碼', '店鋪名稱', '取餐日期', '取餐時間', '用餐方式', '來源類型', '餐點明細', '毛小計', '餐具費', '離峰折抵', '櫃檯折讓', '實收淨額', '付款方式', '付款狀態', '交易授權碼', '訂單狀態', '聯絡電話', '顧客備註', '建立時間'];
   const rows = orders.map(o => {
     const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
     const itemText = items.map(i => `${i.baseName || i.name}x${i.qty || 1}`).join('; ');
     return [
       o.orderId,
       `#${o.pickupNumber}`,
+      o.verificationCode || '',
       o.storeName,
       normalizeDateStr(o.pickupDate),
       normalizeTimeStr(o.pickupTime),
@@ -5420,7 +5774,6 @@ function renderMerchantAnalyticsPanel(store) {
   const allValidStoreOrders = state.orders.filter(o => o.storeId === store.id && !String(o.status).includes('已取消'));
   const hasSeedOrders = state.orders.some(o => o.isSeedSample);
 
-  // 商業級重構 6：嚴格時間維度切割，絕不拿昨天或未來訂單混充今日營收！
   let periodTitle = `今日各時段真實實收營收 (${todayStr})`;
   let buckets = [];
   let periodOrders = [];
@@ -5437,7 +5790,6 @@ function renderMerchantAnalyticsPanel(store) {
       { key: '18', label: '18時後', match: o => parseOrderHour(o) >= 18 }
     ];
   } else if (period === 'WEEK') {
-    // 嚴格取過去 7 天 [-6, -5, -4, -3, -2, -1, 0]，絕不把未來預訂單塞進過去 7 日趨勢！
     periodTitle = `過去 7 日每日真實營收趨勢 (${past7StartStr.slice(5)} ~ ${todayStr.slice(5)})`;
     const dayOffsets = [-6, -5, -4, -3, -2, -1, 0];
     const allowedDates = new Set(dayOffsets.map(off => getDateOffsetFromStr(todayStr, off)));
@@ -5462,9 +5814,8 @@ function renderMerchantAnalyticsPanel(store) {
     }));
   }
 
-  // 商業會計準則：區分「已收款實收淨額 (Net Paid Revenue)」與「未收應收帳款 (Unpaid Receivables)」
-  const paidPeriodOrders = periodOrders.filter(o => o.paymentStatus === '已付款');
-  const unpaidPeriodOrders = periodOrders.filter(o => o.paymentStatus !== '已付款');
+  const paidPeriodOrders = periodOrders.filter(o => isOrderConsiderPaid(o));
+  const unpaidPeriodOrders = periodOrders.filter(o => !isOrderConsiderPaid(o));
 
   const grossSales = paidPeriodOrders.reduce((s, o) => s + (Number(o.subtotal) || 0) + (Number(o.cutleryFee) || 0), 0);
   const totalDiscountCost = paidPeriodOrders.reduce((s, o) => s + (Number(o.discount) || 0) + (Number(o.manualDiscount) || 0), 0);
@@ -5476,10 +5827,10 @@ function renderMerchantAnalyticsPanel(store) {
 
   const bucketStats = buckets.map(b => {
     const matched = periodOrders.filter(b.match);
-    const paidMatched = matched.filter(o => o.paymentStatus === '已付款');
+    const paidMatched = matched.filter(o => isOrderConsiderPaid(o));
     const rev = paidMatched.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
     const count = matched.length;
-    const estWait = calcBucketRealisticWaitMinutes(matched, store.maxCapacityPer15Min);
+    const estWait = calcBucketRealisticWaitMinutes(matched, store.maxCapacityPer15Min, store.basePrepMinutes || 4);
     return { ...b, orders: matched, rev, count, estWait };
   });
 
@@ -5517,7 +5868,6 @@ function renderMerchantAnalyticsPanel(store) {
     </svg>
   `;
 
-  // 使用正規化 baseName 統計單品銷量，不再使用切字串 split(' [')[0]
   const itemStatsMap = {};
   let totalItemRevenue = 0;
   periodOrders.forEach(o => {
@@ -5630,7 +5980,7 @@ function renderMerchantAnalyticsPanel(store) {
         <div class="kpi-card">
           <div class="kpi-title">💰 實收淨營業額 (Net Paid)</div>
           <div class="kpi-val" style="color:var(--brand-dark);">NT$ ${netPaidRevenue.toLocaleString()}</div>
-          <div class="kpi-sub">已付款 ${paidPeriodOrders.length} 單 ・ 客單價 NT$ ${avgTicket}</div>
+          <div class="kpi-sub">已收款 ${paidPeriodOrders.length} 單 ・ 客單價 NT$ ${avgTicket}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">📈 毛銷售額 vs 折扣讓利成本</div>
@@ -5645,7 +5995,7 @@ function renderMerchantAnalyticsPanel(store) {
         <div class="kpi-card">
           <div class="kpi-title">⏱️ 目前即時出餐等候 / 產能負載</div>
           <div class="kpi-val">${store.avgPrepMinutes} 分鐘</div>
-          <div class="kpi-sub">當下加權佇列 ${store.activeOrders}/${store.maxCapacityPer15Min} 單 (${store.loadPercentage}%)</div>
+          <div class="kpi-sub">基礎 ${store.basePrepMinutes}分 ・ 佇列 ${store.activeOrders}/${store.maxCapacityPer15Min} 單 (${store.loadPercentage}%)</div>
         </div>
       </div>
 
@@ -5701,7 +6051,7 @@ function renderMerchantAnalyticsPanel(store) {
             <polyline fill="none" stroke="#10B981" stroke-width="3" points="${polylinePoints}" />
             ${pts.map(p => `
               <g style="cursor:pointer;"
-                 onmousemove="showAnalyticsTooltip(event, '⏱️ ${escapeHtml(p.label)} 候餐負載', '尖峰預估候餐：約 ${p.w} 分鐘（區間共 ${p.count} 單 / $${p.rev}）', '依據 15 分鐘時間窗最大訂單密度精算')"
+                 onmousemove="showAnalyticsTooltip(event, '⏱️ ${escapeHtml(p.label)} 候餐負載', '尖峰預估候餐：約 ${p.w} 分鐘（區間共 ${p.count} 單 / $${p.rev}）', '依據店家基礎出餐時間與 15 分鐘最大密度精算')"
                  ontouchstart="showAnalyticsTooltip(event, '⏱️ ${escapeHtml(p.label)} 候餐負載', '尖峰預估候餐：約 ${p.w} 分鐘（區間共 ${p.count} 單 / $${p.rev}）', '點擊篩選此時段訂單')"
                  onclick="filterAnalyticsOrdersByKey('BUCKET', '${escapeHtml(p.key)}', '時段/日期：${escapeHtml(p.label)}')">
                 <circle class="chart-interactive-point" cx="${p.x}" cy="${p.y}" r="5.5" fill="#FFFFFF" stroke="#059669" stroke-width="3" />
@@ -5759,7 +6109,7 @@ function renderMerchantAnalyticsPanel(store) {
               <div style="padding:8px 12px; border-radius:10px; border:1px solid var(--border); background:#F8FAFC; font-size:0.78rem; display:flex; justify-content:space-between; align-items:center; gap:8px;">
                 <div style="min-width:0; flex:1;">
                   <div style="font-weight:900; color:var(--text-primary);">
-                    #${escapeHtml(o.pickupNumber)} ・ ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}
+                    #${escapeHtml(o.pickupNumber)} (🛡️${escapeHtml(o.verificationCode || '')}) ・ ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}
                     <span style="font-size:0.7rem; color:var(--brand-dark);">(${escapeHtml(o.status)} / ${escapeHtml(o.paymentStatus)})</span>
                   </div>
                   <div style="color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(summary)}</div>
@@ -5783,6 +6133,7 @@ function renderMerchantSettingsPanel(store) {
   const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
   const menus = store.menus || [];
   const hasSeedOrders = state.orders.some(o => o.isSeedSample);
+  const remainMins = Math.max(0, Math.round((state.merchantSessionExpiresAt - Date.now()) / 60000));
 
   panel.innerHTML = `
     <div class="settings-panel-wrap">
@@ -5821,7 +6172,7 @@ function renderMerchantSettingsPanel(store) {
         </div>
 
         <div class="chart-card">
-          <h3 style="font-size:0.98rem; font-weight:900; margin-bottom:10px;">➕ 手動新增單一品項至「${escapeHtml(store.name)}」</h3>
+          <h3 style="font-size:0.98rem; font-weight:900; margin-bottom:10px;">➕ 手動新增單一品項至「${escapeHtml(store.name)}」（若客製選項留空則為純單點，絕不強塞預設選項）</h3>
           <div style="display:grid; grid-template-columns:1fr 1.4fr 0.7fr 1fr 1.4fr auto; gap:8px; align-items:end;">
             <div>
               <label class="field-label">分類</label>
@@ -5840,8 +6191,8 @@ function renderMerchantSettingsPanel(store) {
               <input type="text" id="newMenuTag" class="select-input" placeholder="🔥 店長推薦">
             </div>
             <div>
-              <label class="field-label">客製選項 (逗號分隔)</label>
-              <input type="text" id="newMenuOpts" class="select-input" placeholder="正常, 飯少, 加蛋+15">
+              <label class="field-label">客製選項 (選填，逗號分隔)</label>
+              <input type="text" id="newMenuOpts" class="select-input" placeholder="留空即無選項；或填 正常, 飯少">
             </div>
             <button type="button" class="btn-tip-action" style="height:40px;" onclick="addManualMenuItem()">＋ 新增品項</button>
           </div>
@@ -5849,7 +6200,7 @@ function renderMerchantSettingsPanel(store) {
 
         <div class="chart-card">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-            <h3 style="font-size:0.98rem; font-weight:900;">📋 目前架上菜單（共 ${menus.length} 道，可一鍵切換「售罄/上架」或點「✏️ 編輯」修改規格）</h3>
+            <h3 style="font-size:0.98rem; font-weight:900;">📋 目前架上菜單（共 ${menus.length} 道，可切換獨立「售罄」欄位或點「✏️ 編輯」修改規格）</h3>
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(310px, 1fr)); gap:10px;">
             ${menus.map((m, idx) => {
@@ -5883,9 +6234,9 @@ function renderMerchantSettingsPanel(store) {
 
       ${sub === 'promo' ? `
         <div class="chart-card">
-          <h3 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">🥢 營業狀態・免洗餐具與離峰分流優惠設定（${escapeHtml(store.name)}）</h3>
+          <h3 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">🥢 營業狀態・基礎出餐時間・免洗餐具與離峰分流優惠設定（${escapeHtml(store.name)}）</h3>
           <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:16px;">
-            可在此切換店家營業狀態、調整一次性餐具收費，以及設定離峰自動分流優惠與外加模擬排隊單量。
+            可在此切換店家營業狀態、調整基礎出餐分鐘數與每 15 分鐘產能上限，讓動態排隊等待時間精準貼合真實廚房運作。
           </p>
 
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:16px;">
@@ -5900,6 +6251,11 @@ function renderMerchantSettingsPanel(store) {
             <div>
               <label class="field-label" style="color:var(--brand-dark);">🥢 一次性免洗餐具收費金額 (NT$)</label>
               <input type="number" id="cfgCutleryPrice" class="select-input" min="0" max="50" value="${storeCutleryPrice}">
+            </div>
+
+            <div>
+              <label class="field-label">⏱️ 空閒時基礎出餐時間 (分鐘)</label>
+              <input type="number" id="cfgBasePrepMin" class="select-input" min="1" max="25" value="${store.basePrepMinutes || 4}">
             </div>
 
             <div>
@@ -6006,15 +6362,20 @@ function renderMerchantSettingsPanel(store) {
         </div>
 
         <div class="chart-card">
-          <h3 style="font-size:1.02rem; font-weight:900; margin-bottom:6px;">🔒 店務安全授權碼設定 (SHA-256 雜湊保護) 與 🧪 沙盒模擬工具</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+            <h3 style="font-size:1.02rem; font-weight:900;">🔒 店務安全授權碼設定 (雲端 HMAC Session 保護・已拔除萬用後門)</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--green); background:var(--green-bg); padding:3px 10px; border-radius:999px;">
+              🛡️ 目前 Session 憑證有效（剩餘約 ${remainMins} 分鐘）
+            </span>
+          </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:end; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border);">
             <div>
-              <label class="field-label">變更店務後台 4 位數安全授權碼 (以不可逆雜湊儲存並同步後端)</label>
+              <label class="field-label">變更店務後台 4 位數安全授權碼 (直接送交後端雜湊儲存並立即換發新 Session)</label>
               <input type="password" id="cfgMerchantPinInput" maxlength="4" class="select-input" placeholder="請輸入新 4 位數字授權碼" value="">
             </div>
             <div style="display:flex; gap:8px;">
-              <button type="button" class="btn-outline" onclick="saveNewMerchantPin()">💾 更新授權碼</button>
-              <button type="button" class="btn-danger-soft" onclick="lockMerchantSession()">🔒 立即鎖定並卸載後台</button>
+              <button type="button" class="btn-outline" onclick="saveNewMerchantPin()">💾 更新雲端授權碼</button>
+              <button type="button" class="btn-danger-soft" onclick="lockMerchantSession()">🔒 立即登出並銷毀憑證</button>
             </div>
           </div>
 
@@ -6033,40 +6394,53 @@ function renderMerchantSettingsPanel(store) {
 }
 
 async function saveNewMerchantPin() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const val = (document.getElementById('cfgMerchantPinInput')?.value || '').trim();
   if (!/^\d{4}$/.test(val)) {
     showToast('⚠️ 請輸入 4 位數字安全授權碼！');
     return;
   }
-  const newHash = await computeSha256Hex(val);
-  const oldToken = state.merchantAuthToken;
-  state.merchantPinHash = newHash;
-  state.merchantAuthToken = newHash;
-  try {
-    localStorage.setItem('mealflow_merchant_pin_hash_v11', newHash);
-    sessionStorage.setItem('mealflow_merchant_token_v11', newHash);
-  } catch (e) {}
 
   try {
-    await fetch(GAS_URL, {
+    const res = await fetch(GAS_URL, {
       method: 'POST',
       mode: 'cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
-        action: 'updateMerchantPinHash',
-        merchantAuthToken: oldToken,
-        newPinHash: newHash
+        action: 'updateMerchantPin',
+        ...getMerchantAuthPayload(),
+        newPin: val
       })
     });
-  } catch (e) {}
-
-  showToast('✅ 店務安全授權碼已加密更新並同步至雲端！');
+    const data = await res.json();
+    if (data && data.success && data.sessionToken) {
+      const expiresAt = Number(data.expiresAt) || (Date.now() + 8 * 3600 * 1000);
+      state.merchantAuthToken = data.sessionToken;
+      state.merchantSessionExpiresAt = expiresAt;
+      try {
+        sessionStorage.setItem('mealflow_merchant_session_v12', data.sessionToken);
+        sessionStorage.setItem('mealflow_merchant_exp_v12', String(expiresAt));
+      } catch (e) {}
+      const inp = document.getElementById('cfgMerchantPinInput');
+      if (inp) inp.value = '';
+      showToast('✅ 雲端店務授權碼已更新，舊預設碼已永久失效！');
+    } else {
+      showToast(`⚠️ 更新失敗：${(data && data.message) || '請確認網路連線'}`);
+    }
+  } catch (e) {
+    showToast('⚠️ 無法連線至雲端伺服器更新授權碼');
+  }
 }
 
 // ==================== 6.5 菜單辨識、現場可編輯表格與進階餐點編輯器 ====================
 function addManualMenuItem() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
 
@@ -6090,8 +6464,7 @@ function addManualMenuItem() {
     price,
     tag,
     soldOut: false,
-    options,
-    autoDefaultOptions: false
+    options
   };
 
   store.menus = store.menus || [];
@@ -6144,7 +6517,10 @@ function formatOptionsToShorthand(optionsObj) {
 }
 
 function updateMenuItemPrice(idx, newPriceVal) {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store || !store.menus[idx]) return;
   const p = parseInt(newPriceVal, 10);
@@ -6157,7 +6533,10 @@ function updateMenuItemPrice(idx, newPriceVal) {
 }
 
 function deleteMenuItem(idx) {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store || !store.menus[idx]) return;
   const removed = store.menus.splice(idx, 1)[0];
@@ -6225,14 +6604,14 @@ function renderMenuEditModalBody(item) {
 
     <div style="border-top:1px solid var(--border); padding-top:12px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <label class="field-label" style="margin:0; font-size:0.86rem; color:var(--indigo);">⚙️ 客製化選項群組設定 (${state.editingMenuTempOptions.length} 組)</label>
+        <label class="field-label" style="margin:0; font-size:0.86rem; color:var(--indigo);">⚙️ 客製化選項群組設定 (${state.editingMenuTempOptions.length} 組，刪空後儲存即保持無選項)</label>
         <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem;" onclick="addTempOptionGroupInModal()">＋ 新增選項群組</button>
       </div>
 
       <div id="editMenuOptionGroupsContainer" style="display:flex; flex-direction:column; gap:8px;">
         ${state.editingMenuTempOptions.length === 0 ? `
           <div style="text-align:center; padding:14px; background:#F8FAFC; border:1px dashed var(--border); border-radius:10px; font-size:0.8rem; color:var(--text-muted);">
-            此餐點目前為單點無客製選項，可點上方「＋ 新增選項群組」加入份量、辣度或加料設定。
+            此餐點目前為單點無客製選項（系統已移除自動塞入預設飯量之行為，完全依您的設定儲存）。
           </div>
         ` : state.editingMenuTempOptions.map((g, gIdx) => `
           <div style="background:#F8FAFC; border:1px solid var(--border); border-radius:10px; padding:10px;">
@@ -6283,7 +6662,10 @@ function closeMenuEditModal() {
 }
 
 function saveEditedMenuItem() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   const idx = state.editingMenuStoreIndex;
   if (!store || idx < 0 || !store.menus[idx]) return;
@@ -6324,8 +6706,7 @@ function saveEditedMenuItem() {
     tag,
     name,
     price,
-    options: newOptions,
-    autoDefaultOptions: false
+    options: newOptions
   };
 
   state.lastLocalStoreConfigUpdateTs = Date.now();
@@ -6531,7 +6912,10 @@ function renderScannedCandidatesTable(usedEngine = '智慧解析引擎') {
 }
 
 function commitScannedMenusToStore() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store || !state.scannedMenuCandidates.length) return;
 
@@ -6558,8 +6942,7 @@ function commitScannedMenusToStore() {
         price: cand.price,
         tag: cand.tag || '🔥 店長推薦',
         soldOut: false,
-        options: parsedOptions,
-        autoDefaultOptions: false
+        options: parsedOptions
       });
     }
   });
@@ -6573,7 +6956,10 @@ function commitScannedMenusToStore() {
 }
 
 async function saveMerchantConfig() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
 
@@ -6582,6 +6968,7 @@ async function saveMerchantConfig() {
     store.isOpen = isOpenVal === 'true';
   }
   store.cutleryPrice = Math.max(0, parseInt(document.getElementById('cfgCutleryPrice')?.value || '1', 10));
+  store.basePrepMinutes = Math.max(1, parseInt(document.getElementById('cfgBasePrepMin')?.value || '4', 10));
   store.maxCapacityPer15Min = Math.max(5, parseInt(document.getElementById('cfgMaxCap')?.value || '20', 10));
   store.baseQueueOffset = Math.max(0, parseInt(document.getElementById('cfgBaseQueueOffset')?.value || '0', 10));
   store.promoMode = document.getElementById('cfgPromoMode')?.value || 'none';
@@ -6592,7 +6979,7 @@ async function saveMerchantConfig() {
   enrichStoresAndAi();
   saveLocalStores(state.stores);
   renderMerchantView();
-  showToast(`✅ 已儲存「${store.name}」設定（目前總即時佇列：${store.activeOrders} 單，預估 ${store.avgPrepMinutes} 分）！`);
+  showToast(`✅ 已儲存「${store.name}」設定（目前即時佇列：${store.activeOrders} 單，預估 ${store.avgPrepMinutes} 分）！`);
 
   try {
     await fetch(GAS_URL, {
@@ -6605,6 +6992,7 @@ async function saveMerchantConfig() {
         storeId: store.id,
         isOpen: store.isOpen,
         cutleryPrice: store.cutleryPrice,
+        basePrepMinutes: store.basePrepMinutes,
         maxCapacityPer15Min: store.maxCapacityPer15Min,
         baseQueueOffset: store.baseQueueOffset,
         activeOrders: store.activeOrders,
@@ -6617,7 +7005,10 @@ async function saveMerchantConfig() {
 }
 
 async function triggerTrafficSimulation(mode = 'PEAK') {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const btn = document.getElementById('simTrafficBtn');
   if (btn) {
     btn.disabled = true;
@@ -6676,7 +7067,10 @@ function toggleStoreCustomLineMode(useCustom) {
 }
 
 async function saveLineMessagingConfig() {
-  if (!state.isMerchantUnlocked) return;
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
 
