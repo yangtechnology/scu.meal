@@ -7,7 +7,7 @@
  * 4. 完整打通店家專屬 LINE (STORE_LINE_CFG_<storeId>) 與系統預設 LINE 之動態切換
  */
 
-const SHEET_ID = '14SaczmfdgXx9t4WfoSBrD_8gs7wzdCcNrsroT0bvzok';
+const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
 const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V8_1';
 
 // ==================== 系統預設官方 LINE 帳號設定（由 ScriptProperties 安全託管，不硬編碼機密金鑰） ====================
