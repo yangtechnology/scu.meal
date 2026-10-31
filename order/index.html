@@ -1,9 +1,9 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>東吳學餐線上點餐｜MealFlow 智慧點餐與取餐追蹤</title>
+  <title>東吳學餐線上點餐｜智慧點餐與取餐追蹤</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
       <div class="brand-title-group">
         <a href="./" style="text-decoration:none; color:inherit; display:flex; align-items:center; gap:6px;">
           <span style="font-size:1.35rem;">🍱</span>
-          <span style="font-weight:900; font-size:1.08rem; letter-spacing:-0.3px;">東吳學餐 MealFlow</span>
+          <span style="font-weight:900; font-size:1.08rem; letter-spacing:-0.3px;">東吳學餐智慧點餐</span>
         </a>
         <span class="role-badge" id="headerRoleBadge">📱 線上點餐系統</span>
         <span class="sync-status" title="點擊立即同步雲端資料" style="cursor:pointer;" onclick="syncCloud(true)">
@@ -29,12 +29,21 @@
 
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <div id="headerStoreControls" style="display:none; align-items:center; gap:8px;">
+          <button type="button" id="headerStoreOpenToggleBtn" class="store-status-toggle" onclick="toggleCurrentStoreOpenStatus()">
+            🟢 營業中
+          </button>
           <select id="storeTopSwitcher" class="select-input" style="width:auto; min-width:210px; padding:6px 12px; font-weight:800; font-size:0.84rem;" onchange="switchMerchantStore(this.value)"></select>
           <button type="button" class="filter-chip" style="padding:6px 12px;" onclick="syncCloud(true)">🔄 同步雲端</button>
+          <button type="button" class="filter-chip" style="padding:6px 10px; font-size:0.78rem;" onclick="lockMerchantSession()" title="鎖定店家後台">🔒 上鎖</button>
         </div>
 
+        <button type="button" id="headerMyOrdersBtn" class="btn-my-orders" onclick="openMyOrdersDrawer()">
+          <span>🧾 我的訂單</span>
+          <span id="headerMyOrdersCount" class="my-orders-count-badge" style="display:none;">0</span>
+        </button>
+
         <button type="button" id="headerLineBindBtn" class="btn-line" style="padding:5px 11px; font-size:0.76rem;" onclick="openLineBindModal()">
-          <span id="headerLineBtnText">💬 綁定 LINE 通知</span>
+          <span id="headerLineBtnText">💬 綁定取餐通知</span>
         </button>
         <div class="campus-switcher" id="headerCampusSwitcher">
           <button class="campus-btn active" id="btnCampus-雙溪校區" onclick="switchCampus('雙溪校區')">雙溪校區</button>
@@ -57,21 +66,21 @@
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <div>
               <span style="font-size:0.72rem; font-weight:800; background:rgba(255,255,255,0.18); padding:2px 8px; border-radius:999px;">
-                ✨ MealFlow AI 選餐與客服顧問 (M/M/1 佇列引擎)
+                ✨ 學餐智慧選餐與客服顧問 (即時佇列與庫存分析)
               </span>
-              <h3 style="font-size:1rem; font-weight:800; margin-top:4px;">不知道吃什麼或想問取餐規則？讓 AI 依即時佇列幫你解答與配餐</h3>
+              <h3 style="font-size:1rem; font-weight:800; margin-top:4px;">不知道吃什麼或想問取餐規則？依即時排隊狀況幫你解答與配餐</h3>
             </div>
-            <button type="button" class="ai-prompt-chip" onclick="promptGeminiKeyConfig()">🔒 後端安全託管</button>
+            <button type="button" class="ai-prompt-chip" onclick="promptGeminiKeyConfig()">🔒 雲端安全託管</button>
           </div>
           <div class="ai-chip-row">
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('⚡ 我只剩 10 分鐘就要上課，推薦最快拿到的主餐')">⚡ 10分鐘內趕上課快取</button>
-            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('💰 預算 $100 元以內、有分流優惠的最高 CP 值正餐')">💰 預算 $100 內最高 CP 值</button>
+            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('💰 預算 100 元以內、有分流優惠的超值正餐')">💰 預算 100 元內超值正餐</button>
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🌶️ 想吃韓式、椒麻或辣味重口味，且不用排隊的餐點')">🌶️ 想吃辣味重口味免排隊</button>
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🥩 剛運動完想吃大份量肉類補充蛋白質')">🥩 大份量高蛋白肉食</button>
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('📋 請問預訂取餐與現金付款規則是什麼？')">📋 預訂與現金付款規則</button>
           </div>
           <div style="display:flex; gap:8px; margin-top:4px;">
-            <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1; background:rgba(255,255,255,0.95); border:none;" placeholder="可多輪對話或輸入需求（例：你好、推薦 $100 內不排隊的麵、預訂怎麼付錢）..." onkeydown="if(event.key==='Enter') askAiConcierge()">
+            <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1; background:rgba(255,255,255,0.95); border:none;" placeholder="可多輪對話或輸入需求（例：你好、推薦 100 元內不排隊的麵、預訂怎麼付錢）..." onkeydown="if(event.key==='Enter') askAiConcierge()">
             <button type="button" class="btn-tip-action" onclick="askAiConcierge()">🧠 傳送對話</button>
           </div>
           <div id="aiConciergeResponse" class="ai-response-card"></div>
@@ -80,7 +89,7 @@
         <div class="filter-row">
           <button class="filter-chip active" id="filter-ALL" onclick="setFilter('ALL')">全部店家</button>
           <button class="filter-chip" id="filter-FAST" onclick="setFilter('FAST')">⚡ 免排隊快取 (綠燈順暢)</button>
-          <button class="filter-chip" id="filter-PROMO" onclick="setFilter('PROMO')">🎁 AI 分流送優惠</button>
+          <button class="filter-chip" id="filter-PROMO" onclick="setFilter('PROMO')">🎁 離峰分流送優惠</button>
         </div>
         <div id="storeListContainer" class="store-list"></div>
       </div>
@@ -118,7 +127,6 @@
     </section>
   </main>
 
-  <!-- 所有共用 Modal 與懸浮購物車皆由 app.js 內之 ensureSharedModalsMounted() 統一動態掛載 -->
   <script src="../app.js"></script>
 </body>
 </html>
