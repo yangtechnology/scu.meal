@@ -1044,7 +1044,185 @@ function autoPurgeExpiredUnpaidOrders() {
  * 自動檢查並注入系統所需之共用彈窗（包含新增的「✏️ 餐點進階編輯彈窗」與「🖨️ 80mm 熱感應出單機收據預覽」），
  * 即使 HTML 檔案精簡化也完全不會報錯！
  */
+/**
+ * 終極 DRY 共用元件與 Modal 動態掛載引擎：
+ * 自動檢查並注入底部懸浮購物車與全部 8 座共用 Modal，讓三個 HTML 檔案保持極致乾淨、零重複！
+ */
 function ensureSharedModalsMounted() {
+  if (!document.getElementById('toast')) {
+    document.body.insertAdjacentHTML('afterbegin', `<div id="toast" class="toast"></div>`);
+  }
+  if (!document.getElementById('analyticsChartTooltip')) {
+    document.body.insertAdjacentHTML('afterbegin', `<div id="analyticsChartTooltip" class="chart-floating-tooltip"></div>`);
+  }
+
+  if (!document.getElementById('floatingCartBar')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="floatingCartBar" class="floating-cart-bar" style="display:none;">
+        <div class="floating-cart-inner">
+          <button type="button" id="viewCartBtn" class="btn-view-cart" onclick="openCartModal()" disabled>
+            <span id="cartItemCountBadge" class="cart-count-pill">0 份</span>
+            <span>🛒 查看購物車・選取餐與預訂時間</span>
+            <span id="cartPreviewTotal" style="font-size:1.2rem; font-weight:900;">NT$ 0</span>
+          </button>
+        </div>
+      </div>
+    `);
+  }
+
+  if (!document.getElementById('cartModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="cartModal" class="modal-overlay bottom-sheet" onclick="if(event.target===this) closeCartModal()">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h2 style="font-size:1.3rem; font-weight:900; display:flex; align-items:center; gap:8px;">
+              <span>🛒</span> 確認購物車明細與預訂設定
+            </h2>
+            <button type="button" onclick="closeCartModal()" style="border:none; background:#F3F4F6; width:36px; height:36px; border-radius:50%; font-size:1.2rem; font-weight:900;">✕</button>
+          </div>
+          <div class="modal-body" style="background:var(--bg-page);" id="cartPageList"></div>
+          <div class="modal-footer">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <span style="font-size:1.05rem; font-weight:800;">應付總計金額</span>
+              <span id="cartModalTotal" style="font-size:1.55rem; font-weight:900; color:var(--red);">NT$ 0</span>
+            </div>
+            <button type="button" id="finalSubmitOrderBtn" class="btn-tip-action" style="width:100%; padding:15px; font-size:1.05rem;" onclick="submitStudentCartOrder()">
+              確認餐點並送出訂單
+            </button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (!document.getElementById('optionsModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="optionsModal" class="modal-overlay" onclick="if(event.target===this) closeOptionsModal()">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <h3 style="font-size:1.2rem; font-weight:900;" id="optModalTitle">餐點名稱</h3>
+              <div style="font-size:0.78rem; color:var(--text-secondary);" id="optModalSubtitle">基本價格</div>
+            </div>
+            <button type="button" onclick="closeOptionsModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-size:1.1rem; font-weight:900;">✕</button>
+          </div>
+          <div class="modal-body" id="optModalContent"></div>
+          <div class="modal-footer">
+            <button type="button" id="confirmOptionsBtn" class="btn-tip-action" style="width:100%; padding:14px; font-size:1rem;" onclick="confirmOptionsModal()">
+              確認加入
+            </button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (!document.getElementById('posCashNumpadModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="posCashNumpadModal" class="modal-overlay" onclick="if(event.target===this) closePosCashNumpadModal()">
+        <div class="modal-card" style="max-width:420px;">
+          <div class="modal-header">
+            <div>
+              <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">POS Touch Keypad</span>
+              <h3 style="font-size:1.15rem; font-weight:900;">🔢 點選輸入顧客實收金額</h3>
+            </div>
+            <button type="button" onclick="closePosCashNumpadModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
+          </div>
+          <div class="modal-body" id="posCashNumpadBody"></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (!document.getElementById('orderPayModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="orderPayModal" class="modal-overlay" onclick="if(event.target===this) closeOrderPayModal()">
+        <div class="modal-card" style="max-width:440px;">
+          <div class="modal-header">
+            <div>
+              <span style="font-size:0.72rem; font-weight:800; color:var(--brand);">Order Payment Collection</span>
+              <h3 style="font-size:1.15rem; font-weight:900;">💵 訂單收款與觸控找零</h3>
+            </div>
+            <button type="button" onclick="closeOrderPayModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
+          </div>
+          <div class="modal-body" id="orderPayModalBody"></div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (!document.getElementById('lineBindModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="lineBindModal" class="modal-overlay" onclick="if(event.target===this) closeLineBindModal()">
+        <div class="modal-card" style="max-width:500px;">
+          <div class="modal-header" style="background:#06C755; color:#FFFFFF;">
+            <div>
+              <span style="font-size:0.7rem; font-weight:800; background:rgba(255,255,255,0.22); padding:2px 8px; border-radius:999px;">LINE Login OAuth 2.1 + Flex Message Push</span>
+              <h3 style="font-size:1.15rem; font-weight:900; margin-top:3px;">💬 綁定 LINE 接收取餐通知</h3>
+            </div>
+            <button type="button" onclick="closeLineBindModal()" style="border:none; background:rgba(255,255,255,0.22); color:#fff; width:32px; height:32px; border-radius:50%; font-weight:900;">✕</button>
+          </div>
+          <div class="modal-body">
+            <div id="lineBindStatusBanner"></div>
+            <div style="background:#F0FDF4; border:1.5px solid #86EFAC; border-radius:12px; padding:14px; margin-bottom:12px;">
+              <div style="font-size:0.88rem; font-weight:900; color:#065F46; margin-bottom:6px;">
+                📲 一鍵透過 LINE Login 授權綁定 (免 Webhook)
+              </div>
+              <p style="font-size:0.78rem; color:#047857; line-height:1.45; margin-bottom:10px;">
+                點擊下方按鈕將跳轉至 LINE 官方授權畫面，授權後系統會自動取得您的 <code>userId</code>。當餐點製作完成或預訂需繳費時，官方帳號將自動推播精美 Flex Message 通知卡給您！
+              </p>
+              <button type="button" class="btn-line" style="width:100%; justify-content:center; padding:11px; font-size:0.92rem;" onclick="startLineOAuthLogin()">
+                🚀 使用 LINE 帳號一鍵授權綁定
+              </button>
+            </div>
+            <div style="background:#F8FAFC; border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:12px;">
+              <div style="font-size:0.8rem; font-weight:900; color:var(--text-primary); margin-bottom:8px;">
+                📧 綁定 Email 免費無限量取餐通知 / 或手動填入 LINE User ID
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1.3fr; gap:8px; margin-bottom:8px;">
+                <div>
+                  <label class="field-label">👤 顯示名稱</label>
+                  <input type="text" id="lineInputName" class="select-input" placeholder="例如：王小明">
+                </div>
+                <div>
+                  <label class="field-label">📧 Email 信箱 (免額度限制推薦)</label>
+                  <input type="email" id="lineInputEmail" class="select-input" placeholder="student@scu.edu.tw">
+                </div>
+              </div>
+              <div style="margin-bottom:8px;">
+                <label class="field-label">🆔 LINE User ID (選填，U開頭 33 碼)</label>
+                <input type="text" id="lineInputId" class="select-input" placeholder="若已用上方按鈕授權會自動帶入">
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button type="button" class="btn-line" style="flex:1; justify-content:center; padding:9px;" onclick="saveLineBindConfig()">
+                  💾 儲存通知設定
+                </button>
+                <button type="button" class="filter-chip" onclick="requestBrowserNotificationPermission()">
+                  🔔 開啟網頁震動響鈴
+                </button>
+              </div>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <strong style="font-size:0.84rem; color:#166534;">📬 最近 LINE 推播紀錄匣</strong>
+              <button type="button" onclick="unbindLineAccount()" style="border:none; background:transparent; color:var(--text-muted); font-size:0.74rem; text-decoration:underline; cursor:pointer;">解除綁定</button>
+            </div>
+            <div id="lineLogsContainer" style="max-height:140px; overflow-y:auto;"></div>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (!document.getElementById('pickupAlertModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="pickupAlertModal" class="modal-overlay" onclick="if(event.target===this) closePickupAlertModal()">
+        <div class="modal-card" style="max-width:400px; border:3px solid var(--green);">
+          <div class="modal-body" id="pickupAlertContent"></div>
+        </div>
+      </div>
+    `);
+  }
+
   if (!document.getElementById('menuEditModal')) {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="menuEditModal" class="modal-overlay" onclick="if(event.target===this) closeMenuEditModal()">
