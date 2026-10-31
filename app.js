@@ -4,7 +4,7 @@
  * - 修正 syncCloud() 與 code.gs getInitBundle() 之 bundle.{stores, orders} 對接
  */
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzVXQRKZfnhgM_BhW6pgy1VOCg7YmCdfnAdHOS_9Tt7agxQa2r69hwg1UGL73gpoVwp/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzN2e0bi-jQG5RvGBpZYu5190f2JfX-6P1C8DxUy2aPyrrpbJpBl0oaTwYFRhAyBl8/exec';
 // Channel ID 為公開 OAuth 識別碼（非機密）；Secret 與 Access Token 嚴禁寫入前端原始碼，統一由後端 GAS ScriptProperties 託管
 const DEFAULT_LINE_CLIENT_ID = localStorage.getItem('mealflow_system_line_client_id') || '2012260287';
 const DEFAULT_LINE_CLIENT_SECRET = '';
