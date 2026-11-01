@@ -1,6 +1,7 @@
 /* ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業專業版樣式表 (Commercial v11.0)
- * 支援：平板觸控收銀、KDS 廚房單品備料匯總、防偽動態憑證、交班 Z-Report、80mm 熱感應列印
+ * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業企業版樣式表 (Commercial v14.0 Pro)
+ * 支援：三端 HTML 100% 雙向相容、平板觸控收銀、KDS 規格備料看板、鏡頭掃碼核銷、
+ *       4~8 碼安全 PIN 閘門、時段配額標示、會計級交班 Z-Report、80mm 熱感應列印
  * ============================================================================ */
 :root {
   --brand: #FF5A1F;
@@ -36,7 +37,7 @@
   --shadow-float: 0 18px 40px rgba(17, 24, 39, 0.22);
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -237,14 +238,17 @@ input, select, textarea {
   color: #991B1B;
 }
 
-/* ==================== 主容器與視圖路由 ==================== */
-.container {
+/* ==================== 主容器與視圖路由（相容 .container 與 .page-container） ==================== */
+.container,
+.page-container {
   max-width: 760px;
   margin: 0 auto;
   padding: 16px;
 }
 
-body.store-mode-active .container {
+body.store-mode-active .container,
+body.store-mode-active .page-container,
+#viewStore .page-container {
   max-width: 1320px;
   padding: 12px 18px;
 }
@@ -275,7 +279,7 @@ body.store-mode-active .container {
   box-shadow: var(--shadow-md);
 }
 
-/* ==================== 進行中訂單提示條 ==================== */
+/* ==================== 進行中訂單提示條與跨裝置查單列 ==================== */
 .active-order-strip {
   background: #111827;
   color: #FFFFFF;
@@ -307,14 +311,44 @@ body.store-mode-active .container {
   font-size: 1.05rem;
 }
 
-/* ==================== 智慧選餐顧問（多輪氣泡式聊天室） ==================== */
-.ai-concierge-box {
+.order-lookup-bar {
+  background: #FFFFFF;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ==================== 智慧選餐顧問（相容 .ai-concierge-box 與 .ai-concierge-card） ==================== */
+.ai-concierge-box,
+.ai-concierge-card {
   background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
   color: #FFFFFF;
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   margin-bottom: 14px;
   box-shadow: 0 8px 24px rgba(49, 46, 129, 0.18);
+}
+
+/* 確保 index.html(主) 內寫死的深色字體與淺色膠囊在深色漸層卡片上清晰可讀 */
+.ai-concierge-card strong {
+  color: #FFFFFF !important;
+}
+
+.ai-concierge-card .filter-chip {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: #E0E7FF;
+}
+
+.ai-concierge-card .filter-chip:hover {
+  background: rgba(255, 255, 255, 0.24);
+  color: #FFFFFF;
 }
 
 .ai-chip-row {
@@ -346,7 +380,8 @@ body.store-mode-active .container {
   color: #FFFFFF;
 }
 
-.ai-response-card {
+.ai-response-card,
+.ai-concierge-response {
   background: rgba(255, 255, 255, 0.98);
   color: var(--text-primary);
   border-radius: var(--radius-md);
@@ -357,7 +392,8 @@ body.store-mode-active .container {
   overflow-y: auto;
 }
 
-.ai-response-card.show {
+.ai-response-card.show,
+.ai-concierge-response.show {
   display: block;
   animation: fadeIn 0.25s ease;
 }
@@ -608,7 +644,8 @@ body.store-mode-active .container {
   box-shadow: 0 2px 8px rgba(255, 90, 31, 0.22);
 }
 
-.store-list {
+.store-list,
+#storeListContainer {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -909,12 +946,56 @@ body.store-mode-active .container {
   font-weight: 900;
 }
 
-/* ==================== 店家端現代化左側白色圖示欄 + 美型 POS 介面 (/store/) ==================== */
-.store-shell-layout {
+/* ==================== 預訂時段配額標示 (Slot Capacity Quota) ==================== */
+.slot-quota-info {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.slot-quota-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.slot-quota-badge.free {
+  background: var(--green-bg);
+  color: #065F46;
+}
+
+.slot-quota-badge.busy {
+  background: var(--amber-bg);
+  color: #92400E;
+}
+
+.slot-quota-badge.full {
+  background: var(--red-bg);
+  color: #991B1B;
+}
+
+/* ==================== 店家端現代化左側導覽軌 + 舞台區（雙向相容主頁與 /store/） ==================== */
+.store-shell-layout,
+.store-workspace-shell {
   display: grid;
-  grid-template-columns: 74px 1fr;
+  grid-template-columns: 78px 1fr;
   gap: 14px;
   align-items: start;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 12px 16px;
+}
+
+body.store-mode-active .container .store-shell-layout {
+  padding: 0;
 }
 
 .store-left-rail {
@@ -932,10 +1013,11 @@ body.store-mode-active .container {
   height: calc(100dvh - 82px);
 }
 
-.store-rail-btn {
+.store-rail-btn,
+.rail-nav-btn {
   position: relative;
-  width: 56px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -950,24 +1032,28 @@ body.store-mode-active .container {
   transition: all 0.16s ease;
 }
 
-.store-rail-btn .rail-icon {
+.store-rail-btn .rail-icon,
+.rail-nav-btn span:first-child {
   font-size: 1.35rem;
   line-height: 1;
 }
 
-.store-rail-btn:hover {
+.store-rail-btn:hover,
+.rail-nav-btn:hover {
   background: var(--bg-page);
   color: var(--text-primary);
   transform: translateY(-1px);
 }
 
-.store-rail-btn.active {
+.store-rail-btn.active,
+.rail-nav-btn.active {
   background: var(--brand);
   color: #FFFFFF;
   box-shadow: 0 6px 14px rgba(255, 90, 31, 0.28);
 }
 
-.tab-badge {
+.tab-badge,
+.rail-badge {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -980,12 +1066,14 @@ body.store-mode-active .container {
   line-height: 1.2;
 }
 
-.store-rail-btn.active .tab-badge {
+.store-rail-btn.active .tab-badge,
+.rail-nav-btn.active .rail-badge {
   background: #FFFFFF;
   color: var(--brand-dark);
 }
 
-.store-stage-area {
+.store-stage-area,
+.store-main-stage {
   min-width: 0;
   width: 100%;
 }
@@ -1223,33 +1311,41 @@ body.store-mode-active .container {
   cursor: not-allowed;
 }
 
-/* 彈出式觸控數字鍵盤與 PIN 碼框 */
+/* ==================== 4~8 碼彈性觸控數字鍵盤與 PIN 碼框 ==================== */
 .pin-dots-row {
   display: flex;
   justify-content: center;
-  gap: 12px;
-  margin: 18px 0;
+  gap: 8px;
+  margin: 14px 0;
+  flex-wrap: wrap;
 }
 
 .pin-dot-box {
-  width: 48px;
-  height: 54px;
+  width: 38px;
+  height: 46px;
   border: 2px solid #CBD5E1;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #F8FAFC;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 900;
   color: var(--slate-dark);
   transition: all 0.15s ease;
 }
 
+.pin-dot-box.optional {
+  border-style: dashed;
+  opacity: 0.65;
+}
+
 .pin-dot-box.filled {
+  border-style: solid;
   border-color: var(--brand);
   background: var(--brand-light);
   color: var(--brand-dark);
+  opacity: 1;
 }
 
 .pin-dots-row.shake-error {
@@ -1296,7 +1392,14 @@ body.store-mode-active .container {
   font-size: 1.05rem;
 }
 
-/* ==================== 訂單管理 (KDS 單品備料匯總看板 & 五階段狀態卡) ==================== */
+.pos-numpad-key.submit {
+  background: var(--green);
+  color: #FFFFFF;
+  border-color: var(--green);
+  font-size: 1rem;
+}
+
+/* ==================== 訂單管理 (KDS 單品備料匯總看板 & 鏡頭掃碼視窗) ==================== */
 .kds-panel-wrap {
   display: flex;
   flex-direction: column;
@@ -1304,7 +1407,6 @@ body.store-mode-active .container {
   padding-bottom: 40px;
 }
 
-/* 🔥 KDS 頂部即時廚房備料匯總看板 (All-Day Batch View) */
 .kds-batch-summary-bar {
   background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
   color: #FFFFFF;
@@ -1330,19 +1432,44 @@ body.store-mode-active .container {
   border-radius: 12px;
   padding: 8px 14px;
   display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.batch-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
 }
 
 .batch-item-pill .batch-qty {
   background: var(--brand);
   color: #FFFFFF;
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 950;
   padding: 2px 9px;
   border-radius: 8px;
+}
+
+.batch-spec-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.batch-spec-chip {
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.16);
+  color: #FDE68A;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 .kds-toolbar {
@@ -1354,6 +1481,18 @@ body.store-mode-active .container {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.kds-verify-bar {
+  background: #EEF2FF;
+  border: 1.5px solid #C7D2FE;
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .kds-orders-grid {
@@ -1411,6 +1550,47 @@ body.store-mode-active .container {
   background: #FEE2E2;
   color: #DC2626;
   animation: pulse 1.2s infinite;
+}
+
+/* KDS 鏡頭掃描核銷視窗 */
+.qr-scanner-viewport {
+  position: relative;
+  width: 100%;
+  height: 250px;
+  background: #0F172A;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  border: 2px solid #4F46E5;
+}
+
+.qr-scanner-viewport video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qr-scanner-frame {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  border: 2.5px solid #34D399;
+  border-radius: 16px;
+  box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.45);
+  pointer-events: none;
+}
+
+.qr-scanner-laser {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: #10B981;
+  box-shadow: 0 0 10px #10B981;
+  animation: laserScan 2s ease-in-out infinite;
 }
 
 /* ==================== 營運分析與設定面板 ==================== */
@@ -1545,7 +1725,7 @@ body.store-mode-active .container {
   transform: translateY(0);
 }
 
-/* ==================== 專屬電子取餐憑證與防偽動態時鐘 ==================== */
+/* ==================== 專屬電子取餐憑證與真實 ISO QR Code ==================== */
 .ticket-hero-card {
   background: #FFFFFF;
   border-radius: var(--radius-xl);
@@ -1557,7 +1737,6 @@ body.store-mode-active .container {
   overflow: hidden;
 }
 
-/* 防截圖動態掃描光條 (Anti-Screenshot Live Banner) */
 .live-verify-banner {
   background: linear-gradient(90deg, #0F172A 0%, #1E3A8A 50%, #0F172A 100%);
   background-size: 200% 100%;
@@ -1591,6 +1770,36 @@ body.store-mode-active .container {
   line-height: 1.05;
   letter-spacing: -1px;
   margin: 6px 0;
+}
+
+.hmac-verify-badge-box {
+  background: #EEF2FF;
+  border: 1.5px dashed #4F46E5;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: 10px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hmac-verify-badge-box.unverified-warning {
+  background: #FFFBEB;
+  border-color: #F59E0B;
+}
+
+.hmac-code-digits {
+  font-family: monospace;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #312E81;
+  background: #FFFFFF;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #818CF8;
 }
 
 /* 五階段狀態進度條 */
@@ -1668,9 +1877,9 @@ body.store-mode-active .container {
 }
 
 .svg-qr-box {
-  width: 108px;
-  height: 108px;
-  padding: 6px;
+  width: 118px;
+  height: 118px;
+  padding: 8px;
   background: #FFFFFF;
   border: 1.5px solid var(--border);
   border-radius: 12px;
@@ -1678,6 +1887,7 @@ body.store-mode-active .container {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 /* ==================== 共用 Modal 彈窗與 Bottom Sheet ==================== */
@@ -1792,7 +2002,7 @@ body.store-mode-active .container {
 /* ==================== 80mm 熱感應出單機小票與交班日結單 (Z-Report) ==================== */
 .thermal-receipt-paper {
   width: 100%;
-  max-width: 310px;
+  max-width: 320px;
   margin: 0 auto;
   background: #FFFFFF;
   color: #000000;
@@ -1860,6 +2070,11 @@ body.store-mode-active .container {
   100% { background-position: 200% 50%; }
 }
 
+@keyframes laserScan {
+  0%, 100% { top: 18%; }
+  50% { top: 82%; }
+}
+
 @keyframes ringBell {
   0%, 100% { transform: rotate(0deg); }
   20% { transform: rotate(16deg); }
@@ -1887,7 +2102,8 @@ body.store-mode-active .container {
     overflow-y: auto;
   }
 
-  .store-shell-layout {
+  .store-shell-layout,
+  .store-workspace-shell {
     grid-template-columns: 1fr;
   }
 
@@ -1899,7 +2115,8 @@ body.store-mode-active .container {
     padding: 8px;
   }
 
-  .store-rail-btn {
+  .store-rail-btn,
+  .rail-nav-btn {
     width: auto;
     flex: 1;
     height: 50px;
@@ -1943,6 +2160,8 @@ body.store-mode-active .container {
 
   .app-header,
   main.container,
+  .page-container,
+  .store-workspace-shell,
   .floating-cart-bar,
   .toast,
   .chart-floating-tooltip,
@@ -1983,18 +2202,4 @@ body.store-mode-active .container {
     padding: 2mm 1mm !important;
     margin: 0 !important;
   }
-}
-/* === 僅新增：KDS 備料規格拆解與 6 碼防偽核銷碼附屬樣式（不影響原有 UI） === */
-.batch-item-pill { flex-direction: column; align-items: flex-start; gap: 4px; }
-.batch-item-header { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 8px; }
-.batch-spec-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-.batch-spec-chip { font-size: 0.72rem; font-weight: 800; background: rgba(255,255,255,0.16); color: #FDE68A; padding: 1px 6px; border-radius: 4px; }
-.kds-verify-bar { background: #EEF2FF; border: 1.5px solid #C7D2FE; border-radius: 10px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.hmac-verify-badge-box { background: #EEF2FF; border: 1.5px dashed #4F46E5; border-radius: 12px; padding: 10px 14px; margin: 10px 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-.hmac-code-digits { font-family: monospace; font-size: 1.35rem; font-weight: 900; letter-spacing: 2px; color: #312E81; background: #FFFFFF; padding: 3px 10px; border-radius: 6px; border: 1px solid #818CF8; }
-.order-lookup-bar { background: #FFFFFF; border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* 僅補上門市離線單尚未取得雲端簽章時的提示邊框，不影響任何原有設計 */
-.hmac-verify-badge-box.unverified-warning {
-  background: #FFFBEB;
-  border-color: #F59E0B;
 }
