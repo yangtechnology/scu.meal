@@ -1,20 +1,21 @@
 /**
  * ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板收銀系統 - 商業級雲端後端引擎 (Google Apps Script v12.0 Enterprise)
+ * 東吳學餐智慧點餐與全螢幕平板收銀系統 - 商業級雲端後端引擎 (Google Apps Script v13.0 Enterprise)
  * ============================================================================
  * 核心架構與資安升級：
- * 1. 動態伺服器密鑰與 HMAC-SHA256 時效性 Session Token (徹底拔除 8888 永久後門)
- * 2. 嚴格白名單計價與必選規格 (Radio) 強制校驗 (根除捏造假 ID 10 元結帳漏洞)
- * 3. 讀寫分離 (Read/Write Separation) + 批次讀寫 (Batch setValues)，消滅迴圈 setValue 效能炸彈
- * 4. Menus 資料表獨立 soldOut 正規欄位 + 原子性寫入保護
- * 5. 伺服器端 HMAC 6 碼防偽核銷碼 (verificationCode) 與跨裝置手機末碼查單 (lookupOrders)
+ * 1. 動態伺服器密鑰與 HMAC-SHA256 時效性 + 店鋪範圍 (Scope) Session Token
+ * 2. 嚴格白名單計價與必選規格 (Radio) 強制校驗 (根除前端竄改價格與離線霸王餐漏洞)
+ * 3. 滑動視窗尾部讀取 (Sliding Window Tail Read) + 定點單列更新 (Targeted Row Update)，根除萬筆訂單卡死問題
+ * 4. 學生端公開 API 電話個資脫敏 (Data Masking)，僅授權店家可檢視完整電話
+ * 5. Menus 資料表店家隔離原子寫入 + 確定性穩定品項 ID 保護
  */
 
 const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
-const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V12_0';
+const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V13_0';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500;
 const SESSION_TTL_MS = 8 * 3600 * 1000; // 店務 Session Token 效期 8 小時
+const ORDERS_TAIL_WINDOW_SIZE = 400;    // 滑動視窗：僅掃描最近 400 筆活躍訂單，保護 GAS 記憶體與執行時間
 
 const scriptProps = PropertiesService.getScriptProperties();
 const SYSTEM_LINE_CLIENT_ID = scriptProps.getProperty('LINE_CLIENT_ID') || '2012260287';
@@ -26,15 +27,16 @@ function doGet(e) {
   const params = (e && e.parameter) ? e.parameter : {};
   if (params.action === 'getOrder' && params.orderId) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
+    const hasMerchantAuth = isMerchantRequestValid(params, '');
     return jsonResponse({
       success: true,
-      order: findOrderById(ss, params.orderId)
+      order: findOrderById(ss, params.orderId, hasMerchantAuth)
     });
   }
 
   return jsonResponse({
     success: true,
-    service: '東吳學餐智慧點餐雲端引擎 Commercial v12.0 Enterprise',
+    service: '東吳學餐智慧點餐雲端引擎 Commercial v13.0 Enterprise',
     status: 'ONLINE'
   });
 }
@@ -48,7 +50,7 @@ function doPost(e) {
 
     ensureDatabaseInitialized(ss, Boolean(params.forceInit));
 
-    // 【商業級重構 4：讀寫分離】唯讀或非競爭型請求不搶用全域寫入鎖，大幅提升中午尖峰吞吐量
+    // 唯讀或非競爭型請求不搶用全域寫入鎖，大幅提升中午尖峰吞吐量
     const READ_ONLY_ACTIONS = {
       'initBundle': true,
       'getOrder': true,
@@ -60,7 +62,6 @@ function doPost(e) {
     };
 
     if (READ_ONLY_ACTIONS[action]) {
-      // 唯讀請求僅在距離上次排程清理超過 45 秒時，嘗試以非阻塞鎖 (tryLock 300ms) 順便推進預訂單狀態
       maybeRunBackgroundMaintenance(ss);
       const readResult = dispatchAction(ss, action, params);
       return jsonResponse({ success: true, ...readResult });
@@ -96,7 +97,7 @@ function dispatchAction(ss, action, params) {
     case 'initBundle':
       return getInitBundle(ss, params);
     case 'getOrder':
-      return { order: findOrderById(ss, params.orderId) };
+      return { order: findOrderById(ss, params.orderId, isMerchantRequestValid(params, '')) };
     case 'lookupOrders':
       return lookupOrdersAcrossDevices(ss, params);
     case 'submitOrder':
@@ -108,39 +109,39 @@ function dispatchAction(ss, action, params) {
     case 'sendLinePush':
       return handleManualLinePush(ss, params);
 
-    // 店務授權端點 (核發與更新 HMAC Session Token)
+    // 店務授權端點 (核發與更新具備 storeId 範圍之 HMAC Session Token)
     case 'verifyMerchantPin':
       return handleVerifyMerchantPin(params);
     case 'updateMerchantPin':
     case 'updateMerchantPinHash':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, params.storeId || '');
       return handleUpdateMerchantPin(params);
 
-    // 受 HMAC Session Token 嚴格保護之店務寫入端點
+    // 受 HMAC Session Token 與店鋪權限範圍嚴格保護之店務寫入端點
     case 'updateStoreConfig':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, params.storeId || '');
       return updateStoreSettings(ss, params);
     case 'saveStoreMenus':
     case 'saveStoreMenu':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, params.storeId || '');
       return saveStoreMenusAtomic(ss, params);
     case 'aiParseMenu':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, params.storeId || '');
       return handleAiParseMenu(ss, params);
     case 'updateOrderStatus':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, '');
       return updateOrderStateBatch(ss, params);
     case 'markReservationPaid':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, '');
       return markReservationPaid(ss, params);
     case 'cancelOrder':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, '');
       return cancelOrderByIdBatch(ss, params);
     case 'simulateTraffic':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, '');
       return runTrafficSimulation(ss, params);
     case 'saveLineDevConfig':
-      assertMerchantAuthorized(params);
+      assertMerchantAuthorized(params, params.storeId || '');
       return saveLineDevConfig(ss, params);
 
     default:
@@ -154,7 +155,7 @@ function jsonResponse(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ==================== 商業級重構 1：伺服器動態鹽值、無後門密碼驗證與時效 HMAC Session Token ====================
+// ==================== 1. 伺服器動態鹽值、各店獨立 PIN 驗證與時效 HMAC Session Token ====================
 function getServerSecretKey() {
   const props = PropertiesService.getScriptProperties();
   let secret = props.getProperty('MEALFLOW_SERVER_HMAC_SECRET_V12');
@@ -178,97 +179,143 @@ function hashMerchantPinWithServerSalt(rawPin) {
   return computeHmacHex('PIN_AUTH_V12:' + String(rawPin || '').trim(), secret);
 }
 
-function getStoredMerchantPinHash() {
+function getStoredMasterPinHash() {
   const props = PropertiesService.getScriptProperties();
   let savedHash = props.getProperty('MERCHANT_PIN_HMAC_V12');
   if (!savedHash) {
-    // 僅在系統首次初始化且尚未設定密碼時，初始化第一組管理碼；一旦店長修改後即永久覆蓋，絕無 8888 後門！
     savedHash = hashMerchantPinWithServerSalt('8888');
     props.setProperty('MERCHANT_PIN_HMAC_V12', savedHash);
   }
   return savedHash;
 }
 
-function issueMerchantSessionToken(storeId) {
+function getStoredStorePinHash(storeId) {
+  if (!storeId) return '';
+  const props = PropertiesService.getScriptProperties();
+  return props.getProperty('MERCHANT_PIN_HMAC_STORE_' + String(storeId).trim()) || '';
+}
+
+function issueMerchantSessionToken(storeScope) {
+  const cleanScope = String(storeScope || 'ALL').trim() || 'ALL';
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const nonce = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
-  const payloadStr = `${expiresAt}_${nonce}_${storeId || 'ALL'}`;
+  const payloadStr = `${expiresAt}_${nonce}_${cleanScope}`;
   const sigHex = computeHmacHex(payloadStr, getServerSecretKey());
   return {
     sessionToken: `${payloadStr}.${sigHex}`,
-    expiresAt: expiresAt
+    expiresAt: expiresAt,
+    authorizedStoreId: cleanScope
   };
 }
 
-function isMerchantRequestValid(params) {
-  if (!params) return false;
+function parseVerifiedMerchantSession(params) {
+  if (!params) return null;
   const token = String(params.merchantAuthToken || '').trim();
-  if (!token || token.indexOf('.') < 0) return false;
+  if (!token || token.indexOf('.') < 0) return null;
 
   const parts = token.split('.');
-  if (parts.length !== 2) return false;
+  if (parts.length !== 2) return null;
 
   const payloadStr = parts[0];
   const providedSig = parts[1];
   const expectedSig = computeHmacHex(payloadStr, getServerSecretKey());
-  if (providedSig !== expectedSig) return false;
+  if (providedSig !== expectedSig) return null;
 
   const payloadParts = payloadStr.split('_');
   const expiresAt = Number(payloadParts[0] || 0);
+  const tokenScope = String(payloadParts[2] || 'ALL');
   if (!expiresAt || Date.now() > expiresAt) {
+    return null;
+  }
+  return { expiresAt: expiresAt, storeScope: tokenScope };
+}
+
+function isMerchantRequestValid(params, requiredStoreId) {
+  const session = parseVerifiedMerchantSession(params);
+  if (!session) return false;
+  const targetStore = String(requiredStoreId || '').trim();
+  if (targetStore && session.storeScope !== 'ALL' && session.storeScope !== targetStore) {
     return false;
   }
   return true;
 }
 
-function assertMerchantAuthorized(params) {
-  if (!isMerchantRequestValid(params)) {
-    throw new Error('店務管理權限驗證失敗或時效憑證已過期 (Unauthorized)，請重新輸入授權碼解鎖');
+function assertMerchantAuthorized(params, requiredStoreId) {
+  if (!isMerchantRequestValid(params, requiredStoreId)) {
+    throw new Error('店務管理權限驗證失敗、跨店越權或時效憑證已過期 (Unauthorized)，請重新輸入該店授權碼解鎖');
   }
 }
 
 function handleVerifyMerchantPin(params) {
   const rawPin = String(params.pin || '').trim();
+  const requestedStoreId = String(params.storeId || '').trim();
   if (!rawPin || !/^\d{4,8}$/.test(rawPin)) {
-    throw new Error('請輸入有效的店務管理授權碼');
+    throw new Error('請輸入有效的 4 至 8 位數店務管理授權碼');
   }
+
   const candidateHash = hashMerchantPinWithServerSalt(rawPin);
-  const expectedHash = getStoredMerchantPinHash();
+  const storeSpecificHash = getStoredStorePinHash(requestedStoreId);
+  const masterHash = getStoredMasterPinHash();
 
-  if (candidateHash !== expectedHash) {
-    throw new Error('店務授權碼錯誤，拒絕存取');
+  // 若符合該店專屬獨立 PIN，核發綁定該 storeId 的專屬 Token
+  if (storeSpecificHash && candidateHash === storeSpecificHash) {
+    const tokenObj = issueMerchantSessionToken(requestedStoreId);
+    return {
+      verified: true,
+      sessionToken: tokenObj.sessionToken,
+      expiresAt: tokenObj.expiresAt,
+      authorizedStoreId: tokenObj.authorizedStoreId
+    };
   }
 
-  const tokenObj = issueMerchantSessionToken(params.storeId || 'ALL');
-  return {
-    verified: true,
-    sessionToken: tokenObj.sessionToken,
-    expiresAt: tokenObj.expiresAt
-  };
+  // 若該店尚未設定專屬 PIN 或輸入的是全區總管碼，核發 ALL 權限 Token
+  if (candidateHash === masterHash) {
+    const tokenObj = issueMerchantSessionToken('ALL');
+    return {
+      verified: true,
+      sessionToken: tokenObj.sessionToken,
+      expiresAt: tokenObj.expiresAt,
+      authorizedStoreId: tokenObj.authorizedStoreId
+    };
+  }
+
+  throw new Error('店務授權碼錯誤，拒絕存取');
 }
 
 function handleUpdateMerchantPin(params) {
   const newPin = String(params.newPin || '').trim();
+  const targetStoreId = String(params.storeId || '').trim();
   if (!/^\d{4,8}$/.test(newPin)) {
     throw new Error('新授權碼必須為 4 至 8 位數字');
   }
-  const newHash = hashMerchantPinWithServerSalt(newPin);
-  PropertiesService.getScriptProperties().setProperty('MERCHANT_PIN_HMAC_V12', newHash);
 
-  // 立即換發新 Session Token
-  const tokenObj = issueMerchantSessionToken(params.storeId || 'ALL');
+  const session = parseVerifiedMerchantSession(params);
+  const newHash = hashMerchantPinWithServerSalt(newPin);
+  const props = PropertiesService.getScriptProperties();
+
+  // 若總管登入則一併更新總管碼與該店專屬碼；若單店登入則僅更新該店專屬碼
+  if (!targetStoreId || (session && session.storeScope === 'ALL')) {
+    props.setProperty('MERCHANT_PIN_HMAC_V12', newHash);
+  }
+  if (targetStoreId) {
+    props.setProperty('MERCHANT_PIN_HMAC_STORE_' + targetStoreId, newHash);
+  }
+
+  const nextScope = (session && session.storeScope === 'ALL') ? 'ALL' : (targetStoreId || 'ALL');
+  const tokenObj = issueMerchantSessionToken(nextScope);
   return {
     updated: true,
     sessionToken: tokenObj.sessionToken,
-    expiresAt: tokenObj.expiresAt
+    expiresAt: tokenObj.expiresAt,
+    authorizedStoreId: tokenObj.authorizedStoreId
   };
 }
 
 /**
- * 商業級重構 3：產生伺服器端 6 碼防偽核銷碼 (HMAC Verification Code)
+ * 產生伺服器端 6 碼防偽核銷碼 (100% 採用 HMAC-SHA256 + 伺服器密鑰)
  */
 function generateOrderVerificationCodeOnServer(orderId, pickupNumber, finalTotal) {
-  const sig = computeHmacHex(`${orderId}|${pickupNumber}|${finalTotal}`, getServerSecretKey());
+  const sig = computeHmacHex(`${orderId || ''}|${pickupNumber || ''}|${Number(finalTotal) || 0}`, getServerSecretKey());
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   let code = '';
   for (let i = 0; i < 6; i++) {
@@ -278,7 +325,57 @@ function generateOrderVerificationCodeOnServer(orderId, pickupNumber, finalTotal
   return code;
 }
 
-// ==================== 日期與時間嚴格序列化清洗器 ====================
+/**
+ * 確定性菜單品項 ID 生成器（與前端演算法一致，防止重存菜單時破壞品項關聯）
+ */
+function generateStableMenuItemIdOnServer(storeId, itemName) {
+  const cleanName = String(itemName || '').trim();
+  const cleanStore = String(storeId || 'S00').trim().toUpperCase();
+  let h = 2166136261;
+  const raw = `${cleanStore}::${cleanName}`;
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const hexSuffix = (h >>> 0).toString(36).toUpperCase().padStart(5, '0').slice(0, 5);
+  return `M-${cleanStore}-${hexSuffix}`;
+}
+
+/**
+ * 個資脫敏處理：對未授權之公開端點遮罩顧客完整電話，僅保留末 3 碼供驗證
+ */
+function extractPhoneLast3OnServer(phoneVal) {
+  const digits = String(phoneVal || '').replace(/\D/g, '');
+  return digits.length >= 3 ? digits.slice(-3) : '';
+}
+
+function maskPhoneForPublic(phoneVal) {
+  const raw = String(phoneVal || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    return `${digits.slice(0, 3)}****${digits.slice(-3)}`;
+  }
+  if (digits.length >= 3) {
+    return `***${digits.slice(-3)}`;
+  }
+  return '***';
+}
+
+function sanitizeOrderForClientOutput(orderObj, hasMerchantFullAccess) {
+  if (!orderObj) return null;
+  const clone = { ...orderObj };
+  const last3 = extractPhoneLast3OnServer(clone.customerPhone);
+  clone.customerPhoneLast3 = last3;
+  if (!hasMerchantFullAccess) {
+    clone.customerPhone = maskPhoneForPublic(clone.customerPhone);
+    delete clone.lineUserId;
+    delete clone.customerEmail;
+  }
+  return clone;
+}
+
+// ==================== 2. 日期與時間嚴格序列化清洗器 ====================
 function getTodayTaipeiStr() {
   return Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
 }
@@ -327,7 +424,7 @@ function normalizeSheetTimeStr(val, includeSeconds = false) {
   return includeSeconds ? '12:15:00' : '12:15';
 }
 
-// ==================== 資料庫結構初始化 (含 soldOut 與 basePrepMinutes 正規欄位) ====================
+// ==================== 3. 資料庫結構初始化與高效能滑動視窗 I/O 工具 ====================
 function ensureDatabaseInitialized(ss, forceCheck) {
   const props = PropertiesService.getScriptProperties();
   if (!forceCheck && props.getProperty('DB_INIT_VER') === DB_SCHEMA_VERSION) {
@@ -360,7 +457,6 @@ function ensureDatabaseInitialized(ss, forceCheck) {
   let menuSheet = ss.getSheetByName('Menus');
   if (!menuSheet) {
     menuSheet = ss.insertSheet('Menus');
-    // 商業級重構 5：將 soldOut 獨立為第 9 欄正規欄位
     menuSheet.appendRow(['id', 'storeId', 'name', 'price', 'tag', 'category', 'image', 'optionsJson', 'soldOut']);
 
     const stdRiceOpts = JSON.stringify({
@@ -431,7 +527,129 @@ function ensureDatabaseInitialized(ss, forceCheck) {
   props.setProperty('DB_INIT_VER', DB_SCHEMA_VERSION);
 }
 
-// ==================== 商業級重構 4 & 9：真實餐點複雜度、平滑等待時間演算法與批次佇列更新 ====================
+/**
+ * 讀取小型設定表 (Stores / Menus) 為物件陣列
+ */
+function sheetToObjects(sheet) {
+  if (!sheet) return [];
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return [];
+
+  const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  const headers = values[0].map(h => String(h || '').trim());
+  const list = [];
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (row[0] === '' || row[0] === null || row[0] === undefined) continue;
+    const obj = {};
+    for (let c = 0; c < headers.length; c++) {
+      if (headers[c]) obj[headers[c]] = row[c];
+    }
+    list.push(obj);
+  }
+  return list;
+}
+
+/**
+ * 【商業級重構 4：Sliding Window Tail Read 尾部滑動視窗讀取】
+ * 專用於 Orders 等無限增長之交易資料表，只讀取最後 maxTailRows 列，徹底杜絕幾千筆訂單後卡死的問題！
+ */
+function readSheetTailObjects(sheet, maxTailRows) {
+  if (!sheet) return [];
+  const lastRow = sheet.getLastRow();
+  const lastCol = Math.max(17, sheet.getLastColumn());
+  if (lastRow <= 1) return [];
+
+  const limit = Math.max(10, Number(maxTailRows) || ORDERS_TAIL_WINDOW_SIZE);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  const startRow = Math.max(2, lastRow - limit + 1);
+  const numRows = lastRow - startRow + 1;
+  const rows = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
+
+  const list = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row[0]) continue;
+    const obj = { __sheetRowIndex: startRow + i };
+    for (let c = 0; c < headers.length; c++) {
+      if (headers[c]) obj[headers[c]] = row[c];
+    }
+    list.push(obj);
+  }
+  return list;
+}
+
+/**
+ * 定點列搜尋：先在最近 450 筆尾部視窗快速定位 orderId，若為更早期歷史單才用 TextFinder 定點查找
+ */
+function locateOrderRowById(orderSheet, orderId) {
+  const cleanId = String(orderId || '').trim();
+  if (!orderSheet || !cleanId) return null;
+
+  const lastRow = orderSheet.getLastRow();
+  if (lastRow <= 1) return null;
+
+  const tailCount = Math.min(lastRow - 1, ORDERS_TAIL_WINDOW_SIZE);
+  const startRow = lastRow - tailCount + 1;
+  const rows = orderSheet.getRange(startRow, 1, tailCount, 17).getValues();
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][0]).trim() === cleanId) {
+      return {
+        sheetRowIndex: startRow + i,
+        rowValues: rows[i]
+      };
+    }
+  }
+
+  // 若不在最近 400 筆內，使用 TextFinder 在第 1 欄 (A欄) 快速定位，絕不載入整張表
+  const finder = orderSheet.getRange(2, 1, lastRow - 1, 1).createTextFinder(cleanId).matchEntireCell(true);
+  const matchedCell = finder.findNext();
+  if (matchedCell) {
+    const rIdx = matchedCell.getRow();
+    const rowVals = orderSheet.getRange(rIdx, 1, 1, 17).getValues()[0];
+    return {
+      sheetRowIndex: rIdx,
+      rowValues: rowVals
+    };
+  }
+  return null;
+}
+
+function rowArrayToOrderObject(rowVals) {
+  if (!rowVals || !rowVals[0]) return null;
+  return enrichOrderObject({
+    orderId: rowVals[0],
+    pickupNumber: rowVals[1],
+    storeId: rowVals[2],
+    storeName: rowVals[3],
+    studentId: rowVals[4],
+    studentName: rowVals[5],
+    itemsJson: rowVals[6],
+    subtotal: rowVals[7],
+    discount: rowVals[8],
+    finalTotal: rowVals[9],
+    promoApplied: rowVals[10],
+    pickupTimeSlot: rowVals[11],
+    paymentMethod: rowVals[12],
+    status: rowVals[13],
+    isDivertedOrder: rowVals[14],
+    createdAt: rowVals[15],
+    extraMetaJson: rowVals[16]
+  });
+}
+
+function findOrderById(ss, orderId, hasMerchantFullAccess = false) {
+  const orderSheet = ss.getSheetByName('Orders');
+  const located = locateOrderRowById(orderSheet, orderId);
+  if (!located) return null;
+  const enriched = rowArrayToOrderObject(located.rowValues);
+  return sanitizeOrderForClientOutput(enriched, hasMerchantFullAccess);
+}
+
+// ==================== 4. 真實餐點複雜度、平滑等待時間演算法與尾部視窗批次排程更新 ====================
 function calcServerItemComplexityWeight(item) {
   if (!item || item.isGift || Number(item.price) === 0) return 0.15;
   const name = String(item.baseName || item.name || '');
@@ -546,19 +764,16 @@ function calcOrderRemainingWorkloadOnServer(orderObj, maxCapPer15Min, nowMs, now
   return Math.max(0.25, Number((rawUnits - digestedUnits).toFixed(2)));
 }
 
-/**
- * 節流背景維護：唯讀請求每 45 秒最多觸發一次批次狀態推進，絕不阻塞查詢
- */
 function maybeRunBackgroundMaintenance(ss) {
   const cache = CacheService.getScriptCache();
-  if (cache && cache.get('MAINT_THROTTLE_V12')) {
+  if (cache && cache.get('MAINT_THROTTLE_V13')) {
     return;
   }
   const lock = LockService.getScriptLock();
   if (lock.tryLock(250)) {
     try {
       autoPromoteAndCleanOrdersBatch(ss);
-      if (cache) cache.put('MAINT_THROTTLE_V12', '1', 45);
+      if (cache) cache.put('MAINT_THROTTLE_V13', '1', 45);
     } finally {
       lock.releaseLock();
     }
@@ -566,14 +781,19 @@ function maybeRunBackgroundMaintenance(ss) {
 }
 
 /**
- * 商業級重構 4：批次掃描與一次性陣列寫回 (嚴禁在迴圈內呼叫 getRange().setValue())
+ * 【商業級重構 4：僅掃描尾部滑動視窗 + 定點列更新】
+ * 每次只讀取 Orders 表最後 ORDERS_TAIL_WINDOW_SIZE 列，且只有狀態真正變動的列才定點寫回！
  */
 function autoPromoteAndCleanOrdersBatch(ss) {
   const orderSheet = ss.getSheetByName('Orders');
   if (!orderSheet) return;
-  const range = orderSheet.getDataRange();
+  const lastRow = orderSheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const tailCount = Math.min(lastRow - 1, ORDERS_TAIL_WINDOW_SIZE);
+  const startRow = lastRow - tailCount + 1;
+  const range = orderSheet.getRange(startRow, 1, tailCount, 17);
   const rows = range.getValues();
-  if (rows.length <= 1) return;
 
   const now = new Date();
   const todayStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
@@ -581,9 +801,7 @@ function autoPromoteAndCleanOrdersBatch(ss) {
   const tmParts = timeStr.split(':');
   const nowMinutesOfDay = parseInt(tmParts[0], 10) * 60 + parseInt(tmParts[1], 10);
 
-  let isDirty = false;
-
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const curStatus = String(rows[i][13] || '製作中');
     if (curStatus === '已完成' || curStatus === '可取餐' || curStatus.indexOf('已取消') >= 0) continue;
 
@@ -592,10 +810,10 @@ function autoPromoteAndCleanOrdersBatch(ss) {
 
     const cleanDeadline = meta.paymentDeadline ? normalizeSheetDateStr(meta.paymentDeadline) : '';
     if (meta.paymentStatus === '待櫃檯繳費' && cleanDeadline && todayStr > cleanDeadline) {
-      rows[i][13] = '已取消 (逾期未確認)';
+      const targetRowIdx = startRow + i;
       meta.paymentStatus = '已退單作廢';
-      rows[i][16] = JSON.stringify(meta);
-      isDirty = true;
+      orderSheet.getRange(targetRowIdx, 14).setValue('已取消 (逾期未確認)');
+      orderSheet.getRange(targetRowIdx, 17).setValue(JSON.stringify(meta));
       continue;
     }
 
@@ -610,25 +828,17 @@ function autoPromoteAndCleanOrdersBatch(ss) {
     );
 
     if (nextStatus !== curStatus) {
-      rows[i][13] = nextStatus;
+      const targetRowIdx = startRow + i;
+      orderSheet.getRange(targetRowIdx, 14).setValue(nextStatus);
       if (nextStatus === '製作中' && !meta.cookingStartedAtTs) {
         meta.cookingStartedAtTs = now.getTime();
-        rows[i][16] = JSON.stringify(meta);
+        orderSheet.getRange(targetRowIdx, 17).setValue(JSON.stringify(meta));
       }
-      isDirty = true;
     }
-  }
-
-  // 僅當有任何一列狀態改變時，才一次性寫回整張表
-  if (isDirty) {
-    range.setValues(rows);
   }
 }
 
-/**
- * 商業級重構 4：記憶體計算各店即時佇列，若有變更才一次性批次更新 Stores 的第 6~7 欄
- */
-function recomputeAllStoreQueuesInMemory(ss, allOrdersEnriched, persistToSheet = false) {
+function recomputeAllStoreQueuesInMemory(ss, recentOrdersEnriched, persistToSheet = false) {
   const props = PropertiesService.getScriptProperties();
   let simOffsets = {};
   try {
@@ -657,7 +867,7 @@ function recomputeAllStoreQueuesInMemory(ss, allOrdersEnriched, persistToSheet =
   }
 
   const liveWorkloadByStore = {};
-  allOrdersEnriched.forEach(o => {
+  recentOrdersEnriched.forEach(o => {
     if (isOrderActivelyCookingOnServer(o, todayStr, nowMinutesOfDay)) {
       const sid = String(o.storeId || '');
       const cap = storeMetaMap[sid] ? storeMetaMap[sid].maxCap : 20;
@@ -705,8 +915,8 @@ function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
   const savedSeq = parseInt(props.getProperty(propKey) || '0', 10);
   if (savedSeq > maxSeq) maxSeq = savedSeq;
 
-  const orders = sheetToObjects(ss.getSheetByName('Orders')).map(enrichOrderObject);
-  orders.forEach(o => {
+  const tailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), ORDERS_TAIL_WINDOW_SIZE).map(enrichOrderObject);
+  tailOrders.forEach(o => {
     if (String(o.storeId) === String(storeId) && normalizeSheetDateStr(o.pickupDate) === targetDate) {
       const m = String(o.pickupNumber || '').match(/(\d{3,5})/);
       if (m) {
@@ -723,13 +933,17 @@ function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
   return String(nextSeq);
 }
 
-// ==================== 商業級重構 8：跨裝置訂單查詢 (手機末 3 碼／取餐號／防偽碼／單號) ====================
+// ==================== 5. 跨裝置訂單查詢 (含個資保護) ====================
 function lookupOrdersAcrossDevices(ss, params) {
   const q = String(params.query || '').trim().toUpperCase().replace(/^#/, '');
   if (!q) return { orders: [] };
 
-  const allOrders = sheetToObjects(ss.getSheetByName('Orders')).reverse().slice(0, 300).map(enrichOrderObject);
-  const matched = allOrders.filter(o => {
+  const hasMerchantAuth = isMerchantRequestValid(params, '');
+  const tailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), ORDERS_TAIL_WINDOW_SIZE)
+    .reverse()
+    .map(enrichOrderObject);
+
+  const matched = tailOrders.filter(o => {
     const ordId = String(o.orderId || '').toUpperCase();
     const pickNum = String(o.pickupNumber || '').toUpperCase();
     const verCode = String(o.verificationCode || '').toUpperCase();
@@ -742,10 +956,12 @@ function lookupOrdersAcrossDevices(ss, params) {
     return false;
   });
 
-  return { orders: matched.slice(0, 20) };
+  return {
+    orders: matched.slice(0, 20).map(o => sanitizeOrderForClientOutput(o, hasMerchantAuth))
+  };
 }
 
-// ==================== LINE 授權與雙軌推播引擎 ====================
+// ==================== 6. LINE 授權與雙軌推播引擎 ====================
 function resolveLineConfigForStore(storeId) {
   const props = PropertiesService.getScriptProperties();
   const sysClientId = props.getProperty('LINE_CLIENT_ID') || SYSTEM_LINE_CLIENT_ID;
@@ -1102,7 +1318,7 @@ function sendOrderEmailNotification(email, messageText, meta) {
   }
 }
 
-// ==================== 讀取系統 Bundle (無鎖高速記憶體聚合) ====================
+// ==================== 7. 讀取系統 Bundle (滑動視窗讀取 + 個資脫敏保護) ====================
 function parseMenuRowOptionsAndSoldOut(menuRowObj) {
   let parsedOptions = {};
   let legacySoldOut = false;
@@ -1130,9 +1346,21 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
   try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
 
-  const allOrdersRaw = sheetToObjects(ss.getSheetByName('Orders'));
-  const orders = allOrdersRaw.reverse().slice(0, 150).map(enrichOrderObject);
-  const queueStatsMap = recomputeAllStoreQueuesInMemory(ss, orders, persistQueueUpdate);
+  // 滑動視窗：僅讀取最後 150 筆活躍訂單，絕不讀整張歷史資料表
+  const rawTailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 150)
+    .reverse()
+    .map(enrichOrderObject);
+
+  const queueStatsMap = recomputeAllStoreQueuesInMemory(ss, rawTailOrders, persistQueueUpdate);
+
+  // 檢查呼叫者是否具備有效之店務 Session Token
+  const session = parseVerifiedMerchantSession(params);
+  const clientOrders = rawTailOrders.map(ord => {
+    const canSeeFullPhone = Boolean(
+      session && (session.storeScope === 'ALL' || session.storeScope === String(ord.storeId))
+    );
+    return sanitizeOrderForClientOutput(ord, canSeeFullPhone);
+  });
 
   const stores = sheetToObjects(ss.getSheetByName('Stores'));
   const menus = sheetToObjects(ss.getSheetByName('Menus'));
@@ -1208,15 +1436,15 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
 
   return {
     stores: enrichedStores,
-    recentOrders: orders,
-    orders: orders,
+    recentOrders: clientOrders,
+    orders: clientOrders,
     aiRecommendations: aiRecommendations,
     serverTime: serverTime,
     bundle: {
       stores: enrichedStores,
-      aiRecommendations,
-      orders,
-      recentOrders: orders,
+      aiRecommendations: aiRecommendations,
+      orders: clientOrders,
+      recentOrders: clientOrders,
       lineDevInfo: {
         botBasicId: props.getProperty('LINE_BOT_BASIC_ID') || '',
         liffId: props.getProperty('LINE_LIFF_ID') || '',
@@ -1228,6 +1456,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
 }
 
 function enrichOrderObject(o) {
+  if (!o) return null;
   let meta = {};
   if (o.extraMetaJson) {
     try { meta = JSON.parse(o.extraMetaJson); } catch (e) {}
@@ -1236,486 +1465,745 @@ function enrichOrderObject(o) {
     ...o,
     ...meta
   };
+  delete merged.__sheetRowIndex;
+
   merged.pickupDate = normalizeSheetDateStr(merged.pickupDate);
   merged.pickupTime = normalizeSheetTimeStr(merged.pickupTime, false);
   merged.createdAt = normalizeSheetTimeStr(merged.createdAt, true);
   if (merged.paymentDeadline) {
     merged.paymentDeadline = normalizeSheetDateStr(merged.paymentDeadline);
+  } else {
+    merged.paymentDeadline = '';
   }
-  if (!merged.verificationCode) {
-    merged.verificationCode = generateOrderVerificationCodeOnServer(merged.orderId, merged.pickupNumber, merged.finalTotal);
+
+  let structuredItems = [];
+  if (Array.isArray(merged.structuredItems) && merged.structuredItems.length > 0) {
+    structuredItems = merged.structuredItems;
+  } else if (merged.itemsJson) {
+    try { structuredItems = JSON.parse(merged.itemsJson); } catch (e) { structuredItems = []; }
   }
+  merged.structuredItems = structuredItems;
+  merged.itemsJson = JSON.stringify(structuredItems);
+
+  merged.subtotal = Math.max(0, Number(merged.subtotal) || 0);
+  merged.cutleryFee = Math.max(0, Number(merged.cutleryFee) || 0);
+  merged.discount = Math.max(0, Number(merged.discount) || 0);
+  merged.manualDiscount = Math.max(0, Number(merged.manualDiscount) || 0);
+  merged.finalTotal = Math.max(0, Number(merged.finalTotal) || 0);
+  merged.notifyCount = Math.max(0, Number(merged.notifyCount) || 0);
+
+  // 100% 確保伺服器輸出之訂單帶有权威 HMAC 防偽核銷碼
+  merged.verificationCode = generateOrderVerificationCodeOnServer(
+    merged.orderId,
+    merged.pickupNumber,
+    merged.finalTotal
+  );
+
   return merged;
 }
 
-function findOrderById(ss, orderId) {
-  if (!orderId) return null;
-  const orders = sheetToObjects(ss.getSheetByName('Orders'));
-  const found = orders.find(o => String(o.orderId) === String(orderId));
-  return found ? enrichOrderObject(found) : null;
-}
-
-function computeAiTrafficRecommendations(stores) {
-  const campuses = ['雙溪校區', '城中校區'];
-  const recommendations = {};
-
-  campuses.forEach(campus => {
-    const campusStores = stores.filter(s => s.campus === campus && s.isOpen !== false);
+function computeAiTrafficRecommendations(enrichedStores) {
+  const recs = {};
+  ['雙溪校區', '城中校區'].forEach(campus => {
+    const campusStores = (enrichedStores || []).filter(s => s.campus === campus && s.isOpen !== false);
     const congested = campusStores
       .filter(s => s.loadState === 'FULL' || Number(s.avgPrepMinutes) >= 16)
-      .sort((a, b) => Number(b.loadPercentage) - Number(a.loadPercentage));
+      .sort((a, b) => b.loadPercentage - a.loadPercentage || b.avgPrepMinutes - a.avgPrepMinutes);
     const availableWithPromo = campusStores
       .filter(s => s.loadState === 'FREE' && s.promoMode !== 'none')
-      .sort((a, b) => Number(b.aiScore) - Number(a.aiScore));
+      .sort((a, b) => b.aiScore - a.aiScore);
 
     if (congested.length > 0 && availableWithPromo.length > 0) {
       const busyStore = congested[0];
       const targetStore = availableWithPromo[0];
-      const timeSaved = Math.max(1, Number(busyStore.avgPrepMinutes) - Number(targetStore.avgPrepMinutes));
-
-      recommendations[campus] = {
-        hasAlert: true,
-        congestedStoreId: busyStore.id,
-        congestedStoreName: busyStore.name,
-        congestedWaitMin: Number(busyStore.avgPrepMinutes),
-        congestedLoadPct: Number(busyStore.loadPercentage),
-        recommendedStoreId: targetStore.id,
-        recommendedStoreName: targetStore.name,
-        recommendedWaitMin: Number(targetStore.avgPrepMinutes),
-        recommendedAiScore: Number(targetStore.aiScore),
-        promoMode: targetStore.promoMode,
-        promoText: targetStore.promoText,
-        promoDiscount: Number(targetStore.promoDiscount) || 0,
-        timeSavedMin: timeSaved
-      };
+      const diffWait = busyStore.avgPrepMinutes - targetStore.avgPrepMinutes;
+      if (diffWait >= 3) {
+        recs[campus] = {
+          hasAlert: true,
+          congestedStoreId: busyStore.id,
+          congestedStoreName: busyStore.name,
+          congestedWaitMin: busyStore.avgPrepMinutes,
+          congestedLoadPct: busyStore.loadPercentage,
+          recommendedStoreId: targetStore.id,
+          recommendedStoreName: targetStore.name,
+          recommendedWaitMin: targetStore.avgPrepMinutes,
+          recommendedAiScore: targetStore.aiScore,
+          promoMode: targetStore.promoMode,
+          promoText: targetStore.promoText,
+          promoDiscount: Number(targetStore.promoDiscount) || 0,
+          timeSavedMin: diffWait
+        };
+      } else {
+        recs[campus] = { hasAlert: false };
+      }
     } else {
-      recommendations[campus] = { hasAlert: false };
+      recs[campus] = { hasAlert: false };
     }
   });
-
-  return recommendations;
+  return recs;
 }
 
-// ==================== 商業級重構 2：嚴格白名單計價與必選單選 (Radio) 校驗 ====================
-function verifyAndPriceOrderOnServer(ss, params) {
+// ==================== 8. 嚴格白名單計價驗算與結帳寫入 (`handleOrderSubmission`) ====================
+function handleOrderSubmission(ss, params) {
   const storeId = String(params.storeId || '').trim();
+  if (!storeId) {
+    throw new Error('缺少店家編號 (storeId)');
+  }
+
+  const orderSheet = ss.getSheetByName('Orders');
+  const incomingOrderId = String(params.orderId || ('ORD-' + Utilities.getUuid().slice(0, 12))).trim();
+
+  // 冪等性保護：若該 orderId 已存在（例如門市 POS 斷網重連補傳），直接回傳既有權威訂單
+  const existingLocated = locateOrderRowById(orderSheet, incomingOrderId);
+  if (existingLocated) {
+    const existingOrder = rowArrayToOrderObject(existingLocated.rowValues);
+    return { order: existingOrder };
+  }
+
   const stores = sheetToObjects(ss.getSheetByName('Stores'));
   const storeRow = stores.find(s => String(s.id) === storeId);
   if (!storeRow) {
-    throw new Error('找不到指定的餐廳代碼: ' + storeId);
+    throw new Error('查無此學餐店家: ' + storeId);
   }
 
-  const menus = sheetToObjects(ss.getSheetByName('Menus')).filter(m => String(m.storeId) === storeId);
-  const menuMap = {};
-  menus.forEach(m => {
+  const props = PropertiesService.getScriptProperties();
+  let openStateMap = {};
+  try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
+  const isStoreOpen = openStateMap[storeId] !== undefined ? Boolean(openStateMap[storeId]) : true;
+  const isReservation = Boolean(params.isReservation);
+  const isMerchantPosRequest = isMerchantRequestValid(params, storeId);
+
+  if (!isStoreOpen && !isReservation && !isMerchantPosRequest) {
+    throw new Error(`「${storeRow.name}」目前暫停立即出餐，請改選「預訂取餐」模式！`);
+  }
+
+  const allMenus = sheetToObjects(ss.getSheetByName('Menus'))
+    .filter(m => String(m.storeId) === storeId);
+  const menuById = {};
+  const menuByName = {};
+  allMenus.forEach(m => {
     const { parsedOptions, isSoldOut } = parseMenuRowOptionsAndSoldOut(m);
-    menuMap[String(m.id)] = {
+    const itemObj = {
       id: String(m.id),
-      name: String(m.name),
-      basePrice: Math.max(0, Number(m.price) || 0),
+      name: String(m.name).trim(),
+      price: Math.max(0, Number(m.price) || 0),
       soldOut: isSoldOut,
       options: parsedOptions
     };
+    menuById[itemObj.id] = itemObj;
+    menuByName[itemObj.name] = itemObj;
   });
 
   const rawItems = Array.isArray(params.items)
     ? params.items
     : (Array.isArray(params.structuredItems) ? params.structuredItems : []);
-  if (rawItems.length === 0) {
-    throw new Error('訂單內沒有任何有效餐點品項');
+  const nonGiftItems = rawItems.filter(it => it && !it.isGift && String(it.id) !== 'GIFT-AI');
+
+  if (nonGiftItems.length === 0) {
+    throw new Error('購物車內無有效付費餐點，拒絕結帳');
   }
 
   const verifiedItems = [];
   let authoritativeSubtotal = 0;
 
-  rawItems.forEach(item => {
-    if (item.isGift || String(item.id) === 'GIFT-AI') return;
+  for (let i = 0; i < nonGiftItems.length; i++) {
+    const reqItem = nonGiftItems[i];
+    const reqId = String(reqItem.id || '').trim();
+    const reqBaseName = String(reqItem.baseName || reqItem.name || '').split(' [')[0].trim();
+    const qty = Math.max(1, Math.min(99, parseInt(reqItem.qty, 10) || 1));
 
-    const itemIdStr = String(item.id || '').trim();
-    const dbMenu = menuMap[itemIdStr];
-
-    // 【嚴格白名單計價】凡是不存在於該店鋪 Menus 資料表的 item.id，一律拋出異常拒絕結帳！絕不允許自訂價格 fallback！
+    const dbMenu = menuById[reqId] || menuByName[reqBaseName];
     if (!dbMenu) {
-      throw new Error(`結帳驗證拒絕：商品代碼「${itemIdStr}」不存在於本店架上菜單，請重新整理頁面`);
+      throw new Error(`白名單計價拒絕：查無品項「${reqBaseName || reqId}」，請重新整理菜單`);
+    }
+    if (dbMenu.soldOut && !isMerchantPosRequest) {
+      throw new Error(`抱歉，品項「${dbMenu.name}」剛剛已售罄，請移除後再結帳`);
     }
 
-    if (dbMenu.soldOut) {
-      throw new Error(`餐點「${dbMenu.name}」今日已售罄，無法點選`);
-    }
+    let unitExtra = 0;
+    const verifiedSelections = {};
+    const clientSelections = (reqItem.selections && typeof reqItem.selections === 'object') ? reqItem.selections : {};
+    const dbOptions = dbMenu.options || {};
 
-    const qty = Math.max(1, Math.min(99, parseInt(item.qty, 10) || 1));
-    let extraPrice = 0;
-    const rawSelections = (item.selections && typeof item.selections === 'object') ? item.selections : {};
-    const sanitizedSelections = {};
+    Object.keys(dbOptions).forEach(optGroupName => {
+      const grp = dbOptions[optGroupName];
+      const isRadio = !grp.type || grp.type === 'radio';
+      const choices = Array.isArray(grp.choices) ? grp.choices : (Array.isArray(grp) ? grp : []);
+      const choicePriceMap = {};
+      choices.forEach(c => {
+        const cName = String(Array.isArray(c) ? c[0] : c).trim();
+        const cExtra = Array.isArray(c) ? (Number(c[1]) || 0) : 0;
+        choicePriceMap[cName] = cExtra;
+      });
 
-    // 【客製化選項嚴格校驗】逐一檢查 Menus 定義的選項群組（含必選單選 Radio 檢查與合法項目核對）
-    const definedGroups = dbMenu.options || {};
-    Object.keys(definedGroups).forEach(optGroupName => {
-      const grpDef = definedGroups[optGroupName];
-      if (!grpDef || !Array.isArray(grpDef.choices) || grpDef.choices.length === 0) return;
-
-      const isRadio = !grpDef.type || grpDef.type === 'radio';
-      const userValStr = rawSelections[optGroupName] !== undefined ? String(rawSelections[optGroupName]).trim() : '';
-      const selectedTokens = userValStr ? userValStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-
+      const rawSelected = clientSelections[optGroupName];
       if (isRadio) {
-        if (selectedTokens.length === 0) {
-          throw new Error(`餐點「${dbMenu.name}」缺少必選規格：「${optGroupName}」`);
-        }
-        const chosenToken = selectedTokens[0];
-        const matchedChoice = grpDef.choices.find(c => Array.isArray(c) && String(c[0]).trim() === chosenToken);
-        if (!matchedChoice) {
-          throw new Error(`餐點「${dbMenu.name}」於「${optGroupName}」包含無效的選項：「${chosenToken}」`);
-        }
-        extraPrice += Number(matchedChoice[1]) || 0;
-        sanitizedSelections[optGroupName] = String(matchedChoice[0]).trim();
-      } else {
-        // Checkbox 多選校驗
-        const validPickedNames = [];
-        selectedTokens.forEach(tok => {
-          const matchedChoice = grpDef.choices.find(c => Array.isArray(c) && String(c[0]).trim() === tok);
-          if (!matchedChoice) {
-            throw new Error(`餐點「${dbMenu.name}」包含無效的加料選項：「${tok}」`);
+        let chosenStr = Array.isArray(rawSelected) ? String(rawSelected[0] || '').trim() : String(rawSelected || '').trim();
+        if (!chosenStr || choicePriceMap[chosenStr] === undefined) {
+          if (choices.length > 0) {
+            chosenStr = String(Array.isArray(choices[0]) ? choices[0][0] : choices[0]).trim();
           }
-          extraPrice += Number(matchedChoice[1]) || 0;
-          validPickedNames.push(String(matchedChoice[0]).trim());
+        }
+        if (chosenStr && choicePriceMap[chosenStr] !== undefined) {
+          verifiedSelections[optGroupName] = chosenStr;
+          unitExtra += choicePriceMap[chosenStr];
+        }
+      } else {
+        const selectedArr = Array.isArray(rawSelected)
+          ? rawSelected.map(s => String(s).trim()).filter(Boolean)
+          : String(rawSelected || '').split(',').map(s => s.trim()).filter(Boolean);
+        const validChosen = [];
+        selectedArr.forEach(sName => {
+          if (choicePriceMap[sName] !== undefined) {
+            validChosen.push(sName);
+            unitExtra += choicePriceMap[sName];
+          }
         });
-        if (validPickedNames.length > 0) {
-          sanitizedSelections[optGroupName] = validPickedNames.join(', ');
+        if (validChosen.length > 0) {
+          verifiedSelections[optGroupName] = validChosen.join(', ');
         }
       }
     });
 
-    const unitPrice = Math.max(0, dbMenu.basePrice + extraPrice);
-    const selSuffix = Object.keys(sanitizedSelections).length > 0
-      ? ` [${Object.entries(sanitizedSelections).map(([k, v]) => `${k}:${v}`).join(', ')}]`
+    const authoritativeUnitPrice = Math.max(0, dbMenu.price + unitExtra);
+    const selSuffix = Object.keys(verifiedSelections).length > 0
+      ? ` [${Object.entries(verifiedSelections).map(([k, v]) => `${k}:${v}`).join(', ')}]`
       : '';
 
     verifiedItems.push({
       id: dbMenu.id,
       baseName: dbMenu.name,
       name: `${dbMenu.name}${selSuffix}`,
-      price: unitPrice,
+      price: authoritativeUnitPrice,
       qty: qty,
-      selections: sanitizedSelections,
+      selections: verifiedSelections,
       isGift: false
     });
-    authoritativeSubtotal += unitPrice * qty;
-  });
 
-  if (verifiedItems.length === 0) {
-    throw new Error('訂單必須至少包含一項有效付費餐點');
+    authoritativeSubtotal += authoritativeUnitPrice * qty;
   }
 
+  // 計算當前佇列負載以確認是否享有離峰分流優惠
+  const recentOrders = readSheetTailObjects(orderSheet, 150).map(enrichOrderObject);
+  const queueMap = recomputeAllStoreQueuesInMemory(ss, recentOrders, false);
+  const storeActiveCount = (queueMap[storeId] && queueMap[storeId].activeOrders) || 0;
   const maxCap = Math.max(5, Number(storeRow.maxCapacityPer15Min) || 20);
-  const activeOrders = Math.max(0, Number(storeRow.activeOrders) || 0);
-  const loadPct = Math.round((activeOrders / maxCap) * 100);
-  const isPromoActive = storeRow.promoMode && storeRow.promoMode !== 'none' && loadPct < 85;
+  const isFullLoad = Math.round((storeActiveCount / maxCap) * 100) >= 85;
+  const promoMode = String(storeRow.promoMode || 'none');
+  const promoText = String(storeRow.promoText || '');
+  const promoActive = isStoreOpen && !isFullLoad && promoMode !== 'none';
+
+  if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText) {
+    verifiedItems.push({
+      id: 'GIFT-AI',
+      baseName: `${promoText} (贈品)`,
+      name: `${promoText} (贈品)`,
+      price: 0,
+      qty: 1,
+      selections: {},
+      isGift: true
+    });
+  }
 
   const needCutlery = Boolean(params.needCutlery);
-  const unitCutleryPrice = storeRow.cutleryPrice !== undefined && storeRow.cutleryPrice !== ''
+  const storeCutleryPrice = storeRow.cutleryPrice !== undefined && storeRow.cutleryPrice !== ''
     ? Math.max(0, Number(storeRow.cutleryPrice))
     : 1;
-  const authoritativeCutleryFee = (authoritativeSubtotal > 0 && needCutlery) ? unitCutleryPrice : 0;
+  const cutleryFee = needCutlery ? storeCutleryPrice : 0;
 
   let authoritativeDiscount = 0;
-  let promoAppliedText = '一般點餐';
-  if (isPromoActive) {
-    promoAppliedText = String(storeRow.promoText || '離峰優惠');
-    if (storeRow.promoMode === 'discount' && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL) {
-      authoritativeDiscount = Math.min(authoritativeSubtotal, Math.max(0, Number(storeRow.promoDiscount) || 10));
-    } else if ((storeRow.promoMode === 'gift' || storeRow.promoMode === 'freebie') && storeRow.promoText) {
-      verifiedItems.push({
-        id: 'GIFT-AI',
-        baseName: `${storeRow.promoText} (贈品)`,
-        name: `${storeRow.promoText} (贈品)`,
-        price: 0,
-        qty: 1,
-        selections: {},
-        isGift: true
-      });
-    }
-  } else if (String(params.orderSource || '').indexOf('POS') >= 0) {
-    promoAppliedText = '現場櫃檯點餐';
+  if (promoActive && promoMode === 'discount' && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL) {
+    authoritativeDiscount = Math.min(authoritativeSubtotal, Math.max(0, Number(storeRow.promoDiscount) || 0));
   }
 
-  let authoritativeManualDiscount = 0;
+  // 手動折讓僅允許持有有效店務 Token 的門市 POS 使用
+  let manualDiscount = 0;
   let manualDiscountReason = '';
-  if (isMerchantRequestValid(params) && Number(params.manualDiscount) > 0) {
-    authoritativeManualDiscount = Math.min(
+  if (isMerchantPosRequest && Number(params.manualDiscount) > 0) {
+    manualDiscount = Math.min(
       Math.max(0, authoritativeSubtotal - authoritativeDiscount),
       Math.max(0, Number(params.manualDiscount) || 0)
     );
-    manualDiscountReason = String(params.manualDiscountReason || '櫃檯手動折讓');
-    if (authoritativeManualDiscount > 0) {
-      promoAppliedText = manualDiscountReason;
-    }
+    manualDiscountReason = String(params.manualDiscountReason || '櫃檯手動折讓').trim();
   }
 
-  const authoritativeFinalTotal = Math.max(
-    0,
-    authoritativeSubtotal + authoritativeCutleryFee - authoritativeDiscount - authoritativeManualDiscount
-  );
-
-  return {
-    storeName: String(storeRow.name || params.storeName || ''),
-    verifiedItems,
-    subtotal: authoritativeSubtotal,
-    cutleryFee: authoritativeCutleryFee,
-    discount: authoritativeDiscount,
-    manualDiscount: authoritativeManualDiscount,
-    manualDiscountReason: manualDiscountReason,
-    finalTotal: authoritativeFinalTotal,
-    promoApplied: promoAppliedText,
-    isDivertedOrder: Boolean(isPromoActive)
-  };
-}
-
-function handleOrderSubmission(ss, params) {
-  const orderSheet = ss.getSheetByName('Orders');
-  const verified = verifyAndPriceOrderOnServer(ss, params);
-
-  let orderId = params.orderId ? String(params.orderId).trim() : '';
-  if (!orderId) {
-    orderId = 'ORD-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
-  }
-
+  const authoritativeFinalTotal = Math.max(0, authoritativeSubtotal + cutleryFee - authoritativeDiscount - manualDiscount);
+  const pickupDateVal = isReservation ? normalizeSheetDateStr(params.pickupDate) : getTodayTaipeiStr();
   const now = new Date();
-  const nowStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm:ss');
-  const todayDateStr = getTodayTaipeiStr();
-  const pickupDateVal = normalizeSheetDateStr(params.pickupDate || todayDateStr);
-  const pickupTimeVal = normalizeSheetTimeStr(params.pickupTime || nowStr.slice(0, 5), false);
+  const createdAtStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm:ss');
+  const pickupTimeVal = isReservation ? normalizeSheetTimeStr(params.pickupTime, false) : createdAtStr.slice(0, 5);
 
-  const authoritativePickupNumber = generateBackendSequentialPickupNumber(ss, params.storeId, pickupDateVal);
-  const verificationCode = generateOrderVerificationCodeOnServer(orderId, authoritativePickupNumber, verified.finalTotal);
-
-  const orderSource = String(params.orderSource || params.studentId || '📱 掃碼點餐');
-  const dineType = String(params.dineType || '外帶自取');
-  const customerNote = String(params.customerNote || '').trim();
-  const cleanSummary = [
-    dineType,
-    params.needCutlery ? `🥢 需免洗餐具(+$${verified.cutleryFee})` : '',
-    customerNote ? `📝 備註：${customerNote}` : ''
-  ].filter(Boolean).join(' ・ ');
-
-  const paymentMethod = String(params.paymentMethod || 'LINE Pay');
-  const isReservation = Boolean(params.isReservation);
-  const isPosAuthorized = isMerchantRequestValid(params) && orderSource.indexOf('POS') >= 0;
-
-  // 【支付狀態誠實化】未經正式金流 Webhook 簽章之學生端線上支付，標記為「已付款 (沙盒授權)」以資區別
-  let authoritativePayStatus = '已付款 (沙盒授權)';
-  if (isPosAuthorized) {
-    authoritativePayStatus = '已付款';
-  } else if (paymentMethod === '現場櫃檯付現') {
-    authoritativePayStatus = (isReservation && verified.finalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD)
-      ? '待櫃檯繳費'
-      : '取餐付現';
+  // 若為門市 POS 離線補傳且帶有合法範圍之單號則沿用，否則由伺服器權威核發流水號
+  let pickupNumber = '';
+  if (isMerchantPosRequest && params.pickupNumber && /^\d{4,5}$/.test(String(params.pickupNumber))) {
+    pickupNumber = String(params.pickupNumber);
+  } else {
+    pickupNumber = generateBackendSequentialPickupNumber(ss, storeId, pickupDateVal);
   }
 
-  const tmParts = nowStr.slice(0, 5).split(':');
-  const nowMinutesOfDay = parseInt(tmParts[0], 10) * 60 + parseInt(tmParts[1], 10);
+  const verificationCode = generateOrderVerificationCodeOnServer(incomingOrderId, pickupNumber, authoritativeFinalTotal);
+
+  const paymentMethod = String(params.paymentMethod || '現場櫃檯付現').trim();
+  const isLargeCashReserve = isReservation && authoritativeFinalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && paymentMethod.indexOf('付現') >= 0;
+  let paymentStatus = '取餐付現';
+  if (isMerchantPosRequest && params.paymentStatus === '已付款') {
+    paymentStatus = '已付款';
+  } else if (isLargeCashReserve) {
+    paymentStatus = '待櫃檯繳費';
+  } else if (paymentMethod === 'LINE Pay' || paymentMethod === '街口支付') {
+    paymentStatus = '已付款 (沙盒授權)';
+  }
+
+  const nowParts = createdAtStr.split(':');
+  const nowMinutesOfDay = parseInt(nowParts[0], 10) * 60 + parseInt(nowParts[1], 10);
   const initialStatus = evaluateServerOrderLifecycleStatus(
     '製作中',
     isReservation,
-    authoritativePayStatus,
+    paymentStatus,
     pickupDateVal,
     pickupTimeVal,
-    todayDateStr,
+    getTodayTaipeiStr(),
     nowMinutesOfDay
   );
 
+  const dineType = String(params.dineType || '外帶自取').trim();
+  const customerNote = String(params.customerNote || '').trim();
+  const customerPhone = String(params.customerPhone || '').trim();
+  const studentNameSummary = [
+    dineType,
+    needCutlery ? `🥢 需免洗餐具${cutleryFee > 0 ? `(+$${cutleryFee})` : ''}` : '',
+    customerNote ? `📝 備註：${customerNote}` : ''
+  ].filter(Boolean).join(' ・ ');
+
+  const promoAppliedText = manualDiscount > 0
+    ? manualDiscountReason
+    : (promoActive ? promoText : String(params.promoApplied || '一般點餐'));
+
+  const pickupTimeSlot = isReservation
+    ? `📅 預訂 ${pickupDateVal} ${pickupTimeVal}`
+    : String(params.pickupTimeSlot || '⚡ 立即製作');
+
   const extraMeta = {
-    verificationCode: verificationCode,
     dineType: dineType,
-    customerNote: customerNote,
-    cashReceived: isPosAuthorized ? (Number(params.cashReceived) || verified.finalTotal) : 0,
-    changeGiven: isPosAuthorized ? (Number(params.changeGiven) || 0) : 0,
-    manualDiscount: verified.manualDiscount,
-    manualDiscountReason: verified.manualDiscountReason,
-    needCutlery: Boolean(params.needCutlery),
-    cutleryFee: verified.cutleryFee,
+    needCutlery: needCutlery,
+    cutleryFee: cutleryFee,
+    manualDiscount: manualDiscount,
+    manualDiscountReason: manualDiscountReason,
     isReservation: isReservation,
     pickupDate: pickupDateVal,
     pickupTime: pickupTimeVal,
-    customerPhone: String(params.customerPhone || '').trim(),
-    paymentDeadline: params.paymentDeadline ? normalizeSheetDateStr(params.paymentDeadline) : '',
-    paymentStatus: authoritativePayStatus,
+    customerPhone: customerPhone,
+    customerNote: customerNote,
+    paymentDeadline: isLargeCashReserve ? pickupDateVal : '',
+    paymentStatus: paymentStatus,
     transactionId: String(params.transactionId || ''),
+    cashReceived: isMerchantPosRequest ? (Number(params.cashReceived) || 0) : 0,
+    changeGiven: isMerchantPosRequest ? (Number(params.changeGiven) || 0) : 0,
     notifyCount: 0,
     lineUserId: String(params.lineUserId || ''),
     customerEmail: String(params.customerEmail || ''),
+    verificationCode: verificationCode,
     createdAtTs: now.getTime(),
     cookingStartedAtTs: initialStatus === '製作中' ? now.getTime() : 0
   };
 
-  const itemsJsonStr = JSON.stringify(verified.verifiedItems);
-
-  const newOrderRow = [
-    orderId,
-    authoritativePickupNumber,
-    params.storeId,
-    verified.storeName,
-    orderSource,
-    cleanSummary,
+  const itemsJsonStr = JSON.stringify(verifiedItems);
+  const newRow = [
+    incomingOrderId,
+    pickupNumber,
+    storeId,
+    storeRow.name,
+    String(params.orderSource || params.studentId || '📱 掃碼點餐'),
+    studentNameSummary,
     itemsJsonStr,
-    verified.subtotal,
-    verified.discount,
-    verified.finalTotal,
-    verified.promoApplied,
-    params.pickupTimeSlot || '立即製作',
+    authoritativeSubtotal,
+    authoritativeDiscount,
+    authoritativeFinalTotal,
+    promoAppliedText,
+    pickupTimeSlot,
     paymentMethod,
     initialStatus,
-    verified.isDivertedOrder,
-    nowStr,
+    Boolean(promoActive),
+    createdAtStr,
     JSON.stringify(extraMeta)
   ];
-  orderSheet.appendRow(newOrderRow);
 
-  const bundleData = getInitBundle(ss, {}, true);
+  orderSheet.appendRow(newRow);
+
+  const savedOrderObj = rowArrayToOrderObject(newRow);
+  recomputeAllStoreQueuesInMemory(ss, [savedOrderObj, ...recentOrders], true);
 
   return {
-    order: {
-      orderId,
-      pickupNumber: authoritativePickupNumber,
-      verificationCode,
-      storeId: params.storeId,
-      storeName: verified.storeName,
-      studentId: orderSource,
-      studentName: cleanSummary,
-      itemsJson: itemsJsonStr,
-      structuredItems: verified.verifiedItems,
-      subtotal: verified.subtotal,
-      discount: verified.discount,
-      finalTotal: verified.finalTotal,
-      promoApplied: verified.promoApplied,
-      pickupTimeSlot: params.pickupTimeSlot || '立即製作',
-      paymentMethod: paymentMethod,
-      status: initialStatus,
-      isDivertedOrder: verified.isDivertedOrder,
-      createdAt: nowStr,
-      ...extraMeta
-    },
-    ...bundleData
+    order: savedOrderObj
   };
 }
 
-// ==================== 商業級重構 5：菜單儲存原子性保護與獨立 soldOut 欄位 ====================
-function saveStoreMenusAtomic(ss, params) {
-  const storeId = String(params.storeId || '').trim();
-  const newMenus = Array.isArray(params.menus) ? params.menus : null;
-  if (!storeId) throw new Error('缺少店鋪編號 (storeId)');
-  if (!newMenus || newMenus.length === 0) {
-    throw new Error('安全保護攔截：禁止將店鋪菜單清空為 0 道品項');
+// ==================== 9. 店家 KDS 定點狀態更新與退單 (`updateOrderStateBatch` / `cancelOrderByIdBatch`) ====================
+function updateOrderStateBatch(ss, params) {
+  const orderSheet = ss.getSheetByName('Orders');
+  const orderId = String(params.orderId || '').trim();
+  const located = locateOrderRowById(orderSheet, orderId);
+  if (!located) {
+    throw new Error('找不到該筆訂單: ' + orderId);
   }
 
-  const menuSheet = ss.getSheetByName('Menus');
-  const existingData = menuSheet.getDataRange().getValues();
-  const headers = ['id', 'storeId', 'name', 'price', 'tag', 'category', 'image', 'optionsJson', 'soldOut'];
+  const rowVals = located.rowValues;
+  const orderStoreId = String(rowVals[2] || '').trim();
+  // 驗證該店務 Token 是否擁有此訂單所屬店家的操作權限
+  assertMerchantAuthorized(params, orderStoreId);
 
-  // 先在記憶體內完整建構並驗證新陣列，絕不先呼叫 clearContents()！
-  const nextRows = [headers];
-  for (let i = 1; i < existingData.length; i++) {
-    if (String(existingData[i][1]) !== storeId) {
-      const { parsedOptions, isSoldOut } = parseMenuRowOptionsAndSoldOut({
-        optionsJson: existingData[i][7],
-        soldOut: existingData[i][8]
-      });
-      nextRows.push([
-        String(existingData[i][0] || ''),
-        String(existingData[i][1] || ''),
-        String(existingData[i][2] || ''),
-        Math.max(0, Number(existingData[i][3]) || 0),
-        String(existingData[i][4] || ''),
-        String(existingData[i][5] || '招牌主餐'),
-        String(existingData[i][6] || ''),
-        JSON.stringify(parsedOptions),
-        Boolean(isSoldOut)
-      ]);
+  let meta = {};
+  try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
+
+  const nextStatus = String(params.newStatus || rowVals[13] || '製作中').trim();
+  rowVals[13] = nextStatus;
+
+  if (nextStatus === '可取餐') {
+    meta.notifyCount = (Number(meta.notifyCount) || 0) + 1;
+  }
+  if (nextStatus === '製作中' && !meta.cookingStartedAtTs) {
+    meta.cookingStartedAtTs = Date.now();
+  }
+  if (params.paymentStatus) {
+    meta.paymentStatus = String(params.paymentStatus).trim();
+  }
+  if (params.paymentMethod) {
+    rowVals[12] = String(params.paymentMethod).trim();
+  }
+  if (params.cashReceived !== undefined) {
+    meta.cashReceived = Number(params.cashReceived) || 0;
+  }
+  if (params.changeGiven !== undefined) {
+    meta.changeGiven = Number(params.changeGiven) || 0;
+  }
+
+  rowVals[16] = JSON.stringify(meta);
+
+  // 定點更新單一列 (Targeted Single-Row Update)，絕不重寫整張表
+  orderSheet.getRange(located.sheetRowIndex, 1, 1, 17).setValues([rowVals]);
+
+  const recentOrders = readSheetTailObjects(orderSheet, 150).map(enrichOrderObject);
+  recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+
+  return {
+    updated: true,
+    order: rowArrayToOrderObject(rowVals)
+  };
+}
+
+function markReservationPaid(ss, params) {
+  params.paymentStatus = '已付款';
+  return updateOrderStateBatch(ss, params);
+}
+
+function cancelOrderByIdBatch(ss, params) {
+  const orderSheet = ss.getSheetByName('Orders');
+  const orderId = String(params.orderId || '').trim();
+  const located = locateOrderRowById(orderSheet, orderId);
+  if (!located) {
+    throw new Error('找不到該筆訂單: ' + orderId);
+  }
+
+  const rowVals = located.rowValues;
+  const orderStoreId = String(rowVals[2] || '').trim();
+  assertMerchantAuthorized(params, orderStoreId);
+
+  const reason = String(params.reason || '櫃檯取消').trim();
+  let meta = {};
+  try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
+
+  rowVals[13] = `已取消 (${reason})`;
+  meta.paymentStatus = '已退單作廢';
+  rowVals[16] = JSON.stringify(meta);
+
+  orderSheet.getRange(located.sheetRowIndex, 1, 1, 17).setValues([rowVals]);
+
+  const recentOrders = readSheetTailObjects(orderSheet, 150).map(enrichOrderObject);
+  recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+
+  return {
+    cancelled: true,
+    order: rowArrayToOrderObject(rowVals)
+  };
+}
+
+// ==================== 10. 店家設定更新與菜單原子儲存 (`updateStoreSettings` / `saveStoreMenusAtomic`) ====================
+function updateStoreSettings(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const props = PropertiesService.getScriptProperties();
+
+  if (params.isOpen !== undefined) {
+    let openMap = {};
+    try { openMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
+    openMap[storeId] = Boolean(params.isOpen);
+    props.setProperty('STORE_OPEN_STATES', JSON.stringify(openMap));
+  }
+
+  if (params.baseQueueOffset !== undefined) {
+    let simOffsets = {};
+    try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
+    simOffsets[storeId] = Math.max(0, Number(params.baseQueueOffset) || 0);
+    props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
+  }
+
+  const storeSheet = ss.getSheetByName('Stores');
+  const range = storeSheet.getDataRange();
+  const rows = range.getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === storeId) {
+      if (params.maxCapacityPer15Min !== undefined) {
+        rows[i][4] = Math.max(5, Number(params.maxCapacityPer15Min) || 20);
+      }
+      if (params.promoMode !== undefined) {
+        rows[i][8] = String(params.promoMode || 'none');
+      }
+      if (params.promoText !== undefined) {
+        rows[i][9] = String(params.promoText || '');
+      }
+      if (params.promoDiscount !== undefined) {
+        rows[i][10] = Math.max(0, Number(params.promoDiscount) || 0);
+      }
+      if (params.cutleryPrice !== undefined) {
+        rows[i][13] = Math.max(0, Number(params.cutleryPrice) || 0);
+      }
+      if (params.basePrepMinutes !== undefined) {
+        rows[i][14] = Math.max(1, Number(params.basePrepMinutes) || 4);
+      }
+      storeSheet.getRange(i + 1, 1, 1, rows[i].length).setValues([rows[i]]);
+      break;
     }
   }
 
-  newMenus.forEach((m, idx) => {
-    const itemId = m.id || ('M_' + storeId + '_' + (idx + 1) + '_' + Math.floor(100 + Math.random() * 899));
-    const cleanOpts = (m.options && typeof m.options === 'object' && !Array.isArray(m.options)) ? { ...m.options } : {};
-    delete cleanOpts.__soldOut;
+  const recentOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 150).map(enrichOrderObject);
+  recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
 
-    nextRows.push([
-      String(itemId),
-      storeId,
-      String(m.name || '未命名品項').trim(),
-      Math.max(0, Number(m.price) || 0),
-      String(m.tag || '').trim(),
-      String(m.category || '招牌主餐').trim(),
-      String(m.image || '').trim(),
-      JSON.stringify(cleanOpts),
-      Boolean(m.soldOut)
-    ]);
+  return { updated: true, storeId: storeId };
+}
+
+/**
+ * 【商業級重構 6：店家白名單隔離與穩定品項 ID 原子寫入】
+ * 僅替換該授權 storeId 的菜單列，絕不誤傷其他店家，且若前端未傳固定 ID 或有同名既有品項則強制保留原 ID！
+ */
+function saveStoreMenusAtomic(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const incomingMenus = Array.isArray(params.menus) ? params.menus : [];
+  const menuSheet = ss.getSheetByName('Menus');
+  const lastRow = menuSheet.getLastRow();
+  const existingRows = lastRow > 1 ? menuSheet.getRange(2, 1, lastRow - 1, 9).getValues() : [];
+
+  const otherStoreRows = [];
+  const existingStoreIdByName = {};
+
+  existingRows.forEach(r => {
+    const rStoreId = String(r[1] || '').trim();
+    if (rStoreId !== storeId) {
+      otherStoreRows.push(r);
+    } else {
+      const rId = String(r[0] || '').trim();
+      const rName = String(r[2] || '').trim();
+      if (rName && rId) {
+        existingStoreIdByName[rName] = rId;
+      }
+    }
   });
 
-  // 先一次性覆寫有效範圍，再清除多餘尾部舊列，避免 clearContents 中途 Timeout 造成全表蒸發
-  menuSheet.getRange(1, 1, nextRows.length, headers.length).setValues(nextRows);
-  const oldLastRow = existingData.length;
-  if (oldLastRow > nextRows.length) {
-    menuSheet.getRange(nextRows.length + 1, 1, oldLastRow - nextRows.length, menuSheet.getLastColumn()).clearContent();
+  const usedIds = new Set();
+  const newStoreRows = incomingMenus
+    .filter(m => m && String(m.name || '').trim())
+    .map(m => {
+      const cleanName = String(m.name || '').trim();
+      let itemId = existingStoreIdByName[cleanName] || String(m.id || '').trim();
+      if (!itemId || /^M\d{4}$/.test(itemId)) {
+        itemId = existingStoreIdByName[cleanName] || generateStableMenuItemIdOnServer(storeId, cleanName);
+      }
+      if (usedIds.has(itemId)) {
+        itemId = generateStableMenuItemIdOnServer(storeId, cleanName + '_' + usedIds.size);
+      }
+      usedIds.add(itemId);
+
+      let cleanOpts = (m.options && typeof m.options === 'object' && !Array.isArray(m.options)) ? m.options : {};
+      if (cleanOpts['__soldOut'] !== undefined) delete cleanOpts['__soldOut'];
+
+      return [
+        itemId,
+        storeId,
+        cleanName,
+        Math.max(0, Number(m.price) || 0),
+        String(m.tag || '').trim(),
+        String(m.category || '招牌主餐').trim(),
+        String(m.image || '').trim(),
+        JSON.stringify(cleanOpts),
+        Boolean(m.soldOut)
+      ];
+    });
+
+  const combinedRows = [...otherStoreRows, ...newStoreRows];
+  if (lastRow > 1) {
+    menuSheet.getRange(2, 1, lastRow - 1, 9).clearContent();
+  }
+  if (combinedRows.length > 0) {
+    menuSheet.getRange(2, 1, combinedRows.length, 9).setValues(combinedRows);
   }
 
-  return getInitBundle(ss, {}, false);
+  return {
+    saved: true,
+    storeId: storeId,
+    menuCount: newStoreRows.length
+  };
+}
+
+function runTrafficSimulation(ss, params) {
+  const mode = String(params.mode || 'PEAK').toUpperCase();
+  const props = PropertiesService.getScriptProperties();
+  const stores = sheetToObjects(ss.getSheetByName('Stores'));
+  const simOffsets = {};
+
+  stores.forEach(s => {
+    const sid = String(s.id);
+    const maxCap = Math.max(5, Number(s.maxCapacityPer15Min) || 20);
+    if (mode === 'PEAK') {
+      if (sid === 'S01' || sid === 'S03' || sid === 'S05') {
+        simOffsets[sid] = Math.round(maxCap * 0.95);
+      } else {
+        simOffsets[sid] = 0;
+      }
+    } else {
+      simOffsets[sid] = 0;
+    }
+  });
+
+  props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
+  const recentOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 150).map(enrichOrderObject);
+  recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+
+  return {
+    simulated: true,
+    mode: mode
+  };
+}
+
+// ==================== 11. Gemini AI 智慧選餐顧問與多模態菜單辨識 ====================
+function handleAiConcierge(ss, params) {
+  const campus = String(params.campus || '雙溪校區').trim();
+  const query = String(params.query || '').trim();
+  const geminiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
+
+  const bundle = getInitBundle(ss, { campus: campus }, false);
+  const openStores = (bundle.stores || []).filter(s => s.campus === campus && s.isOpen !== false);
+  if (openStores.length === 0) {
+    return { aiResult: null };
+  }
+
+  if (geminiKey && query) {
+    try {
+      const storeCatalog = openStores.map(s => ({
+        storeId: s.id,
+        storeName: s.name,
+        waitMin: s.avgPrepMinutes,
+        promoText: s.promoText,
+        menus: (s.menus || []).filter(m => !m.soldOut).map(m => ({
+          menuId: m.id,
+          name: m.name,
+          price: m.price
+        }))
+      }));
+
+      const promptText = `你是東吳大學「${campus}」學餐智慧選餐顧問。請根據以下營業中店家與即時等待分鐘數，回答學生問題：「${query}」。
+請回傳純 JSON 格式：{"reasoning":"推薦原因(60字內)","storeId":"推薦店家ID","menuId":"推薦餐點ID"}
+可用菜單資料：${JSON.stringify(storeCatalog)}`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`;
+      const res = UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        }),
+        muteHttpExceptions: true
+      });
+
+      const resData = JSON.parse(res.getContentText());
+      const rawJsonText = resData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (rawJsonText) {
+        const parsed = JSON.parse(rawJsonText);
+        if (parsed && parsed.storeId && parsed.menuId) {
+          return {
+            aiResult: {
+              reasoning: parsed.reasoning,
+              storeId: parsed.storeId,
+              menuId: parsed.menuId,
+              engine: 'Gemini 2.5 Flash 雲端智慧顧問'
+            }
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  return { aiResult: null };
 }
 
 function handleAiParseMenu(ss, params) {
-  const rawText = String(params.rawText || '');
-  const imageBase64 = String(params.imageBase64 || '');
-  const imageMime = String(params.imageMime || 'image/jpeg');
-  const props = PropertiesService.getScriptProperties();
-  const apiKey = params.apiKey || props.getProperty('GEMINI_API_KEY') || '';
+  const rawText = String(params.rawText || '').trim();
+  const imageBase64 = String(params.imageBase64 || '').trim();
+  const imageMime = String(params.imageMime || 'image/jpeg').trim();
+  const storeId = String(params.storeId || 'S02').trim();
+  const geminiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
 
-  if (apiKey && (imageBase64 || rawText)) {
+  if (geminiKey && (imageBase64 || rawText)) {
     try {
-      const prompt = `你是專業餐飲收銀系統的菜單建檔專家。
-請從使用者提供的菜單圖片或文字中，自動辨識並整理出所有菜色品項，回傳純 JSON 陣列（不要加 markdown 語法）：
-[
-  {
-    "category": "分類名稱(如：招牌丼飯、手工水餃、湯品飲品)",
-    "name": "餐點名稱",
-    "price": 110,
-    "tag": "🔥 店長推薦",
-    "options": {
-      "份量選擇": { "type": "radio", "choices": [["標準份量", 0], ["加大份量", 15]] },
-      "辣度調整": { "type": "radio", "choices": [["不辣", 0], ["小辣", 0], ["大辣", 0]] }
-    }
-  }
-]`;
-
-      const parts = [{ text: prompt }];
-      if (rawText) parts.push({ text: '菜單文字內容：\n' + rawText });
+      const parts = [{
+        text: `請將這份菜單解析為結構化 JSON 陣列，格式為：[{"category":"分類","name":"菜名","price":100,"tag":"🔥 店長推薦","options":{}}]。${rawText ? '補充文字：' + rawText : ''}`
+      }];
       if (imageBase64) {
         parts.push({
           inlineData: {
             mimeType: imageMime,
-            data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
+            data: imageBase64
           }
         });
       }
 
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`;
       const res = UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
         payload: JSON.stringify({
           contents: [{ parts: parts }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+          generationConfig: { responseMimeType: 'application/json' }
         }),
         muteHttpExceptions: true
       });
-      const json = JSON.parse(res.getContentText());
-      const textOut = json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts[0].text;
-      if (textOut) {
-        return { parsedMenus: JSON.parse(textOut), engine: '雲端多模態視覺辨識引擎' };
+      const resData = JSON.parse(res.getContentText());
+      const rawJson = resData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (rawJson) {
+        const arr = JSON.parse(rawJson);
+        if (Array.isArray(arr) && arr.length > 0) {
+          return {
+            engine: 'Gemini 2.5 Flash 多模態視覺引擎',
+            parsedMenus: arr.map(it => ({
+              id: generateStableMenuItemIdOnServer(storeId, it.name),
+              category: it.category || '主廚推薦',
+              name: it.name,
+              price: Number(it.price) || 100,
+              tag: it.tag || '🔥 新上市',
+              options: it.options || {}
+            }))
+          };
+        }
       }
     } catch (e) {}
   }
 
-  const fallbackMenus = [];
+  const fallbackParsed = [];
   if (rawText) {
     let currentCat = '掃描推薦';
     rawText.split(/\r?\n/).forEach(line => {
@@ -1726,242 +2214,23 @@ function handleAiParseMenu(ss, params) {
         currentCat = catMatch[1].trim();
         return;
       }
-      const itemMatch = t.match(/^(.+?)\s*[\$＄]?\s*(\d{2,4})\s*(?:元)?(?:\s*[\(（](.+?)[\)）])?$/);
+      const itemMatch = t.match(/^(.+?)\s*[\$＄]?\s*(\d{2,4})\s*(?:元)?/);
       if (itemMatch) {
-        fallbackMenus.push({
+        const cleanName = itemMatch[1].replace(/^[-*•\d\.]+\s*/, '').trim();
+        fallbackParsed.push({
+          id: generateStableMenuItemIdOnServer(storeId, cleanName),
           category: currentCat,
-          name: itemMatch[1].replace(/^[-*•\d\.]+\s*/, '').trim(),
+          name: cleanName,
           price: parseInt(itemMatch[2], 10),
-          tag: '🔥 店長推薦',
+          tag: '🔥 新上市',
           options: {}
         });
       }
     });
   }
 
-  return { parsedMenus: fallbackMenus, engine: '結構化語法解析引擎' };
-}
-
-function updateStoreSettings(ss, params) {
-  const storeSheet = ss.getSheetByName('Stores');
-  const range = storeSheet.getDataRange();
-  const data = range.getValues();
-  const props = PropertiesService.getScriptProperties();
-  const sid = String(params.storeId || '');
-
-  if (params.useCustomLineOa !== undefined) {
-    saveLineDevConfig(ss, params);
-  }
-
-  if (params.isOpen !== undefined && sid) {
-    let openStateMap = {};
-    try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
-    openStateMap[sid] = Boolean(params.isOpen);
-    props.setProperty('STORE_OPEN_STATES', JSON.stringify(openStateMap));
-  }
-
-  if (params.baseQueueOffset !== undefined && sid) {
-    let simOffsets = {};
-    try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
-    simOffsets[sid] = Math.max(0, Number(params.baseQueueOffset) || 0);
-    props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
-  }
-
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === sid) {
-      if (params.promoMode !== undefined) data[i][8] = params.promoMode;
-      if (params.promoText !== undefined) data[i][9] = params.promoText;
-      if (params.promoDiscount !== undefined) data[i][10] = Number(params.promoDiscount);
-      if (params.maxCapacityPer15Min !== undefined) data[i][4] = Math.max(5, Number(params.maxCapacityPer15Min));
-      if (params.cutleryPrice !== undefined) data[i][13] = Math.max(0, Number(params.cutleryPrice));
-      if (params.basePrepMinutes !== undefined) data[i][14] = Math.max(1, Number(params.basePrepMinutes));
-      storeSheet.getRange(i + 1, 1, 1, data[i].length).setValues([data[i]]);
-      break;
-    }
-  }
-  return getInitBundle(ss, {}, true);
-}
-
-/**
- * 商業級重構 4 & 7：單列批次更新訂單狀態，並在「已完成」時強制驗證是否已收款
- */
-function updateOrderStateBatch(ss, params) {
-  const orderSheet = ss.getSheetByName('Orders');
-  const data = orderSheet.getDataRange().getValues();
-
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(params.orderId)) {
-      const row = data[i];
-      let meta = {};
-      try { meta = JSON.parse(row[16] || '{}'); } catch (e) {}
-
-      if (params.paymentMethod) {
-        row[12] = String(params.paymentMethod);
-      }
-      if (params.paymentStatus) {
-        meta.paymentStatus = String(params.paymentStatus);
-      }
-      if (params.cashReceived !== undefined) {
-        meta.cashReceived = Number(params.cashReceived) || 0;
-      }
-      if (params.changeGiven !== undefined) {
-        meta.changeGiven = Number(params.changeGiven) || 0;
-      }
-
-      const curPayStatus = String(meta.paymentStatus || '');
-      if (params.newStatus === '已完成' && !curPayStatus.startsWith('已付款')) {
-        throw new Error('帳務防呆攔截：此訂單尚未收款，請先完成櫃檯收款再結單！');
-      }
-
-      if (params.newStatus) {
-        row[13] = String(params.newStatus);
-      }
-      if (params.newStatus === '製作中' && !meta.cookingStartedAtTs) {
-        meta.cookingStartedAtTs = Date.now();
-      }
-      if (params.notifyCount !== undefined) {
-        meta.notifyCount = Number(params.notifyCount);
-      } else if (params.newStatus === '可取餐') {
-        meta.notifyCount = (Number(meta.notifyCount) || 0) + 1;
-      }
-
-      row[16] = JSON.stringify(meta);
-      orderSheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
-      break;
-    }
-  }
-
-  return getInitBundle(ss, {}, true);
-}
-
-function markReservationPaid(ss, params) {
-  return updateOrderStateBatch(ss, {
-    orderId: params.orderId,
-    paymentStatus: '已付款',
-    paymentMethod: params.paymentMethod || '現場現金'
-  });
-}
-
-function cancelOrderByIdBatch(ss, params) {
-  const orderSheet = ss.getSheetByName('Orders');
-  const data = orderSheet.getDataRange().getValues();
-  const reason = String(params.reason || '櫃檯取消').trim();
-
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][0]) === String(params.orderId)) {
-      if (params.hardDelete) {
-        orderSheet.deleteRow(i + 1);
-      } else {
-        const row = data[i];
-        row[13] = `已取消 (${reason})`;
-        let meta = {};
-        try { meta = JSON.parse(row[16] || '{}'); } catch (e) {}
-        meta.paymentStatus = '已退單作廢';
-        meta.cancelReason = reason;
-        row[16] = JSON.stringify(meta);
-        orderSheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
-      }
-      break;
-    }
-  }
-  return getInitBundle(ss, {}, true);
-}
-
-function runTrafficSimulation(ss, params) {
-  const props = PropertiesService.getScriptProperties();
-  const mode = params.mode || 'PEAK';
-  if (mode === 'PEAK') {
-    props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify({
-      'S01': 17,
-      'S02': 0,
-      'S03': 20,
-      'S04': 0,
-      'S05': 15,
-      'S06': 0,
-      'S07': 0
-    }));
-  } else {
-    props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify({}));
-  }
-  return getInitBundle(ss, {}, true);
-}
-
-function handleAiConcierge(ss, params) {
-  const bundleObj = getInitBundle(ss, {}, false).bundle;
-  const campus = params.campus || '雙溪校區';
-  const userQuery = (params.query || '').trim();
-  const openStores = bundleObj.stores.filter(s => s.campus === campus && s.isOpen !== false);
-  const campusStores = openStores.length > 0 ? openStores : bundleObj.stores.filter(s => s.campus === campus);
-
-  const props = PropertiesService.getScriptProperties();
-  const apiKey = props.getProperty('GEMINI_API_KEY') || '';
-
-  if (apiKey) {
-    try {
-      const storeContext = campusStores.map(s => ({
-        id: s.id,
-        name: s.name,
-        waitMinutes: s.avgPrepMinutes,
-        loadPct: s.loadPercentage,
-        promoText: s.promoText,
-        aiScore: s.aiScore,
-        menus: (s.menus || []).filter(m => !m.soldOut).map(m => ({ id: m.id, name: m.name, price: m.price }))
-      }));
-
-      const prompt = `你是東吳大學「學餐智慧選餐與客服顧問」。
-目前校區：${campus}
-學生的輸入：「${userQuery}」
-即時學餐營業中店家佇列與供應中菜單數據：${JSON.stringify(storeContext)}
-
-請根據學生的輸入自然且精準地回答，並以純 JSON 格式回覆：
-{
-  "reasoning": "自然、準確、針對學生問題的繁體中文回答 (100字內)",
-  "storeId": "推薦店家ID (如 S02)",
-  "menuId": "推薦餐點ID (如 M04)",
-  "engine": "Google Gemini 2.5 Flash"
-}`;
-
-      const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey);
-      const response = UrlFetchApp.fetch(url, {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.3 }
-        }),
-        muteHttpExceptions: true
-      });
-      const resJson = JSON.parse(response.getContentText());
-      const text = resJson.candidates && resJson.candidates[0] && resJson.candidates[0].content && resJson.candidates[0].content.parts[0].text;
-      if (text) {
-        return { aiResult: JSON.parse(text) };
-      }
-    } catch (e) {}
-  }
-
-  const sortedStores = campusStores.slice().sort((a, b) => Number(b.aiScore) - Number(a.aiScore));
-  const bestStore = sortedStores[0] || campusStores[0];
-  const availMenus = (bestStore && bestStore.menus) ? bestStore.menus.filter(m => !m.soldOut) : [];
-  const bestMenu = availMenus[0] || (bestStore && bestStore.menus && bestStore.menus[0]) || { id: 'M04', name: '招牌特餐', price: 100 };
-
   return {
-    aiResult: {
-      reasoning: `目前「${campus}」以「${bestStore.name}」最為順暢（預估約 ${bestStore.avgPrepMinutes} 分鐘取餐），推薦點選正常供應中的人氣品項「${bestMenu.name} ($${bestMenu.price})」。`,
-      storeId: bestStore.id,
-      menuId: bestMenu.id,
-      engine: '雲端佇列智慧配餐引擎'
-    }
+    engine: '雲端結構化語法解析引擎',
+    parsedMenus: fallbackParsed
   };
-}
-
-function sheetToObjects(sheet) {
-  if (!sheet) return [];
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return [];
-  const headers = data[0];
-  return data.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((h, idx) => { obj[h] = row[idx]; });
-    return obj;
-  });
 }
