@@ -10,10 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <!-- 注意路徑改為 ../ -->
   <link rel="stylesheet" href="../styles.css">
   <script>
-    // 明確告知引擎此為點餐與憑證路由
     window.MEALFLOW_FORCED_ROUTE = 'order';
   </script>
 </head>
@@ -35,7 +33,7 @@
 
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <button type="button" id="headerMyOrdersBtn" class="btn-my-orders" style="display:none;" onclick="openMyOrdersDrawer()">
-          <span>🧾 我的訂單</span>
+          <span>🧾 我的訂單 / 查單</span>
           <span id="headerMyOrdersCount" class="my-orders-count-badge" style="display:none;">0</span>
         </button>
         <button type="button" id="headerLineBindBtn" class="btn-line" style="padding:5px 11px; font-size:0.76rem;" onclick="openLineBindModal()">
@@ -50,45 +48,55 @@
   </header>
 
   <main class="container">
-    <!-- 保留所有 View 容器，由 app.js 自動切換顯示 -->
-    <section id="viewPortal" class="view-section"></section>
+    <section id="viewPortal" class="view-section">
+      <div id="portalContentBox"></div>
+    </section>
+
     <section id="viewOrder" class="view-section active">
       <div id="activeOrderFloatingBanner"></div>
       <div id="storeDirectoryBlock">
         <div class="ai-concierge-box">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <div>
-              <span style="font-size:0.72rem; font-weight:800; background:rgba(255,255,255,0.18); padding:2px 8px; border-radius:999px;">✨ 學餐智慧選餐與客服顧問</span>
+              <span style="font-size:0.72rem; font-weight:800; background:rgba(255,255,255,0.18); padding:2px 8px; border-radius:999px;">✨ 學餐智慧選餐與免排隊顧問</span>
               <h3 style="font-size:1rem; font-weight:800; margin-top:4px;">不知道吃什麼或想問取餐規則？依即時排隊狀況幫你解答與配餐</h3>
             </div>
           </div>
           <div class="ai-chip-row">
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('⚡ 我只剩 10 分鐘就要上課，推薦最快拿到的主餐')">⚡ 10分鐘內趕上課快取</button>
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('💰 預算 100 元以內、有分流優惠的超值正餐')">💰 預算 100 元內超值正餐</button>
+            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🥩 運動完想吃高蛋白質的大份量肉食主餐')">🥩 增肌高蛋白大份量</button>
             <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🌶️ 想吃韓式、椒麻或辣味，且不用排隊的餐點')">🌶️ 想吃辣味重口味免排隊</button>
+            <button type="button" class="ai-prompt-chip" onclick="askAiConcierge('🔎 無痕模式怎麼找回我的訂單？')">🔎 跨裝置查單規則</button>
           </div>
           <div style="display:flex; gap:8px; margin-top:4px;">
-            <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1; background:rgba(255,255,255,0.95); border:none;" placeholder="可多輪對話或輸入需求..." onkeydown="if(event.key==='Enter') askAiConcierge()">
-            <button type="button" class="btn-tip-action" onclick="askAiConcierge()">🧠 傳送對話</button>
+            <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1; background:rgba(255,255,255,0.95); border:none;" placeholder="問問顧問：例如「想吃辣的烏龍麵」、「哪家最快？」..." onkeydown="if(event.key==='Enter') askAiConcierge()">
+            <button type="button" class="btn-tip-action" onclick="askAiConcierge()">🧠 詢問顧問</button>
           </div>
           <div id="aiConciergeResponse" class="ai-response-card"></div>
         </div>
+
         <div id="aiSmartTipBox"></div>
+
         <div class="filter-row">
-          <button type="button" class="filter-chip active" id="filter-ALL" onclick="setFilter('ALL')">全部店家</button>
-          <button type="button" class="filter-chip" id="filter-FAST" onclick="setFilter('FAST')">⚡ 免排隊快取 (綠燈順暢)</button>
-          <button type="button" class="filter-chip" id="filter-PROMO" onclick="setFilter('PROMO')">🎁 離峰分流送優惠</button>
+          <button type="button" class="filter-chip active" id="filter-ALL" onclick="setFilter('ALL')">全部櫃位</button>
+          <button type="button" class="filter-chip" id="filter-FAST" onclick="setFilter('FAST')">🟢 順暢免排隊</button>
+          <button type="button" class="filter-chip" id="filter-PROMO" onclick="setFilter('PROMO')">🎁 享離峰優惠</button>
         </div>
+
         <div id="storeListContainer" class="store-list"></div>
       </div>
+
       <div id="inStoreOrderingBlock" style="display:none;"></div>
     </section>
+
     <section id="viewTicket" class="view-section">
       <div id="singleTicketContainer"></div>
     </section>
+
     <section id="viewStore" class="view-section"></section>
   </main>
-  <!-- 注意路徑改為 ../ -->
+
   <script src="../app.js"></script>
 </body>
 </html>
