@@ -10,10 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <!-- 注意路徑改為 ../ -->
   <link rel="stylesheet" href="../styles.css">
   <script>
-    // 明確告知引擎此為店家後台路由，強制啟用資安 PIN 碼閘門
     window.MEALFLOW_FORCED_ROUTE = 'store';
   </script>
 </head>
@@ -46,9 +44,13 @@
   </header>
 
   <main class="container">
-    <section id="viewPortal" class="view-section"></section>
+    <section id="viewPortal" class="view-section">
+      <div id="portalContentBox"></div>
+    </section>
     <section id="viewOrder" class="view-section"></section>
-    <section id="viewTicket" class="view-section"></section>
+    <section id="viewTicket" class="view-section">
+      <div id="singleTicketContainer"></div>
+    </section>
     <section id="viewStore" class="view-section active">
       <div class="store-shell-layout">
         <aside class="store-left-rail">
@@ -75,7 +77,7 @@
       </div>
     </section>
   </main>
-  <!-- 注意路徑改為 ../ -->
+
   <script src="../app.js"></script>
 </body>
 </html>
