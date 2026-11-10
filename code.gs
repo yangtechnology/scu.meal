@@ -1642,11 +1642,12 @@ function handleOrderSubmission(ss, params) {
   const orderSheet = ss.getSheetByName('Orders');
   const incomingOrderId = String(params.orderId || ('ORD-' + Utilities.getUuid().slice(0, 12))).trim();
 
-  // 冪等性保護：若該 orderId 已存在，直接回傳既有權威訂單
+  // 冪等性保護：若該 orderId 已存在，直接回傳既有權威訂單（經最小權限脫敏）
+  const isMerchantPosRequest = isMerchantRequestValid(params, storeId);
   const existingLocated = locateOrderRowById(orderSheet, incomingOrderId);
   if (existingLocated) {
     const existingOrder = rowArrayToOrderObject(existingLocated.rowValues);
-    return { order: existingOrder };
+    return { order: sanitizeOrderForClientOutput(existingOrder, isMerchantPosRequest) };
   }
 
   const stores = sheetToObjects(ss.getSheetByName('Stores'));
@@ -1660,7 +1661,6 @@ function handleOrderSubmission(ss, params) {
   try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
   const isStoreOpen = openStateMap[storeId] !== undefined ? Boolean(openStateMap[storeId]) : true;
   const isReservation = Boolean(params.isReservation);
-  const isMerchantPosRequest = isMerchantRequestValid(params, storeId);
 
   if (!isStoreOpen && !isReservation && !isMerchantPosRequest) {
     throw new Error(`「${storeRow.name}」目前暫停立即出餐，請改選「預訂取餐」模式！`);
@@ -1966,10 +1966,21 @@ function updateOrderStateBatch(ss, params) {
   const orderStoreId = String(rowVals[2] || '').trim();
   assertMerchantAuthorized(params, orderStoreId);
 
+  const prevStatus = String(rowVals[13] || '').trim();
+  if (prevStatus.indexOf('已取消') >= 0) {
+    throw new Error('此訂單已退單作廢 (' + prevStatus + ')，不可變更狀態或核銷交付');
+  }
+
   let meta = {};
   try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
 
+  if (params.paymentStatus) {
+    meta.paymentStatus = String(params.paymentStatus).trim();
+  }
   const nextStatus = String(params.newStatus || rowVals[13] || '製作中').trim();
+  if (nextStatus === '已完成' && String(meta.paymentStatus || '已付款') !== '已付款') {
+    throw new Error('此訂單尚未完成付款確認，請先收款後再核銷交付');
+  }
   rowVals[13] = nextStatus;
 
   if (nextStatus === '可取餐') {
@@ -1978,9 +1989,6 @@ function updateOrderStateBatch(ss, params) {
   }
   if (nextStatus === '製作中' && !meta.cookingStartedAtTs) {
     meta.cookingStartedAtTs = Date.now();
-  }
-  if (params.paymentStatus) {
-    meta.paymentStatus = String(params.paymentStatus).trim();
   }
   if (params.paymentMethod) {
     rowVals[12] = String(params.paymentMethod).trim();
@@ -2039,9 +2047,28 @@ function cancelOrderByIdBatch(ss, params) {
 
   const rowVals = located.rowValues;
   const orderStoreId = String(rowVals[2] || '').trim();
-  assertMerchantAuthorized(params, orderStoreId);
+  const curOrderObj = rowArrayToOrderObject(rowVals);
+  const curStatus = String(curOrderObj.status || '');
+  const isMerchantAuth = isMerchantRequestValid(params, orderStoreId);
 
-  const reason = String(params.reason || '櫃檯取消').trim();
+  if (!isMerchantAuth) {
+    // 允許學生憑本人防偽核銷碼 (verificationCode) 在尚未進入廚房製作前自助取消預約單/未付款單
+    const providedCode = String(params.verificationCode || '').trim().toUpperCase();
+    const expectedCode = String(curOrderObj.verificationCode || '').trim().toUpperCase();
+    if (!providedCode || providedCode !== expectedCode) {
+      assertMerchantAuthorized(params, orderStoreId);
+    }
+    const canSelfCancel = (
+      curStatus === '已接單待排程' ||
+      curStatus === '待付款確認' ||
+      (curStatus === '製作中' && curOrderObj.paymentStatus !== '已付款' && curOrderObj.isReservation)
+    );
+    if (!canSelfCancel) {
+      throw new Error('訂單已進入廚房備餐或完成階段，無法由線上自助取消，請洽詢店家櫃檯處理。');
+    }
+  }
+
+  const reason = String(params.reason || (isMerchantAuth ? '櫃檯取消' : '顧客自助取消預約')).trim();
   let meta = {};
   try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
 
@@ -2059,13 +2086,13 @@ function cancelOrderByIdBatch(ss, params) {
     ss,
     cancelledOrderObj,
     `🚫 訂單 #${cancelledOrderObj.pickupNumber} 已取消通知`,
-    `您在【${cancelledOrderObj.storeName}】的訂單已由櫃檯辦理取消（原因：${reason}）。如有疑問請洽詢店家櫃檯。`,
+    `您在【${cancelledOrderObj.storeName}】的訂單已辦理取消（原因：${reason}）。如有疑問請洽詢店家櫃檯。`,
     rowVals[13]
   );
 
   return {
     cancelled: true,
-    order: cancelledOrderObj
+    order: sanitizeOrderForClientOutput(cancelledOrderObj, isMerchantAuth)
   };
 }
 
