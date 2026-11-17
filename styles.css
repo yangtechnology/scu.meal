@@ -20,7 +20,6 @@
   --slate-dark: #0F172A;
 
   --linepay-green: #00C300;
-  --jkopay-red: #E60012;
 
   --bg-page: #F4F6F9;
   --bg-card: #FFFFFF;
@@ -54,11 +53,31 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 僅在「店家端 ➔ 櫃檯點餐」分頁鎖定外層不捲動，確保平板收銀滿版穩定 */
+/* 店家端全模式鎖定外框為 App Shell，內部舞台區與收銀面板各自獨立捲動 */
+body.store-mode-active,
 body.pos-no-scroll {
   height: 100dvh;
   overflow: hidden;
   padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body.store-mode-active main.container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.store-mode-active #viewStore.active {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 button {
@@ -96,8 +115,41 @@ input, select, textarea {
 .brand-title-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+}
+
+.brand-logo-link {
+  text-decoration: none;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-logo-svg {
+  flex-shrink: 0;
+  border-radius: 9px;
+  box-shadow: 0 2px 8px rgba(255, 90, 31, 0.25);
+}
+
+.brand-logo-text-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.brand-logo-primary {
+  font-weight: 950;
+  font-size: 1.15rem;
+  letter-spacing: -0.4px;
+  color: var(--slate-dark);
+}
+
+.brand-logo-sub {
+  font-weight: 800;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
 }
 
 .role-badge {
@@ -982,20 +1034,20 @@ body.store-mode-active .page-container,
   color: #991B1B;
 }
 
-/* ==================== 店家端現代化左側導覽軌 + 舞台區（雙向相容主頁與 /store/） ==================== */
+/* ==================== 店家端現代化左側導覽軌 + 舞台區（App-Shell 固定外框設計） ==================== */
 .store-shell-layout,
 .store-workspace-shell {
   display: grid;
-  grid-template-columns: 78px 1fr;
+  grid-template-columns: 74px minmax(0, 1fr);
   gap: 14px;
-  align-items: start;
-  max-width: 1320px;
+  align-items: stretch;
+  max-width: 1440px;
+  width: 100%;
   margin: 0 auto;
-  padding: 12px 16px;
-}
-
-body.store-mode-active .container .store-shell-layout {
   padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .store-left-rail {
@@ -1008,16 +1060,16 @@ body.store-mode-active .container .store-shell-layout {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  position: sticky;
-  top: 72px;
-  height: calc(100dvh - 82px);
+  height: 100%;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .store-rail-btn,
 .rail-nav-btn {
   position: relative;
-  width: 60px;
-  height: 60px;
+  width: 58px;
+  height: 58px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -1030,6 +1082,7 @@ body.store-mode-active .container .store-shell-layout {
   font-size: 0.7rem;
   font-weight: 800;
   transition: all 0.16s ease;
+  flex-shrink: 0;
 }
 
 .store-rail-btn .rail-icon,
@@ -1075,7 +1128,29 @@ body.store-mode-active .container .store-shell-layout {
 .store-stage-area,
 .store-main-stage {
   min-width: 0;
+  min-height: 0;
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#storePanel-pos {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#storePanel-kds,
+#storePanel-analytics,
+#storePanel-settings {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* 資安防護：當未通過 PIN 授權時，徹底清空/鎖定舞台區 */
@@ -1088,13 +1163,13 @@ body.store-mode-active .container .store-shell-layout {
   color: var(--text-secondary);
 }
 
-/* 店家 POS 點餐雙欄工作區 */
+/* 店家 POS 點餐雙欄工作區（彈性高度與寬度，不再使用硬編碼 82px / 520px） */
 .pos-modern-workspace {
   display: grid;
-  grid-template-columns: 1fr 410px;
-  gap: 14px;
-  height: calc(100dvh - 82px);
-  min-height: 520px;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 34vw, 400px);
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1103,10 +1178,11 @@ body.store-mode-active .container .store-shell-layout {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1149,10 +1225,11 @@ body.store-mode-active .container .store-shell-layout {
 
 .pos-dish-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-  grid-auto-rows: 118px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: minmax(104px, auto);
   gap: 10px;
   align-content: start;
   padding-right: 4px;
@@ -1162,10 +1239,11 @@ body.store-mode-active .container .store-shell-layout {
   background: #FFFFFF;
   border: 1.5px solid var(--border);
   border-radius: 14px;
-  padding: 12px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  gap: 6px;
   cursor: pointer;
   transition: all 0.14s ease;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
@@ -1193,7 +1271,7 @@ body.store-mode-active .container .store-shell-layout {
 }
 
 .pos-tile-name {
-  font-size: 0.94rem;
+  font-size: 0.92rem;
   font-weight: 900;
   color: var(--text-primary);
   margin-top: 4px;
@@ -1205,12 +1283,12 @@ body.store-mode-active .container .store-shell-layout {
 }
 
 .pos-tile-price {
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 900;
   color: var(--brand-dark);
 }
 
-/* 右側：現代化結帳明細卡 */
+/* 右側：現代化結帳明細卡（內部捲動，底部固定結帳按鈕不裁切） */
 .pos-receipt-column {
   background: #FFFFFF;
   border-radius: var(--radius-lg);
@@ -1219,11 +1297,12 @@ body.store-mode-active .container .store-shell-layout {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
 .pos-receipt-header {
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 100%);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -1232,10 +1311,17 @@ body.store-mode-active .container .store-shell-layout {
   flex-shrink: 0;
 }
 
-.pos-receipt-list {
+.pos-receipt-scroll-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-receipt-list {
+  flex: 1 0 auto;
+  padding: 10px 12px;
 }
 
 .pos-receipt-item {
@@ -1243,18 +1329,26 @@ body.store-mode-active .container .store-shell-layout {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border-radius: 10px;
   background: var(--bg-page);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   border: 1px solid var(--border);
 }
 
+.pos-receipt-controls {
+  padding: 8px 12px;
+  background: #FAFBFC;
+  border-top: 1px dashed var(--border);
+  flex-shrink: 0;
+}
+
 .pos-receipt-footer {
-  padding: 10px 14px;
+  padding: 8px 12px 10px;
   background: #FFFFFF;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.04);
 }
 
 /* POS 櫃檯手動折扣與招待快捷列 */
@@ -1969,10 +2063,6 @@ body.store-mode-active .container .store-shell-layout {
   background: linear-gradient(135deg, #00C300 0%, #059669 100%);
 }
 
-.payment-gateway-header.jkopay {
-  background: linear-gradient(135deg, #E60012 0%, #B91C1C 100%);
-}
-
 /* AI 菜單辨識預覽表格 */
 .ai-scan-table-wrap {
   overflow-x: auto;
@@ -2095,31 +2185,40 @@ body.store-mode-active .container .store-shell-layout {
   animation: ringBell 0.9s ease infinite;
 }
 
-/* ==================== RWD 響應式平板與手機適配 ==================== */
-@media (max-width: 960px) {
-  body.pos-no-scroll {
-    height: auto;
-    overflow-y: auto;
+/* ==================== RWD 響應式平板與手機適配（支援橫向/直向平板與矮螢幕筆電） ==================== */
+@media (max-width: 1120px) {
+  .pos-modern-workspace {
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 10px;
+  }
+
+  .pos-dish-grid {
+    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  body.store-mode-active .container,
+  body.store-mode-active .page-container {
+    padding: 8px 10px;
   }
 
   .store-shell-layout,
   .store-workspace-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .store-left-rail {
-    position: static;
-    height: auto;
-    flex-direction: row;
-    justify-content: space-around;
-    padding: 8px;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 10px;
   }
 
   .store-rail-btn,
   .rail-nav-btn {
-    width: auto;
-    flex: 1;
-    height: 50px;
+    width: 50px;
+    height: 52px;
+    font-size: 0.66rem;
+  }
+
+  /* 直向平板：左側導覽軌仍固定在左側不隨內容捲走，點餐區與結帳欄可上下捲動 */
+  #storePanel-pos {
+    overflow-y: auto;
   }
 
   .pos-modern-workspace {
@@ -2129,15 +2228,50 @@ body.store-mode-active .container .store-shell-layout {
   }
 
   .pos-menu-card {
-    height: 520px;
+    height: 440px;
   }
 
   .pos-receipt-column {
     height: auto;
+    overflow: visible;
+  }
+
+  .pos-receipt-scroll-body {
+    overflow: visible;
   }
 
   .charts-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .brand-logo-sub {
+    display: none;
+  }
+
+  .store-shell-layout,
+  .store-workspace-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .store-left-rail {
+    height: auto;
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 6px;
+    border-radius: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .store-rail-btn,
+  .rail-nav-btn {
+    width: auto;
+    flex: 1;
+    height: 46px;
   }
 }
 

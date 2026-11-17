@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板收銀系統 - 商業企業版雲端後端引擎 (Google Apps Script v14.0 Pro)
+ * MealFlow 學餐智慧點餐與全螢幕平板收銀系統 - 雲端後端引擎 (Google Apps Script)
  * ============================================================================
  * 核心架構與資安升級：
  * 1. 常數時間比對 (Constant-Time Comparison) + 4~8 碼店務 PIN + 綁定 storeId 之 HMAC Session Token
@@ -13,6 +13,7 @@
 
 const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
 const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V14_0';
+const BRAND_NAME = 'MealFlow 學餐智慧點餐';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500;
 const SESSION_TTL_MS = 8 * 3600 * 1000; // 店務 Session Token 效期 8 小時
@@ -22,6 +23,15 @@ const scriptProps = PropertiesService.getScriptProperties();
 const SYSTEM_LINE_CLIENT_ID = scriptProps.getProperty('LINE_CLIENT_ID') || '2012260287';
 const SYSTEM_LINE_CLIENT_SECRET = scriptProps.getProperty('LINE_CLIENT_SECRET') || '';
 const SYSTEM_LINE_CHANNEL_TOKEN = scriptProps.getProperty('LINE_CHANNEL_TOKEN') || scriptProps.getProperty('LINE_CHANNEL_ACCESS_TOKEN') || '';
+
+function escapeHtmlOnServer(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ==================== HTTP 路由入口 (讀寫分離架構) ====================
 function doGet(e) {
@@ -37,7 +47,7 @@ function doGet(e) {
 
   return jsonResponse({
     success: true,
-    service: '東吳學餐智慧點餐雲端引擎 Commercial v14.0 Pro',
+    service: BRAND_NAME + ' 雲端引擎',
     status: 'ONLINE'
   });
 }
@@ -1055,7 +1065,7 @@ function dispatchOrderNotificationOnServer(ss, orderObj, titleText, messageText,
     storeId: orderObj.storeId || '',
     title: titleText,
     pickupNumber: orderObj.pickupNumber || '',
-    storeName: orderObj.storeName || '東吳學餐',
+    storeName: orderObj.storeName || BRAND_NAME,
     statusText: statusLabel || orderObj.status || '即時通知',
     orderUrl: orderUrl
   };
@@ -1132,14 +1142,14 @@ function handleLineCallback(ss, params) {
     sendLinePushMessage(
       ss,
       userUID,
-      `🎉 嗨 ${displayName}，您已成功綁定東吳學餐即時通知！往後餐點完成可取餐與訂單狀態更新都會直接推播至此。`,
+      `🎉 嗨 ${displayName}，您已成功綁定 ${BRAND_NAME} 即時通知！往後餐點完成可取餐與訂單狀態更新都會直接推播至此。`,
       lineCfg.channelToken,
       {
         storeId: storeId,
         title: 'LINE 帳號綁定成功',
         subtitle: `嗨 ${displayName}！取餐與預訂通知已啟用`,
         pickupNumber: 'OK',
-        storeName: '東吳學餐智慧點餐',
+        storeName: BRAND_NAME,
         statusText: '已連結推播通知',
         orderUrl: redirectUri
       }
@@ -1170,8 +1180,8 @@ function sendLinePushMessage(ss, lineUserId, text, tokenOverride, flexMeta) {
   if (!channelToken) return false;
 
   const meta = flexMeta || {};
-  const titleText = meta.title || '東吳學餐訂單通知';
-  const storeName = meta.storeName || '東吳學餐';
+  const titleText = meta.title || (BRAND_NAME + ' 訂單通知');
+  const storeName = meta.storeName || BRAND_NAME;
   const pickupNumber = meta.pickupNumber || '';
   const statusText = meta.statusText || '訂單狀態更新';
   const orderUrl = meta.orderUrl || 'https://yangbrian01.github.io/scu.meal/order/';
@@ -1214,7 +1224,7 @@ function sendLinePushMessage(ss, lineUserId, text, tokenOverride, flexMeta) {
       type: 'box',
       layout: 'vertical',
       contents: [
-        { type: 'text', text: '東吳學餐智慧點餐', weight: 'bold', color: accentColor, size: 'sm' },
+        { type: 'text', text: BRAND_NAME, weight: 'bold', color: accentColor, size: 'sm' },
         { type: 'text', text: String(titleText), weight: 'bold', size: 'xl', margin: 'md', wrap: true },
         { type: 'separator', margin: 'xl' },
         { type: 'box', layout: 'vertical', margin: 'xl', spacing: 'sm', contents: contentsArray },
@@ -1353,27 +1363,33 @@ function sendOrderEmailNotification(email, messageText, meta) {
     const cleanEmail = String(email || '').trim();
     if (!cleanEmail || cleanEmail.indexOf('@') < 1) return false;
     const m = meta || {};
-    const title = m.title || '東吳學餐訂單通知';
+    const title = m.title || (BRAND_NAME + ' 訂單通知');
     const pickupNumber = m.pickupNumber ? ('#' + m.pickupNumber) : '';
-    const storeName = m.storeName || '東吳學餐';
+    const storeName = m.storeName || BRAND_NAME;
     const orderUrl = m.orderUrl || 'https://yangbrian01.github.io/scu.meal/order/';
+
+    const safeTitle = escapeHtmlOnServer(title);
+    const safePickupNumber = escapeHtmlOnServer(pickupNumber);
+    const safeStoreName = escapeHtmlOnServer(storeName);
+    const safeMessageText = escapeHtmlOnServer(messageText || '');
+    const safeOrderUrl = escapeHtmlOnServer(orderUrl);
 
     const htmlBody = `
       <div style="font-family:'Noto Sans TC',sans-serif; max-width:480px; margin:0 auto; border:1px solid #E5E7EB; border-radius:16px; overflow:hidden; background:#FFFFFF;">
         <div style="background:linear-gradient(135deg,#FF5A1F,#E04812); color:#FFFFFF; padding:18px 20px;">
-          <div style="font-size:12px; font-weight:bold; opacity:0.9;">東吳學餐智慧點餐通知</div>
-          <h2 style="margin:6px 0 0; font-size:20px;">${title}</h2>
+          <div style="font-size:12px; font-weight:bold; opacity:0.9;">${escapeHtmlOnServer(BRAND_NAME)} 通知</div>
+          <h2 style="margin:6px 0 0; font-size:20px;">${safeTitle}</h2>
         </div>
         <div style="padding:20px;">
-          ${pickupNumber ? `
+          ${safePickupNumber ? `
             <div style="background:#FFF7ED; border:1.5px solid #FDBA74; border-radius:12px; padding:12px; text-align:center; margin-bottom:14px;">
-              <div style="font-size:12px; color:#9A3412; font-weight:bold;">您的取餐號碼 (${storeName})</div>
-              <div style="font-size:36px; font-weight:900; color:#EA580C;">${pickupNumber}</div>
+              <div style="font-size:12px; color:#9A3412; font-weight:bold;">您的取餐號碼 (${safeStoreName})</div>
+              <div style="font-size:36px; font-weight:900; color:#EA580C;">${safePickupNumber}</div>
             </div>
           ` : ''}
-          <p style="font-size:15px; color:#1F2937; line-height:1.6;">${String(messageText || '')}</p>
+          <p style="font-size:15px; color:#1F2937; line-height:1.6;">${safeMessageText}</p>
           <div style="margin-top:20px; text-align:center;">
-            <a href="${orderUrl}" style="display:inline-block; background:#FF5A1F; color:#FFFFFF; text-decoration:none; font-weight:bold; padding:12px 24px; border-radius:999px; font-size:14px;">
+            <a href="${safeOrderUrl}" style="display:inline-block; background:#FF5A1F; color:#FFFFFF; text-decoration:none; font-weight:bold; padding:12px 24px; border-radius:999px; font-size:14px;">
               🎟️ 點此開啟電子取餐單
             </a>
           </div>
@@ -1383,7 +1399,7 @@ function sendOrderEmailNotification(email, messageText, meta) {
 
     MailApp.sendEmail({
       to: cleanEmail,
-      subject: `【東吳學餐】${title} ${pickupNumber}`,
+      subject: `【${BRAND_NAME}】${title} ${pickupNumber}`,
       body: `${title}\n${messageText}\n查看取餐單：${orderUrl}`,
       htmlBody: htmlBody
     });
@@ -1857,7 +1873,7 @@ function handleOrderSubmission(ss, params) {
     paymentStatus = '已付款';
   } else if (isLargeCashReserve) {
     paymentStatus = '待櫃檯繳費';
-  } else if (paymentMethod === 'LINE Pay' || paymentMethod === '街口支付') {
+  } else if (paymentMethod === 'LINE Pay') {
     paymentStatus = '已付款';
   }
 
@@ -2235,32 +2251,14 @@ function saveStoreMenusAtomic(ss, params) {
 }
 
 function runTrafficSimulation(ss, params) {
-  const mode = String(params.mode || 'PEAK').toUpperCase();
   const props = PropertiesService.getScriptProperties();
-  const stores = sheetToObjects(ss.getSheetByName('Stores'));
-  const simOffsets = {};
-
-  stores.forEach(s => {
-    const sid = String(s.id);
-    const maxCap = Math.max(5, Number(s.maxCapacityPer15Min) || 20);
-    if (mode === 'PEAK') {
-      if (sid === 'S01' || sid === 'S03' || sid === 'S05') {
-        simOffsets[sid] = Math.round(maxCap * 0.95);
-      } else {
-        simOffsets[sid] = 0;
-      }
-    } else {
-      simOffsets[sid] = 0;
-    }
-  });
-
-  props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
+  props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify({}));
   const recentOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 150).map(enrichOrderObject);
   recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
 
   return {
-    simulated: true,
-    mode: mode
+    simulated: false,
+    mode: 'NORMAL'
   };
 }
 

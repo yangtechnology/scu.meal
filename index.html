@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#FFFFFF">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>東吳學餐智慧點餐與營運管制塔 (Commercial POS & KDS v14.0 Pro)</title>
+  <title>MealFlow 學餐智慧點餐與 POS 系統</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -18,9 +18,23 @@
   <header class="app-header">
     <div class="header-inner">
       <div class="brand-title-group">
-        <a href="./" style="text-decoration:none; color:inherit; display:flex; align-items:center; gap:6px;">
-          <span style="font-size:1.35rem;">🍱</span>
-          <span style="font-weight:900; font-size:1.08rem; letter-spacing:-0.3px;">東吳學餐智慧點餐</span>
+        <a href="./" class="brand-logo-link">
+          <svg class="brand-logo-svg" viewBox="0 0 36 36" width="32" height="32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="36" height="36" rx="10" fill="url(#mfLogoGrad)"/>
+            <path d="M9 21C9 16.5817 12.5817 13 17 13H19C23.4183 13 27 16.5817 27 21V22C27 23.1046 26.1046 24 25 24H11C9.89543 24 9 23.1046 9 22V21Z" fill="white"/>
+            <path d="M7.5 25.5H28.5C29.0523 25.5 29.5 25.9477 29.5 26.5C29.5 27.6046 28.6046 28.5 27.5 28.5H8.5C7.39543 28.5 6.5 27.6046 6.5 26.5C6.5 25.9477 6.94772 25.5 7.5 25.5Z" fill="white" fill-opacity="0.92"/>
+            <path d="M14 8.5C14 9.8 15.2 10.2 15.2 11.5M18 7.5C18 8.8 19.2 9.2 19.2 10.5M22 8.5C22 9.8 23.2 10.2 23.2 11.5" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <defs>
+              <linearGradient id="mfLogoGrad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#FF5A1F"/>
+                <stop offset="1" stop-color="#E04812"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="brand-logo-text-wrap">
+            <span class="brand-logo-primary" id="headerBrandName">MealFlow</span>
+            <span class="brand-logo-sub" id="headerBrandSub">學餐智慧點餐</span>
+          </div>
         </a>
         <span class="role-badge" id="headerRoleBadge">⚡ 系統入口導覽</span>
         <span class="sync-status" title="點擊立即同步雲端資料" style="cursor:pointer;" onclick="syncCloud(true)">

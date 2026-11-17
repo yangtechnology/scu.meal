@@ -1,9 +1,17 @@
 /**
  * ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業企業版前端核心引擎 (Commercial v14.0 Pro)
- * Part 1 / 2：ISO/IEC 18004 真實 QR 編碼器、鏡頭掃碼核銷、時段配額模型、4~8 碼 PIN 閘門、最小權限同步
+ * MealFlow 學餐智慧點餐與全螢幕平板 POS 系統 - 前端核心引擎
+ * Part 1 / 2：ISO/IEC 18004 真實 QR 編碼器、鏡頭掃碼核銷、時段配額模型、安全 PIN 閘門、最小權限同步
  * ============================================================================
  */
+
+const BRAND_CONFIG = {
+  name: 'MealFlow',
+  subtitle: '學餐智慧點餐',
+  fullTitle: 'MealFlow 學餐智慧點餐與 POS 系統',
+  posTitle: 'MealFlow 學餐智慧 POS 系統',
+  merchantTitle: 'MealFlow 特約商店'
+};
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbzN2e0bi-jQG5RvGBpZYu5190f2JfX-6P1C8DxUy2aPyrrpbJpBl0oaTwYFRhAyBl8/exec';
 const DEFAULT_LINE_CLIENT_ID = localStorage.getItem('mealflow_system_line_client_id') || '2012260287';
@@ -587,7 +595,12 @@ function loadCachedOrders() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.map(sanitizeIncomingOrder);
+        // 自動過濾舊版殘留之壓力測試假單 (isSeedSample / ORD-DEMO-)，防止假單永久滯留污染正式環境
+        const cleanList = parsed.filter(o => !o?.isSeedSample && !String(o?.orderId || '').startsWith('ORD-DEMO-'));
+        if (cleanList.length !== parsed.length) {
+          localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanList.slice(0, 200)));
+        }
+        return cleanList.map(sanitizeIncomingOrder);
       }
     }
   } catch (e) {}
@@ -596,123 +609,25 @@ function loadCachedOrders() {
 
 function saveCachedOrders(orders) {
   try {
-    localStorage.setItem('mealflow_orders_v14', JSON.stringify(orders.slice(0, 200)));
+    const cleanOrders = (orders || []).filter(o => !o?.isSeedSample && !String(o?.orderId || '').startsWith('ORD-DEMO-'));
+    localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanOrders.slice(0, 200)));
   } catch (e) {}
 }
 
 function buildSandboxDemoOrders() {
-  const today = getTodayDateStr();
-  const yesterday = getDateOffsetStr(-1);
-  const minus2 = getDateOffsetStr(-2);
-  const tomorrow = getDateOffsetStr(1);
-  const recentTimeStr = getTaipeiTimeHHMMSS(new Date(Date.now() - 3 * 60000));
-
-  return [
-    {
-      orderId: 'ORD-DEMO-2003', pickupNumber: '2003', storeId: 'S02', storeName: '雙溪-丼物園',
-      studentId: '📱 掃碼點餐', dineType: '外帶自取', customerNote: '醬汁少一點',
-      structuredItems: [
-        { id: 'M04', baseName: '炙燒起司牛五花丼', price: 125, qty: 2, selections: { '主食份量': '大盛加飯', '辣度選擇': '小辣' } },
-        { id: 'M23', baseName: '靜岡無糖玄米綠茶', price: 30, qty: 1, selections: {} },
-        { id: 'GIFT-AI', baseName: '🎁 離峰分流招待：免費溫泉蛋乙顆', price: 0, qty: 1, selections: {}, isGift: true }
-      ],
-      subtotal: 280, cutleryFee: 0, needCutlery: false, discount: 0, manualDiscount: 0, finalTotal: 280,
-      promoApplied: '🎁 離峰分流招待：免費溫泉蛋乙顆',
-      pickupTimeSlot: '⚡ 立即製作 (約5分)', paymentMethod: 'LINE Pay', status: '製作中',
-      isReservation: false, pickupDate: today, pickupTime: recentTimeStr.slice(0, 5), customerPhone: '0912345678',
-      paymentStatus: '已付款', transactionId: 'LP-982104', verificationCode: '8K9P2M', notifyCount: 0,
-      isDivertedOrder: true, isSeedSample: true, createdAt: recentTimeStr, createdAtTs: Date.now() - 180000, cookingStartedAtTs: Date.now() - 180000
-    },
-    {
-      orderId: 'ORD-DEMO-2002', pickupNumber: '2002', storeId: 'S02', storeName: '雙溪-丼物園',
-      studentId: '🖥️ 現場POS', dineType: '內用自取', customerNote: '',
-      cashReceived: 200, changeGiven: 25,
-      structuredItems: [
-        { id: 'M05', baseName: '黃金厚切豬排滑蛋丼', price: 120, qty: 1, selections: { '主食份量': '正常飯量' } },
-        { id: 'M19', baseName: '日式唐揚炸雞 (5塊)', price: 55, qty: 1, selections: { '調味粉': '原味胡椒' } }
-      ],
-      subtotal: 175, cutleryFee: 0, needCutlery: false, discount: 0, manualDiscount: 0, finalTotal: 175,
-      promoApplied: '現場櫃檯點餐',
-      pickupTimeSlot: '⚡ 現場立即製作', paymentMethod: '現場現金', status: '已完成',
-      isReservation: false, pickupDate: today, pickupTime: '11:35', customerPhone: '',
-      paymentStatus: '已付款', verificationCode: '3W7X4Q', notifyCount: 1,
-      isDivertedOrder: false, isSeedSample: true, createdAt: '11:32:10'
-    },
-    {
-      orderId: 'ORD-DEMO-2001', pickupNumber: '2001', storeId: 'S02', storeName: '雙溪-丼物園',
-      studentId: '📱 掃碼點餐', dineType: '內用自取', customerNote: '',
-      structuredItems: [
-        { id: 'M06', baseName: '讚岐胡麻冷烏龍麵', price: 110, qty: 2, selections: { '麵條份量': '加麵大碗' } }
-      ],
-      subtotal: 220, cutleryFee: 0, needCutlery: false, discount: 0, manualDiscount: 0, finalTotal: 220,
-      promoApplied: '🎁 離峰分流招待：免費溫泉蛋乙顆',
-      pickupTimeSlot: '⚡ 立即製作 (約5分)', paymentMethod: '街口支付', status: '已完成',
-      isReservation: false, pickupDate: today, pickupTime: '10:45', customerPhone: '0988111222',
-      paymentStatus: '已付款', transactionId: 'JK-551209', verificationCode: '5N2B9F', notifyCount: 1,
-      isDivertedOrder: true, isSeedSample: true, createdAt: '10:42:00'
-    },
-    {
-      orderId: 'ORD-DEMO-YEST', pickupNumber: '2001', storeId: 'S02', storeName: '雙溪-丼物園',
-      studentId: '📱 掃碼點餐', dineType: '外帶自取', customerNote: '',
-      structuredItems: [
-        { id: 'M04', baseName: '炙燒起司牛五花丼', price: 115, qty: 2, selections: { '主食份量': '正常飯量' } },
-        { id: 'M19', baseName: '日式唐揚炸雞 (5塊)', price: 55, qty: 1, selections: {} }
-      ],
-      subtotal: 285, cutleryFee: 1, needCutlery: true, discount: 0, manualDiscount: 0, finalTotal: 286,
-      promoApplied: '一般點餐',
-      pickupTimeSlot: '⚡ 立即製作 (約5分)', paymentMethod: 'LINE Pay', status: '已完成',
-      isReservation: false, pickupDate: yesterday, pickupTime: '12:20', customerPhone: '',
-      paymentStatus: '已付款', verificationCode: '7H4R6T', notifyCount: 1,
-      isDivertedOrder: true, isSeedSample: true, createdAt: '12:18:00'
-    },
-    {
-      orderId: 'ORD-DEMO-M2', pickupNumber: '2001', storeId: 'S02', storeName: '雙溪-丼物園',
-      studentId: '🖥️ 現場POS', dineType: '內用自取', customerNote: '',
-      cashReceived: 300, changeGiven: 60,
-      structuredItems: [
-        { id: 'M05', baseName: '黃金厚切豬排滑蛋丼', price: 120, qty: 2, selections: {} }
-      ],
-      subtotal: 240, cutleryFee: 0, needCutlery: false, discount: 0, manualDiscount: 0, finalTotal: 240,
-      promoApplied: '現場櫃檯點餐',
-      pickupTimeSlot: '⚡ 現場立即製作', paymentMethod: '現場現金', status: '已完成',
-      isReservation: false, pickupDate: minus2, pickupTime: '13:10', customerPhone: '',
-      paymentStatus: '已付款', verificationCode: '9C6V2D', notifyCount: 1,
-      isDivertedOrder: false, isSeedSample: true, createdAt: '13:05:22'
-    },
-    {
-      orderId: 'ORD-DEMO-RESV', pickupNumber: '2001', storeId: 'S02', storeName: '雙溪-丼物園',
-      studentId: '📅 預訂點餐', dineType: '外帶自取', customerNote: '系學會會議便當',
-      structuredItems: [
-        { id: 'M05', baseName: '黃金厚切豬排滑蛋丼', price: 120, qty: 2, selections: { '主食份量': '正常飯量' } }
-      ],
-      subtotal: 240, cutleryFee: 1, needCutlery: true, discount: 0, manualDiscount: 0, finalTotal: 241,
-      promoApplied: '一般點餐',
-      pickupTimeSlot: `📅 預訂 ${tomorrow} 12:15`, paymentMethod: '現場櫃檯付現', status: '已接單待排程',
-      isReservation: true, pickupDate: tomorrow, pickupTime: '12:15', customerPhone: '0912345678',
-      paymentStatus: '取餐付現', verificationCode: '4J8M5L', notifyCount: 0,
-      isDivertedOrder: false, isSeedSample: true, createdAt: '11:40:00'
-    }
-  ].map(sanitizeIncomingOrder);
+  return [];
 }
 
 function clearSampleOrdersData() {
-  state.orders = state.orders.filter(o => !o.isSeedSample);
+  state.orders = state.orders.filter(o => !o.isSeedSample && !String(o.orderId || '').startsWith('ORD-DEMO-'));
   saveCachedOrders(state.orders);
   enrichStoresAndAi();
   renderMerchantView();
-  showToast('🧹 已清除壓力測試模擬訂單，恢復正式環境！');
+  showToast('🧹 已清除測試模擬訂單，恢復正式環境！');
 }
 
 function restoreSampleOrdersData() {
-  const seeds = buildSandboxDemoOrders();
-  const existingIds = new Set(state.orders.map(o => o.orderId));
-  seeds.forEach(s => {
-    if (!existingIds.has(s.orderId)) state.orders.push(s);
-  });
-  saveCachedOrders(state.orders);
-  enrichStoresAndAi();
-  renderMerchantView();
-  showToast('🧪 已載入 6 筆營運壓力測試訂單（含五階段排程預訂單）！');
+  showToast('🛡️ 正式營運環境已停用假單塞入功能');
 }
 
 function loadLineProfile() {
@@ -929,6 +844,14 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * 安全用於 HTML inline onclick="..." 雙引號屬性內的 JavaScript 字串字面量編碼器
+ * 先以 JSON.stringify 跳脫單雙引號、反斜線與換行，再將雙引號與 HTML 特殊字元轉為實體，徹底杜絕單引號破版與 XSS 注入
+ */
+function escapeJsAttr(val) {
+  return escapeHtml(JSON.stringify(String(val ?? '')));
 }
 
 function generateOrderToken() {
@@ -2238,7 +2161,7 @@ function scheduleAdaptiveCloudPoll() {
 
 async function flushPendingMerchantOfflineOrders() {
   if (!isMerchantSessionValidNow()) return;
-  const pendingList = state.orders.filter(o => o.isOfflinePending && !o.isSeedSample);
+  const pendingList = state.orders.filter(o => o.isOfflinePending && !o.isSeedSample && !String(o.orderId || '').startsWith('ORD-DEMO-'));
   if (pendingList.length === 0) return;
 
   for (const ord of pendingList) {
@@ -2436,6 +2359,7 @@ function applyCloudBundle(data) {
     });
 
     state.orders.forEach(localOrd => {
+      if (localOrd.isSeedSample || String(localOrd.orderId || '').startsWith('ORD-DEMO-')) return;
       const deletedTs = state.locallyDeletedOrderIds[localOrd.orderId];
       if (deletedTs && (nowTs - deletedTs < 45000)) return;
 
@@ -2443,7 +2367,7 @@ function applyCloudBundle(data) {
         const pendingTs = state.pendingLocalOrdersMap[localOrd.orderId] || 0;
         const isRecentPending = (nowTs - pendingTs) < 60000;
         const isMyOwnWatchedOrder = state.myOrderHistoryIds.includes(localOrd.orderId) || state.trackingOrderId === localOrd.orderId;
-        if (isRecentPending || Boolean(localOrd.isSeedSample) || Boolean(localOrd.isOfflinePending) || isMyOwnWatchedOrder) {
+        if (isRecentPending || Boolean(localOrd.isOfflinePending) || isMyOwnWatchedOrder) {
           mergedMap.set(localOrd.orderId, sanitizeIncomingOrder(localOrd));
         }
       } else {
@@ -2541,7 +2465,7 @@ async function syncCloud(showSuccessToast = false) {
         if (state.routeMode === 'order') renderStudentOrderExperience();
         if (state.routeMode === 'ticket') renderSingleTicketView();
         if (state.routeMode === 'store' && state.isMerchantUnlocked) {
-          if (state.storeTabMode === 'settings' && !showSuccessToast) {
+          if ((state.storeTabMode === 'settings' || state.storeTabMode === 'pos') && !showSuccessToast) {
             updateMerchantHeaderBadgesOnly();
           } else {
             renderMerchantView();
@@ -2867,7 +2791,7 @@ function openMyOrdersDrawer() {
       const verDisplay = formatVerificationCodeDisplay(o);
 
       return `
-        <div style="background:#FFFFFF; border:2px solid ${isReady ? 'var(--green)' : isCooking ? '#FDBA74' : isScheduled ? '#93C5FD' : 'var(--border)'}; border-radius:14px; padding:14px; margin-bottom:10px; box-shadow:var(--shadow-sm); cursor:pointer;" onclick="closeMyOrdersDrawer(); navigateToOrderTicket('${escapeHtml(o.orderId)}')">
+        <div style="background:#FFFFFF; border:2px solid ${isReady ? 'var(--green)' : isCooking ? '#FDBA74' : isScheduled ? '#93C5FD' : 'var(--border)'}; border-radius:14px; padding:14px; margin-bottom:10px; box-shadow:var(--shadow-sm); cursor:pointer;" onclick="closeMyOrdersDrawer(); navigateToOrderTicket(${escapeJsAttr(o.orderId)})">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:1.35rem; font-weight:950; color:${isReady ? 'var(--green)' : 'var(--brand-dark)'};">#${escapeHtml(o.pickupNumber)}</span>
@@ -3073,15 +2997,14 @@ function requestOnlinePaymentGateway(payMethod, amount, storeName) {
       return;
     }
 
-    const isLine = payMethod === 'LINE Pay';
-    header.className = 'payment-gateway-header ' + (isLine ? 'linepay' : 'jkopay');
-    title.innerText = isLine ? '💚 LINE Pay 行動支付授權確認' : '❤️ 街口支付 行動支付授權確認';
+    header.className = 'payment-gateway-header linepay';
+    title.innerText = '💚 LINE Pay 行動支付授權確認';
 
-    const authTxNo = (isLine ? 'LP-' : 'JK-') + getTodayDateStr().replace(/-/g, '') + '-' + Math.floor(100000 + Math.random() * 900000);
+    const authTxNo = 'LP-' + getTodayDateStr().replace(/-/g, '') + '-' + Math.floor(100000 + Math.random() * 900000);
 
     body.innerHTML = `
       <div style="text-align:center; padding:8px 4px;">
-        <div style="font-size:0.8rem; font-weight:800; color:var(--text-secondary);">特約商店：東吳大學學餐 — ${escapeHtml(storeName)}</div>
+        <div style="font-size:0.8rem; font-weight:800; color:var(--text-secondary);">${escapeHtml(BRAND_CONFIG.merchantTitle)} — ${escapeHtml(storeName)}</div>
         <div style="font-size:2.2rem; font-weight:950; color:var(--text-primary); margin:6px 0;">NT$ ${amount}</div>
         <div style="display:inline-block; background:#F1F5F9; color:#475569; font-size:0.74rem; font-weight:800; padding:3px 10px; border-radius:999px; margin-bottom:14px;">
           交易授權單號：${authTxNo}
@@ -3090,7 +3013,7 @@ function requestOnlinePaymentGateway(payMethod, amount, storeName) {
         <div style="background:#F8FAFC; border:1.5px solid #E2E8F0; border-radius:14px; padding:14px; margin-bottom:16px; text-align:left; font-size:0.8rem; color:var(--text-secondary);">
           <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
             <span>支付方式</span>
-            <strong style="color:var(--text-primary);">${escapeHtml(payMethod)} 線上即時授權</strong>
+            <strong style="color:var(--text-primary);">LINE Pay 線上即時授權</strong>
           </div>
           <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
             <span>雲端帳務檢核</span>
@@ -3104,7 +3027,7 @@ function requestOnlinePaymentGateway(payMethod, amount, storeName) {
 
         <div style="display:flex; gap:10px;">
           <button type="button" class="btn-outline" style="flex:1;" onclick="cancelOnlinePaymentModal()">取消付款</button>
-          <button type="button" id="confirmGatewayPayBtn" class="btn-tip-action" style="flex:2; background:${isLine ? '#00C300' : '#E60012'}; padding:13px; font-size:0.94rem;" onclick="approveOnlinePaymentModal('${authTxNo}')">
+          <button type="button" id="confirmGatewayPayBtn" class="btn-tip-action" style="flex:2; background:#00C300; padding:13px; font-size:0.94rem;" onclick="approveOnlinePaymentModal(${escapeJsAttr(authTxNo)})">
             🔒 確認授權付款 (NT$ ${amount})
           </button>
         </div>
@@ -3153,7 +3076,7 @@ function renderPortalView() {
       <div style="display:inline-block; background:#EEF2FF; color:#4338CA; font-weight:800; font-size:0.78rem; padding:4px 12px; border-radius:999px; margin-bottom:10px;">
         🛡️ ISO/IEC 18004 真實 QR 核銷 × 時段配額控管 × KDS 鏡頭掃碼 × 會計級交班 Z-Report
       </div>
-      <h1 style="font-size:1.55rem; font-weight:900; margin-bottom:8px;">東吳學餐智慧點餐與營運管制塔</h1>
+      <h1 style="font-size:1.55rem; font-weight:900; margin-bottom:8px;">${escapeHtml(BRAND_CONFIG.fullTitle)}</h1>
       <p style="font-size:0.86rem; color:var(--text-secondary); max-width:640px; margin:0 auto;">
         整合<strong>學生線上掃碼點餐 (<code>/order/</code>)</strong>、<strong>標準可掃描防偽 QR 電子憑證</strong>，以及<strong>全螢幕平板 POS + KDS 鏡頭掃碼核銷 + 會計日結後台 (<code>/store/</code>)</strong>。
       </p>
@@ -3249,13 +3172,7 @@ function setStudentMenuCategory(cat) {
 
 function handleStudentMenuSearch(val) {
   state.studentMenuSearch = String(val || '');
-  renderInStoreMenuCards();
-  const input = document.getElementById('studentMenuSearchInput');
-  if (input) {
-    input.focus();
-    const len = input.value.length;
-    try { input.setSelectionRange(len, len); } catch (e) {}
-  }
+  renderInStoreMenuCards(true);
 }
 
 function renderStudentOrderExperience() {
@@ -3274,7 +3191,7 @@ function renderStudentOrderExperience() {
       const extraCount = myActiveOrders.length - 1;
       const verDisplay = formatVerificationCodeDisplay(primaryOrder);
       bannerHtml += `
-        <div class="active-order-strip ${isReady ? 'ready' : ''}" onclick="${extraCount > 0 ? 'openMyOrdersDrawer()' : `navigateToOrderTicket('${escapeHtml(primaryOrder.orderId)}')`}">
+        <div class="active-order-strip ${isReady ? 'ready' : ''}" onclick="${extraCount > 0 ? 'openMyOrdersDrawer()' : `navigateToOrderTicket(${escapeJsAttr(primaryOrder.orderId)})`}">
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="strip-num">#${escapeHtml(primaryOrder.pickupNumber)}</span>
             <div>
@@ -3336,7 +3253,7 @@ function renderStoreDirectoryList() {
               改點出餐順暢 (${rec.recommendedAiScore}分) 的 <strong>${escapeHtml(rec.recommendedStoreName)}</strong> 只要 <strong>${rec.recommendedWaitMin} 分鐘</strong>（省時 ${rec.timeSavedMin} 分），立即製作再享 <strong>${escapeHtml(rec.promoText)}</strong>
             </div>
           </div>
-          <button class="btn-tip-action" onclick="enterStoreOrdering('${escapeHtml(rec.recommendedStoreId)}')">領優惠免排隊點餐 ➔</button>
+          <button class="btn-tip-action" onclick="enterStoreOrdering(${escapeJsAttr(rec.recommendedStoreId)})">領優惠免排隊點餐 ➔</button>
         </div>
       `;
     } else {
@@ -3380,7 +3297,7 @@ function renderStoreDirectoryList() {
     const availMenuCount = (s.menus || []).filter(m => !m.soldOut).length;
 
     return `
-      <div class="store-card ${isRecTarget ? 'recommended' : ''} ${s.isOpen === false ? 'store-closed' : ''}" onclick="enterStoreOrdering('${escapeHtml(s.id)}')">
+      <div class="store-card ${isRecTarget ? 'recommended' : ''} ${s.isOpen === false ? 'store-closed' : ''}" onclick="enterStoreOrdering(${escapeJsAttr(s.id)})">
         <div class="store-thumb">
           ${icon}
           <span class="ai-score-badge">推薦 ${s.aiScore}分</span>
@@ -3403,7 +3320,7 @@ function renderStoreDirectoryList() {
   }).join('');
 }
 
-function renderInStoreMenuCards() {
+function renderInStoreMenuCards(onlyUpdateGrid = false) {
   const store = state.stores.find(s => s.id === state.selectedStoreId);
   const box = document.getElementById('inStoreOrderingBlock');
   if (!store || !box) return;
@@ -3449,7 +3366,7 @@ function renderInStoreMenuCards() {
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; background:#FFFFFF; padding:10px 14px; border-radius:14px; border:1px solid var(--border); box-shadow:var(--shadow-sm);">
       <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
         ${allCategories.map(cat => `
-          <button type="button" class="pos-cat-pill ${state.studentMenuCategory === cat ? 'active' : ''}" onclick="setStudentMenuCategory('${escapeHtml(cat)}')">
+          <button type="button" class="pos-cat-pill ${state.studentMenuCategory === cat ? 'active' : ''}" onclick="setStudentMenuCategory(${escapeJsAttr(cat)})">
             ${cat === '全部' ? '🍽️ 全部餐點' : escapeHtml(cat)}
           </button>
         `).join('')}
@@ -3488,7 +3405,7 @@ function renderInStoreMenuCards() {
               const hasOpts = item.options && Object.keys(item.options).length > 0;
 
               return `
-                <div class="menu-item-card ${isSoldOut ? 'sold-out' : ''}" style="${inCartQty > 0 ? 'border-color:var(--brand); background:#FFFAF5;' : ''}" onclick="handleMenuItemClick('${escapeHtml(item.id)}', false)">
+                <div class="menu-item-card ${isSoldOut ? 'sold-out' : ''}" style="${inCartQty > 0 ? 'border-color:var(--brand); background:#FFFAF5;' : ''}" onclick="handleMenuItemClick(${escapeJsAttr(item.id)}, false)">
                   <div class="menu-img-box">
                     ${imgHtml}
                     ${!isSoldOut ? `<div class="menu-plus-badge">${inCartQty > 0 ? inCartQty : '+'}</div>` : ''}
@@ -3516,6 +3433,12 @@ function renderInStoreMenuCards() {
         </div>
       `;
     }
+  }
+
+  const gridBox = document.getElementById('studentMenuGroupsResultBox');
+  if (onlyUpdateGrid && gridBox) {
+    gridBox.innerHTML = menuGroupsHtml;
+    return;
   }
 
   box.innerHTML = `
@@ -3552,13 +3475,13 @@ function renderInStoreMenuCards() {
       ${isCongested ? `
         <div style="margin-top:10px; background:var(--red-bg); color:var(--red); padding:10px 14px; border-radius:10px; font-size:0.82rem; font-weight:700; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <span>⚠️ 本店目前產能滿載 (${store.loadPercentage}%)，改點「${escapeHtml(rec.recommendedStoreName)}」立省 ${rec.timeSavedMin} 分鐘並享優惠！</span>
-          <button type="button" class="btn-tip-action" style="padding:6px 12px; font-size:0.78rem;" onclick="enterStoreOrdering('${escapeHtml(rec.recommendedStoreId)}')">一鍵改點 ➔</button>
+          <button type="button" class="btn-tip-action" style="padding:6px 12px; font-size:0.78rem;" onclick="enterStoreOrdering(${escapeJsAttr(rec.recommendedStoreId)})">一鍵改點 ➔</button>
         </div>
       ` : ''}
     </div>
 
     ${menuFilterToolbarHtml}
-    ${menuGroupsHtml}
+    <div id="studentMenuGroupsResultBox">${menuGroupsHtml}</div>
   `;
 }
 
@@ -4075,7 +3998,6 @@ function updateCartUI() {
           <label class="field-label">💳 付款方式</label>
           <select class="select-input" onchange="setCheckoutMode('checkoutPayMethod', this.value)">
             <option value="LINE Pay" ${state.checkoutPayMethod === 'LINE Pay' ? 'selected' : ''}>LINE Pay 行動支付</option>
-            <option value="街口支付" ${state.checkoutPayMethod === '街口支付' ? 'selected' : ''}>街口支付</option>
             <option value="現場櫃檯付現" ${state.checkoutPayMethod === '現場櫃檯付現' ? 'selected' : ''}>
               ${isLargeOrderReserve ? '現場櫃檯付訂確認 (大額團訂)' : '取餐時櫃檯付現'}
             </option>
@@ -4172,7 +4094,7 @@ async function submitStudentCartOrder() {
   const promoApplied = promoActive ? store.promoText : '一般點餐';
 
   let transactionId = '';
-  if (state.checkoutPayMethod === 'LINE Pay' || state.checkoutPayMethod === '街口支付') {
+  if (state.checkoutPayMethod === 'LINE Pay') {
     const payResult = await requestOnlinePaymentGateway(state.checkoutPayMethod, finalTotal, store.name);
     if (!payResult || !payResult.approved) {
       showToast('已取消線上支付授權');
@@ -4542,7 +4464,7 @@ function renderAiChatRoom(isLoading = false) {
         <div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--border); font-size:0.75rem; color:var(--text-secondary);">
           <strong style="color:#4338CA;">💡 其他快取選擇：</strong>
           ${aiResult.alternatives.map(alt => `
-            <button type="button" onclick="enterStoreOrdering('${escapeHtml(alt.storeId)}', '${escapeHtml(alt.menuId)}')" style="border:1px solid #C7D2FE; background:#EEF2FF; color:#312E81; border-radius:6px; padding:3px 8px; margin-left:4px; margin-top:4px; font-size:0.72rem; font-weight:700;">
+            <button type="button" onclick="enterStoreOrdering(${escapeJsAttr(alt.storeId)}, ${escapeJsAttr(alt.menuId)})" style="border:1px solid #C7D2FE; background:#EEF2FF; color:#312E81; border-radius:6px; padding:3px 8px; margin-left:4px; margin-top:4px; font-size:0.72rem; font-weight:700;">
               ${escapeHtml(alt.storeName)}・${escapeHtml(alt.menuName)} ($${alt.price} / 約${alt.waitMin}分) ➔
             </button>
           `).join('')}
@@ -4568,7 +4490,7 @@ function renderAiChatRoom(isLoading = false) {
               <strong style="font-size:0.9rem; color:var(--text-primary);">${escapeHtml(targetStore.name)} — ${escapeHtml(targetMenu.name)}</strong>
               <span style="color:var(--red); font-weight:900; margin-left:6px; font-size:0.95rem;">NT$ ${targetMenu.price}</span>
             </div>
-            <button type="button" class="btn-tip-action" style="padding:7px 14px; font-size:0.8rem;" onclick="enterStoreOrdering('${escapeHtml(targetStore.id)}', '${escapeHtml(targetMenu.id)}')">
+            <button type="button" class="btn-tip-action" style="padding:7px 14px; font-size:0.8rem;" onclick="enterStoreOrdering(${escapeJsAttr(targetStore.id)}, ${escapeJsAttr(targetMenu.id)})">
               ⚡ 點選此餐點 ➔
             </button>
           </div>
@@ -4902,17 +4824,17 @@ function renderSingleTicketView() {
             支援櫃檯平板鏡頭或掃碼槍直接光學掃描核銷，亦可複製專屬憑證連結保存。
           </p>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="copyOrderUrl('${escapeHtml(shareUrl)}')">📋 複製訂單網址</button>
-            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="openReceiptPrintModal('${escapeHtml(o.orderId)}')">🖨️ 電子收據小票</button>
+            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="copyOrderUrl(${escapeJsAttr(shareUrl)})">📋 複製訂單網址</button>
+            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="openReceiptPrintModal(${escapeJsAttr(o.orderId)})">🖨️ 電子收據小票</button>
           </div>
         </div>
       </div>
 
       <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
         <button type="button" class="btn-outline" onclick="syncCloud(true)">🔄 立即刷新狀態</button>
-        <button type="button" class="btn-outline" style="border-color:var(--brand); color:var(--brand-dark);" onclick="reorderFromTicket('${escapeHtml(o.orderId)}')">🔁 再買一次相同餐點</button>
+        <button type="button" class="btn-outline" style="border-color:var(--brand); color:var(--brand-dark);" onclick="reorderFromTicket(${escapeJsAttr(o.orderId)})">🔁 再買一次相同餐點</button>
         ${(isScheduled || isPendingPay) && !isCancelled ? `
-          <button type="button" class="btn-danger-soft" style="padding:10px 14px; font-size:0.86rem; border-radius:12px;" onclick="cancelMyScheduledOrder('${escapeHtml(o.orderId)}')">🚫 取消此預訂單</button>
+          <button type="button" class="btn-danger-soft" style="padding:10px 14px; font-size:0.86rem; border-radius:12px;" onclick="cancelMyScheduledOrder(${escapeJsAttr(o.orderId)})">🚫 取消此預訂單</button>
         ` : ''}
         <button type="button" class="btn-primary-full" style="max-width:210px;" onclick="navigateToOrderMenu()">➕ 返回學餐菜單</button>
       </div>
@@ -5100,6 +5022,31 @@ function clearPosCart() {
   if (store) renderPosCashierPanel(store);
 }
 
+function updatePosOptionButtonsOnly(store) {
+  const { storeCutleryPrice, subtotal, cutleryFee, discount, manualDiscount, finalTotal } = calcCurrentPosTotals(store);
+  const cashReceivedNum = state.posCashReceived !== '' ? parseFloat(state.posCashReceived) : finalTotal;
+  const changeAmount = Math.max(0, cashReceivedNum - finalTotal);
+  const isCashInsufficient = state.posPayment === '現場現金' && state.posCashReceived !== '' && cashReceivedNum < finalTotal;
+  const isReserve = state.posTimeMode === 'RESERVE';
+  const nextPreviewSeq = generatePreviewNextSeq(store.id, isReserve ? state.posReserveDate : getTodayDateStr());
+
+  const footerEl = document.querySelector('#storePanel-pos .pos-receipt-footer');
+  if (footerEl) {
+    footerEl.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+        <span style="font-size:0.8rem; font-weight:900;">
+          應收總計 ${cutleryFee > 0 ? `(餐具+$${cutleryFee})` : ''} ${(discount + manualDiscount) > 0 ? `<span style="color:var(--green);">(已折-$${discount + manualDiscount})</span>` : ''}
+        </span>
+        <span style="font-size:1.25rem; font-weight:950; color:var(--red);">NT$ ${finalTotal}</span>
+      </div>
+
+      <button type="button" class="pos-checkout-btn" onclick="submitMerchantPosOrder()" ${state.posCart.length === 0 || isCashInsufficient ? 'disabled' : ''}>
+        ⚡ 結帳出單 #${nextPreviewSeq} (${state.posPayment === '現場現金' && changeAmount > 0 ? `找零 $${changeAmount}` : `NT$ ${finalTotal}`})
+      </button>
+    `;
+  }
+}
+
 function setPosOption(field, value) {
   state[field] = value;
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
@@ -5243,6 +5190,9 @@ function renderPosCashierPanel(store) {
   const panel = document.getElementById('storePanel-pos');
   if (!panel) return;
 
+  const prevMenuGridScroll = document.querySelector('#storePanel-pos .pos-dish-grid')?.scrollTop || 0;
+  const prevReceiptScroll = document.querySelector('#storePanel-pos .pos-receipt-scroll-body')?.scrollTop || 0;
+
   const menus = store.menus || [];
   const categories = ['全部', ...new Set(menus.map(m => m.category || '主廚推薦'))];
   const filteredMenus = state.posSelectedCategory === '全部'
@@ -5275,7 +5225,7 @@ function renderPosCashierPanel(store) {
       <div class="pos-menu-card">
         <div class="pos-cat-strip">
           ${categories.map(cat => `
-            <button type="button" class="pos-cat-pill ${state.posSelectedCategory === cat ? 'active' : ''}" onclick="selectPosCategory('${escapeHtml(cat)}')">
+            <button type="button" class="pos-cat-pill ${state.posSelectedCategory === cat ? 'active' : ''}" onclick="selectPosCategory(${escapeJsAttr(cat)})">
               ${escapeHtml(cat)}
             </button>
           `).join('')}
@@ -5290,7 +5240,7 @@ function renderPosCashierPanel(store) {
             const hasOpts = m.options && Object.keys(m.options).length > 0;
             const isSoldOut = Boolean(m.soldOut);
             return `
-              <div class="pos-dish-tile ${isSoldOut ? 'sold-out' : ''}" onclick="handleMenuItemClick('${escapeHtml(m.id)}', true)">
+              <div class="pos-dish-tile ${isSoldOut ? 'sold-out' : ''}" onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
                 <div>
                   <div style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
                     <span class="pos-tile-cat">${escapeHtml(m.category || '招牌')}</span>
@@ -5321,104 +5271,108 @@ function renderPosCashierPanel(store) {
           ${state.posCart.length > 0 ? `<button type="button" onclick="clearPosCart()" style="border:1px solid #FECACA; background:var(--red-bg); color:var(--red); padding:4px 10px; border-radius:8px; font-size:0.74rem; font-weight:800;">🗑️ 清空</button>` : ''}
         </div>
 
-        <div class="pos-receipt-list">
-          ${state.posCart.length === 0 ? `
-            <div style="text-align:center; color:var(--text-muted); padding:32px 12px; font-size:0.84rem;">
-              <div style="font-size:2rem; margin-bottom:6px;">🍱</div>
-              請點擊左側餐點卡片加入結帳單<br><small style="font-size:0.72rem;">(上方可隨時查看「🧾 交班日結單 Z-Report」核對錢箱)</small>
-            </div>
-          ` : state.posCart.map((item, idx) => {
-            const selStr = item.selections && Object.keys(item.selections).length > 0
-              ? Object.entries(item.selections).map(([k, v]) => `${k}:${v}`).join(', ')
-              : '';
-            const storeMenu = (store.menus || []).find(m => String(m.id) === String(item.id));
-            const canEdit = storeMenu && storeMenu.options && Object.keys(storeMenu.options).length > 0;
-
-            return `
-              <div class="pos-receipt-item">
-                <div style="flex:1; min-width:0;">
-                  <div style="font-weight:800; font-size:0.86rem; color:var(--text-primary);">${escapeHtml(item.baseName || item.name)}</div>
-                  ${selStr ? `<div style="font-size:0.72rem; color:var(--brand-dark); font-weight:700;">${escapeHtml(selStr)}</div>` : ''}
-                  <div style="font-size:0.78rem; font-weight:900; color:var(--red);">NT$ ${item.price * (item.qty || 1)}</div>
-                </div>
-                <div style="display:flex; align-items:center; gap:4px;">
-                  ${canEdit ? `<button type="button" onclick="editCartItemOptions(${idx}, true)" style="border:1px solid var(--border); background:#EFF6FF; color:#1D4ED8; width:26px; height:26px; border-radius:6px; font-size:0.74rem; font-weight:800;">✎</button>` : ''}
-                  <button type="button" onclick="changePosCartQty(${idx}, -1)" style="border:1px solid var(--border); background:#FFFFFF; width:26px; height:26px; border-radius:6px; font-weight:900;">－</button>
-                  <span style="font-weight:900; min-width:18px; text-align:center; font-size:0.84rem;">${item.qty || 1}</span>
-                  <button type="button" onclick="changePosCartQty(${idx}, 1)" style="border:1px solid var(--border); background:#FFFFFF; width:26px; height:26px; border-radius:6px; font-weight:900;">＋</button>
-                </div>
+        <div class="pos-receipt-scroll-body">
+          <div class="pos-receipt-list">
+            ${state.posCart.length === 0 ? `
+              <div style="text-align:center; color:var(--text-muted); padding:24px 12px; font-size:0.82rem;">
+                <div style="font-size:1.8rem; margin-bottom:4px;">🍱</div>
+                請點擊左側餐點卡片加入結帳單<br><small style="font-size:0.72rem;">(上方可隨時查看「🧾 交班日結單 Z-Report」核對錢箱)</small>
               </div>
-            `;
-          }).join('')}
+            ` : state.posCart.map((item, idx) => {
+              const selStr = item.selections && Object.keys(item.selections).length > 0
+                ? Object.entries(item.selections).map(([k, v]) => `${k}:${v}`).join(', ')
+                : '';
+              const storeMenu = (store.menus || []).find(m => String(m.id) === String(item.id));
+              const canEdit = storeMenu && storeMenu.options && Object.keys(storeMenu.options).length > 0;
+
+              return `
+                <div class="pos-receipt-item">
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-weight:800; font-size:0.86rem; color:var(--text-primary);">${escapeHtml(item.baseName || item.name)}</div>
+                    ${selStr ? `<div style="font-size:0.72rem; color:var(--brand-dark); font-weight:700;">${escapeHtml(selStr)}</div>` : ''}
+                    <div style="font-size:0.78rem; font-weight:900; color:var(--red);">NT$ ${item.price * (item.qty || 1)}</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:4px;">
+                    ${canEdit ? `<button type="button" onclick="editCartItemOptions(${idx}, true)" style="border:1px solid var(--border); background:#EFF6FF; color:#1D4ED8; width:26px; height:26px; border-radius:6px; font-size:0.74rem; font-weight:800;">✎</button>` : ''}
+                    <button type="button" onclick="changePosCartQty(${idx}, -1)" style="border:1px solid var(--border); background:#FFFFFF; width:26px; height:26px; border-radius:6px; font-weight:900;">－</button>
+                    <span style="font-weight:900; min-width:18px; text-align:center; font-size:0.84rem;">${item.qty || 1}</span>
+                    <button type="button" onclick="changePosCartQty(${idx}, 1)" style="border:1px solid var(--border); background:#FFFFFF; width:26px; height:26px; border-radius:6px; font-weight:900;">＋</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <div class="pos-receipt-controls">
+            <div style="display:grid; grid-template-columns:1fr 1fr 1.25fr; gap:5px; margin-bottom:5px;">
+              <button type="button" class="pos-chip-btn ${state.posDineType === '內用自取' ? 'active' : ''}" onclick="setPosOption('posDineType', '內用自取')">🍽️ 內用自取</button>
+              <button type="button" class="pos-chip-btn ${state.posDineType === '外帶自取' ? 'active' : ''}" onclick="setPosOption('posDineType', '外帶自取')">🛍️ 外帶自取</button>
+              <button type="button" class="pos-chip-btn ${state.posNeedCutlery ? 'active' : ''}" onclick="setPosOption('posNeedCutlery', !state.posNeedCutlery)">
+                🥢 餐具 (${storeCutleryPrice > 0 ? `+$${storeCutleryPrice}` : '$0'})
+              </button>
+            </div>
+
+            <div class="pos-discount-strip">
+              <span style="font-size:0.72rem; font-weight:900; color:var(--text-secondary); white-space:nowrap;">🏷️ 櫃檯折讓:</span>
+              <button type="button" class="pos-chip-btn ${state.posManualDiscount === 10 ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(10, '教職員/熟客折$10')">折$10</button>
+              <button type="button" class="pos-chip-btn ${state.posManualDiscount === 20 ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(20, '久候/活動折$20')">折$20</button>
+              <button type="button" class="pos-chip-btn ${subtotal > 0 && state.posManualDiscount >= subtotal ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(${subtotal}, '店長全額招待')">全單招待</button>
+              <button type="button" class="pos-chip-btn" style="padding:3px 7px; font-size:0.72rem; margin-left:auto;" onclick="promptCustomPosDiscount()">自訂</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:5px;">
+              <button type="button" class="pos-chip-btn ${state.posTimeMode === 'NOW' ? 'active' : ''}" onclick="setPosOption('posTimeMode', 'NOW')">⚡ 立即出餐</button>
+              <button type="button" class="pos-chip-btn ${state.posTimeMode === 'RESERVE' ? 'active' : ''}" onclick="setPosOption('posTimeMode', 'RESERVE')">📅 預訂取餐</button>
+            </div>
+
+            ${isReserve ? `
+              <div style="display:grid; grid-template-columns:1fr 0.9fr 1.1fr; gap:4px; background:var(--bg-page); padding:5px; border-radius:8px; border:1px solid var(--border); margin-bottom:5px;">
+                <input type="date" class="select-input" style="padding:4px 6px; font-size:0.74rem;" min="${getTodayDateStr()}" value="${escapeHtml(state.posReserveDate)}" onchange="setPosOption('posReserveDate', this.value)">
+                <select class="select-input" style="padding:4px 6px; font-size:0.74rem;" onchange="setPosOption('posReserveTime', this.value)">
+                  ${posValidSlots.map(t => `<option value="${t}" ${state.posReserveTime === t ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+                <input type="tel" class="select-input" style="padding:4px 6px; font-size:0.74rem; border-color:var(--red);" placeholder="📱 電話(必填)" value="${escapeHtml(state.posCustomerPhone)}" oninput="state.posCustomerPhone=this.value">
+              </div>
+            ` : ''}
+
+            <div style="display:grid; grid-template-columns:${isReserve ? '1fr' : '1.2fr 0.8fr'}; gap:4px; margin-bottom:5px;">
+              <input type="text" class="select-input" style="padding:5px 8px; font-size:0.75rem;" placeholder="📝 櫃檯出單備註 (如: 飯少、分袋裝、統編...)" value="${escapeHtml(state.posCustomerNote || '')}" oninput="state.posCustomerNote=this.value">
+              ${!isReserve ? `
+                <input type="tel" class="select-input" style="padding:5px 8px; font-size:0.75rem;" placeholder="📱 顧客電話/末3碼(選填)" value="${escapeHtml(state.posCustomerPhone || '')}" oninput="state.posCustomerPhone=this.value">
+              ` : ''}
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:5px; margin-bottom:5px;">
+              ${['現場現金', 'LINE Pay'].map(pay => `
+                <button type="button" class="pos-chip-btn ${state.posPayment === pay ? 'active' : ''}" onclick="setPosOption('posPayment', ${escapeJsAttr(pay)})">
+                  ${pay === 'LINE Pay' ? '💚 LINE Pay' : '💵 現場現金'}
+                </button>
+              `).join('')}
+            </div>
+
+            ${state.posPayment === '現場現金' ? `
+              <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; margin-bottom:5px;">
+                <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(${finalTotal})">剛好</button>
+                <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(100)">$100</button>
+                <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(500)">$500</button>
+                <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(1000)">$1000</button>
+              </div>
+              <button type="button" onclick="openPosCashNumpadModal()" style="width:100%; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-radius:10px; border:1.5px dashed var(--brand); background:var(--brand-light); color:var(--brand-dark); font-size:0.78rem; font-weight:900;">
+                <span>🔢 實收: NT$ ${state.posCashReceived !== '' ? escapeHtml(state.posCashReceived) : `${finalTotal} (點此輸入)`}</span>
+                <span style="color:${isCashInsufficient ? 'var(--red)' : 'var(--green)'};">
+                  ${isCashInsufficient ? `不足 $${finalTotal - cashReceivedNum}` : `找零 NT$ ${changeAmount}`} ➔
+                </span>
+              </button>
+            ` : ''}
+          </div>
         </div>
 
         <div class="pos-receipt-footer">
-          <div style="display:grid; grid-template-columns:1fr 1fr 1.25fr; gap:5px; margin-bottom:5px;">
-            <button type="button" class="pos-chip-btn ${state.posDineType === '內用自取' ? 'active' : ''}" onclick="setPosOption('posDineType', '內用自取')">🍽️ 內用自取</button>
-            <button type="button" class="pos-chip-btn ${state.posDineType === '外帶自取' ? 'active' : ''}" onclick="setPosOption('posDineType', '外帶自取')">🛍️ 外帶自取</button>
-            <button type="button" class="pos-chip-btn ${state.posNeedCutlery ? 'active' : ''}" onclick="setPosOption('posNeedCutlery', !state.posNeedCutlery)">
-              🥢 餐具 (${storeCutleryPrice > 0 ? `+$${storeCutleryPrice}` : '$0'})
-            </button>
-          </div>
-
-          <div class="pos-discount-strip">
-            <span style="font-size:0.72rem; font-weight:900; color:var(--text-secondary); white-space:nowrap;">🏷️ 櫃檯折讓:</span>
-            <button type="button" class="pos-chip-btn ${state.posManualDiscount === 10 ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(10, '教職員/熟客折$10')">折$10</button>
-            <button type="button" class="pos-chip-btn ${state.posManualDiscount === 20 ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(20, '久候/活動折$20')">折$20</button>
-            <button type="button" class="pos-chip-btn ${subtotal > 0 && state.posManualDiscount >= subtotal ? 'active' : ''}" style="padding:3px 7px; font-size:0.72rem;" onclick="setPosManualDiscountPreset(${subtotal}, '店長全額招待')">全單招待</button>
-            <button type="button" class="pos-chip-btn" style="padding:3px 7px; font-size:0.72rem; margin-left:auto;" onclick="promptCustomPosDiscount()">自訂</button>
-          </div>
-
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:5px;">
-            <button type="button" class="pos-chip-btn ${state.posTimeMode === 'NOW' ? 'active' : ''}" onclick="setPosOption('posTimeMode', 'NOW')">⚡ 立即出餐</button>
-            <button type="button" class="pos-chip-btn ${state.posTimeMode === 'RESERVE' ? 'active' : ''}" onclick="setPosOption('posTimeMode', 'RESERVE')">📅 預訂取餐</button>
-          </div>
-
-          ${isReserve ? `
-            <div style="display:grid; grid-template-columns:1fr 0.9fr 1.1fr; gap:4px; background:var(--bg-page); padding:5px; border-radius:8px; border:1px solid var(--border); margin-bottom:5px;">
-              <input type="date" class="select-input" style="padding:4px 6px; font-size:0.74rem;" min="${getTodayDateStr()}" value="${escapeHtml(state.posReserveDate)}" onchange="setPosOption('posReserveDate', this.value)">
-              <select class="select-input" style="padding:4px 6px; font-size:0.74rem;" onchange="setPosOption('posReserveTime', this.value)">
-                ${posValidSlots.map(t => `<option value="${t}" ${state.posReserveTime === t ? 'selected' : ''}>${t}</option>`).join('')}
-              </select>
-              <input type="tel" class="select-input" style="padding:4px 6px; font-size:0.74rem; border-color:var(--red);" placeholder="📱 電話(必填)" value="${escapeHtml(state.posCustomerPhone)}" oninput="state.posCustomerPhone=this.value">
-            </div>
-          ` : ''}
-
-          <div style="display:grid; grid-template-columns:${isReserve ? '1fr' : '1.2fr 0.8fr'}; gap:4px; margin-bottom:5px;">
-            <input type="text" class="select-input" style="padding:5px 8px; font-size:0.75rem;" placeholder="📝 櫃檯出單備註 (如: 飯少、分袋裝、統編...)" value="${escapeHtml(state.posCustomerNote || '')}" oninput="state.posCustomerNote=this.value">
-            ${!isReserve ? `
-              <input type="tel" class="select-input" style="padding:5px 8px; font-size:0.75rem;" placeholder="📱 顧客電話/末3碼(選填)" value="${escapeHtml(state.posCustomerPhone || '')}" oninput="state.posCustomerPhone=this.value">
-            ` : ''}
-          </div>
-
-          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:5px; margin-bottom:5px;">
-            ${['現場現金', 'LINE Pay', '街口支付'].map(pay => `
-              <button type="button" class="pos-chip-btn ${state.posPayment === pay ? 'active' : ''}" onclick="setPosOption('posPayment', '${pay}')">
-                ${pay}
-              </button>
-            `).join('')}
-          </div>
-
-          ${state.posPayment === '現場現金' ? `
-            <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; margin-bottom:5px;">
-              <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(${finalTotal})">剛好</button>
-              <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(100)">$100</button>
-              <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(500)">$500</button>
-              <button type="button" class="pos-chip-btn" onclick="setPosQuickCash(1000)">$1000</button>
-            </div>
-            <button type="button" onclick="openPosCashNumpadModal()" style="width:100%; display:flex; justify-content:space-between; align-items:center; padding:7px 12px; border-radius:10px; border:1.5px dashed var(--brand); background:var(--brand-light); color:var(--brand-dark); font-size:0.78rem; font-weight:900; margin-bottom:6px;">
-              <span>🔢 實收: NT$ ${state.posCashReceived !== '' ? escapeHtml(state.posCashReceived) : `${finalTotal} (點此輸入)`}</span>
-              <span style="color:${isCashInsufficient ? 'var(--red)' : 'var(--green)'};">
-                ${isCashInsufficient ? `不足 $${finalTotal - cashReceivedNum}` : `找零 NT$ ${changeAmount}`} ➔
-              </span>
-            </button>
-          ` : ''}
-
-          <div style="display:flex; justify-content:space-between; align-items:baseline; margin:4px 0 6px; padding-top:4px; border-top:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
             <span style="font-size:0.8rem; font-weight:900;">
               應收總計 ${cutleryFee > 0 ? `(餐具+$${cutleryFee})` : ''} ${(discount + manualDiscount) > 0 ? `<span style="color:var(--green);">(已折-$${discount + manualDiscount})</span>` : ''}
             </span>
-            <span style="font-size:1.3rem; font-weight:950; color:var(--red);">NT$ ${finalTotal}</span>
+            <span style="font-size:1.25rem; font-weight:950; color:var(--red);">NT$ ${finalTotal}</span>
           </div>
 
           <button type="button" class="pos-checkout-btn" onclick="submitMerchantPosOrder()" ${state.posCart.length === 0 || isCashInsufficient ? 'disabled' : ''}>
@@ -5428,6 +5382,11 @@ function renderPosCashierPanel(store) {
       </div>
     </div>
   `;
+
+  const newMenuGrid = document.querySelector('#storePanel-pos .pos-dish-grid');
+  if (newMenuGrid && prevMenuGridScroll > 0) newMenuGrid.scrollTop = prevMenuGridScroll;
+  const newReceiptBody = document.querySelector('#storePanel-pos .pos-receipt-scroll-body');
+  if (newReceiptBody && prevReceiptScroll > 0) newReceiptBody.scrollTop = prevReceiptScroll;
 }
 
 function generatePreviewNextSeq(storeId, pickupDateStr) {
@@ -5616,14 +5575,12 @@ function openShiftZReportModal() {
 
   const cashOrders = paidOrders.filter(o => String(o.paymentMethod).includes('現金') || String(o.paymentMethod).includes('付現'));
   const linePayOrders = paidOrders.filter(o => o.paymentMethod === 'LINE Pay');
-  const jkoPayOrders = paidOrders.filter(o => o.paymentMethod === '街口支付');
 
   const cashNetTotal = cashOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
   const cashTenderedSum = cashOrders.reduce((s, o) => s + (Number(o.cashReceived) > 0 ? Number(o.cashReceived) : (Number(o.finalTotal) || 0)), 0);
   const cashChangeSum = cashOrders.reduce((s, o) => s + (Number(o.changeGiven) || 0), 0);
 
   const linePayTotal = linePayOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
-  const jkoPayTotal = jkoPayOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
   const cancelledTotal = cancelledOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
   const unpaidTotal = unpaidOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
 
@@ -5638,7 +5595,7 @@ function openShiftZReportModal() {
     body.innerHTML = `
       <div class="thermal-receipt-paper">
         <div style="text-align:center; margin-bottom:8px;">
-          <div style="font-size:0.76rem; font-weight:800;">東吳大學學餐智慧 POS 系統</div>
+          <div style="font-size:0.76rem; font-weight:800;">${escapeHtml(BRAND_CONFIG.posTitle)}</div>
           <div style="font-size:1.1rem; font-weight:950; margin:2px 0;">${escapeHtml(store.name)}</div>
           <div style="font-size:0.85rem; font-weight:900; background:#000; color:#fff; padding:3px 8px; border-radius:4px; display:inline-block; margin-top:4px;">
             會計交班日結單 (Z-REPORT)
@@ -5677,8 +5634,7 @@ function openShiftZReportModal() {
         <div style="font-size:0.8rem; font-weight:900; margin-bottom:4px;">【三、行動支付與無現金清點】</div>
         <table class="z-report-table">
           <tr><td>💚 LINE Pay 入帳 (${linePayOrders.length}筆)</td><td>NT$ ${linePayTotal.toLocaleString()}</td></tr>
-          <tr><td>❤️ 街口支付 入帳 (${jkoPayOrders.length}筆)</td><td>NT$ ${jkoPayTotal.toLocaleString()}</td></tr>
-          <tr style="border-top:1px dashed #000;"><td><strong>非現金支付小計</strong></td><td><strong>NT$ ${(linePayTotal + jkoPayTotal).toLocaleString()}</strong></td></tr>
+          <tr style="border-top:1px dashed #000;"><td><strong>非現金支付小計</strong></td><td><strong>NT$ ${linePayTotal.toLocaleString()}</strong></td></tr>
         </table>
 
         <div class="thermal-divider"></div>
@@ -5718,13 +5674,7 @@ function toggleKdsSound() {
 
 function handleKdsSearchInput(val) {
   state.kdsSearchQuery = val;
-  renderMerchantOrdersOnly();
-  const searchEl = document.getElementById('kdsSearchInputBox');
-  if (searchEl) {
-    searchEl.focus();
-    const len = searchEl.value.length;
-    try { searchEl.setSelectionRange(len, len); } catch (e) {}
-  }
+  renderMerchantOrdersOnly(null, true);
 }
 
 /**
@@ -5944,7 +5894,7 @@ async function forceStartCookingScheduledOrder(orderId) {
   } catch (e) {}
 }
 
-function renderMerchantOrdersOnly(storeObj) {
+function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
   const store = storeObj || state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   const panel = document.getElementById('storePanel-kds');
   if (!store || !panel) return;
@@ -6022,6 +5972,125 @@ function renderMerchantOrdersOnly(storeObj) {
     );
   }
 
+  const kdsOrdersCardsHtml = filtered.length === 0 ? `
+    <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-muted);">
+      <div style="font-size:2.4rem; margin-bottom:8px;">📭</div>
+      <div style="font-size:1rem; font-weight:800;">此日期 / 篩選條件下目前沒有訂單</div>
+    </div>
+  ` : filtered.map(o => {
+    const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
+    const itemStr = items.map(i => {
+      const sel = i.selections && Object.keys(i.selections).length > 0
+        ? ` [${Object.entries(i.selections).map(([k, v]) => `${k}:${v}`).join(', ')}]`
+        : '';
+      return `${i.baseName || i.name}${sel} ×${i.qty || 1}`;
+    }).join('、');
+
+    const isReady = o.status === '可取餐';
+    const isDone = o.status === '已完成';
+    const isScheduled = o.status === '已接單待排程';
+    const isCancelled = String(o.status).includes('已取消');
+    const isUnpaid = !isOrderConsiderPaid(o) && !isCancelled;
+    const notifyCount = Number(o.notifyCount) || 0;
+    const isInLiveQueue = o.status === '製作中' && normalizeDateStr(o.pickupDate) === todayStr;
+    const elapsedMin = getOrderElapsedMinutes(o);
+    const workloadUnits = isInLiveQueue ? calcOrderRemainingWorkloadUnits(o, store.maxCapacityPer15Min) : 0;
+    const isServerVerified = isOrderServerVerified(o);
+    const verBadgeText = isServerVerified ? `🛡️ ${o.verificationCode}` : '⚠️ 離線待同步';
+
+    let cardClass = '';
+    if (isCancelled) cardClass = 'cancelled';
+    else if (isReady) cardClass = 'ready';
+    else if (isScheduled) cardClass = 'scheduled';
+    else if (isUnpaid) cardClass = 'unpaid';
+
+    return `
+      <div class="kds-ticket-card ${cardClass}" style="${isDone ? 'opacity:0.72;' : ''}">
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:6px;">
+            <div>
+              <span style="font-size:1.3rem; font-weight:950; color:var(--text-primary);">#${escapeHtml(o.pickupNumber)}</span>
+              <span style="font-family:monospace; font-size:0.74rem; font-weight:900; background:${isServerVerified ? '#EEF2FF' : '#FEF3C7'}; color:${isServerVerified ? '#312E81' : '#92400E'}; padding:2px 7px; border-radius:6px; margin-left:4px;">
+                ${escapeHtml(verBadgeText)}
+              </span>
+              <span style="font-size:0.74rem; font-weight:800; background:#F1F5F9; color:#334155; padding:2px 7px; border-radius:6px; margin-left:4px;">
+                📅 ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}
+              </span>
+              ${isInLiveQueue ? `
+                <span class="kds-elapsed-badge ${elapsedMin >= 15 ? 'overdue' : ''}" style="margin-left:4px;">
+                  ⏱️ 已下鍋 ${elapsedMin}分 (負荷 ${workloadUnits})
+                </span>
+              ` : ''}
+            </div>
+            <span style="font-size:0.74rem; font-weight:900; padding:3px 9px; border-radius:999px; background:${isCancelled ? '#FEE2E2' : isDone ? '#E2E8F0' : isReady ? '#DCFCE7' : isScheduled ? '#DBEAFE' : '#FEF3C7'}; color:${isCancelled ? '#DC2626' : isDone ? '#475569' : isReady ? '#047857' : isScheduled ? '#1E40AF' : '#B45309'};">
+              ${escapeHtml(o.status)} ${notifyCount > 0 && !isDone && !isCancelled ? `(叫號${notifyCount}次)` : ''}
+            </span>
+          </div>
+
+          <div style="font-size:0.9rem; font-weight:800; color:var(--text-primary); line-height:1.45; margin-bottom:6px; background:#F8FAFC; padding:8px 10px; border-radius:8px; border:1px solid #E2E8F0;">
+            ${escapeHtml(itemStr)}
+          </div>
+
+          <div style="font-size:0.76rem; color:var(--text-secondary); margin-bottom:6px; display:flex; flex-wrap:wrap; gap:6px;">
+            <span style="font-weight:800; color:var(--text-primary);">🍽️ ${escapeHtml(o.dineType || '外帶自取')}</span>
+            ${o.needCutlery ? `<span style="color:var(--brand-dark); font-weight:800;">・🥢 需餐具(+$${o.cutleryFee})</span>` : ''}
+            ${o.customerNote ? `<span style="color:var(--indigo); font-weight:800;">・📝 備註：${escapeHtml(o.customerNote)}</span>` : ''}
+            ${o.customerPhone ? `<span>・<strong style="color:var(--brand-dark);">📱 ${escapeHtml(o.customerPhone)}</strong></span>` : ''}
+            ${o.cashReceived > 0 ? `<span>・💵 實收$${o.cashReceived}/找零$${o.changeGiven}</span>` : ''}
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px dashed var(--border);">
+            <div>
+              <span style="font-size:0.75rem; font-weight:800; padding:2px 8px; border-radius:6px; background:${isCancelled ? '#FEE2E2' : isUnpaid ? '#FEF3C7' : '#DCFCE7'}; color:${isCancelled ? '#DC2626' : isUnpaid ? '#B45309' : '#047857'};">
+                ${isCancelled ? '🚫 已作廢退單' : isUnpaid ? `⏳ ${escapeHtml(o.paymentStatus || '待收款')}` : `✅ ${escapeHtml(o.paymentStatus)} (${escapeHtml(o.paymentMethod)})`}
+              </span>
+            </div>
+            <span style="font-size:1.05rem; font-weight:950; color:var(--red); ${isCancelled ? 'text-decoration:line-through;' : ''}">NT$ ${o.finalTotal}</span>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;">
+          ${isUnpaid ? `
+            <button type="button" onclick="openOrderPayModal(${escapeJsAttr(o.orderId)}, false)" style="flex:1 1 100%; border:none; background:#F59E0B; color:#FFFFFF; padding:8px 12px; border-radius:8px; font-weight:900; font-size:0.84rem; cursor:pointer;">
+              💵 點此收款結帳 (NT$ ${o.finalTotal})
+            </button>
+          ` : ''}
+
+          ${isScheduled ? `
+            <button type="button" onclick="forceStartCookingScheduledOrder(${escapeJsAttr(o.orderId)})" style="flex:1 1 100%; border:1.5px solid #2563EB; background:#EFF6FF; color:#1D4ED8; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.8rem; cursor:pointer;">
+              🔥 提前轉入廚房下鍋製作
+            </button>
+          ` : ''}
+
+          <button type="button" onclick="openReceiptPrintModal(${escapeJsAttr(o.orderId)})" style="border:1px solid var(--border); background:#FFFFFF; color:var(--text-primary); padding:7px 9px; border-radius:8px; font-weight:800; font-size:0.76rem; cursor:pointer;">
+            🖨️ 小票
+          </button>
+
+          ${!isDone && !isCancelled ? `
+            <button type="button" onclick="speakOrder(${escapeJsAttr(o.pickupNumber + '號，' + itemStr)})" style="border:1px solid var(--border); background:#F8FAFC; color:var(--text-primary); padding:7px 9px; border-radius:8px; font-weight:800; font-size:0.76rem; cursor:pointer;">
+              🔊 讀單
+            </button>
+            <button type="button" onclick="markOrderReady(${escapeJsAttr(o.orderId)})" style="flex:1; border:none; background:#3B82F6; color:#FFFFFF; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.78rem; cursor:pointer;">
+              🔔 ${notifyCount > 0 ? `再次叫號 (${notifyCount})` : '通知取餐'}
+            </button>
+            <button type="button" onclick="completeOrderFinal(${escapeJsAttr(o.orderId)})" style="flex:1; border:none; background:#10B981; color:#FFFFFF; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.78rem; cursor:pointer;">
+              ✅ ${isUnpaid ? '收款並結單' : '完成結單'}
+            </button>
+            <button type="button" class="btn-danger-soft" onclick="cancelMerchantOrder(${escapeJsAttr(o.orderId)})">
+              🚫 退單
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const gridEl = document.getElementById('kdsOrdersGridBox');
+  if (onlyUpdateGrid && gridEl) {
+    gridEl.innerHTML = kdsOrdersCardsHtml;
+    return;
+  }
+
   panel.innerHTML = `
     <div class="kds-panel-wrap">
       <div class="kds-batch-summary-bar">
@@ -6072,14 +6141,14 @@ function renderMerchantOrdersOnly(storeObj) {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <span style="font-size:0.84rem; font-weight:900; color:var(--text-primary);">📅 取餐日期：</span>
-            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === todayStr ? 'active' : ''}" onclick="setKdsDateFilter('${todayStr}')">
+            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === todayStr ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(todayStr)})">
               今日 (${todayStr.slice(5)}) [${dateCountMap[todayStr] || 0}]
             </button>
-            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === tomorrowStr ? 'active' : ''}" onclick="setKdsDateFilter('${tomorrowStr}')">
+            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === tomorrowStr ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(tomorrowStr)})">
               明日 (${tomorrowStr.slice(5)}) [${dateCountMap[tomorrowStr] || 0}]
             </button>
             ${extraDates.map(d => `
-              <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === d ? 'active' : ''}" onclick="setKdsDateFilter('${escapeHtml(d)}')">
+              <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === d ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(d)})">
                 📅 ${escapeHtml(d.slice(5))} [${dateCountMap[d] || 0}]
               </button>
             `).join('')}
@@ -6109,119 +6178,8 @@ function renderMerchantOrdersOnly(storeObj) {
         </div>
       </div>
 
-      <div class="kds-orders-grid">
-        ${filtered.length === 0 ? `
-          <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-muted);">
-            <div style="font-size:2.4rem; margin-bottom:8px;">📭</div>
-            <div style="font-size:1rem; font-weight:800;">此日期 / 篩選條件下目前沒有訂單</div>
-          </div>
-        ` : filtered.map(o => {
-          const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
-          const itemStr = items.map(i => {
-            const sel = i.selections && Object.keys(i.selections).length > 0
-              ? ` [${Object.entries(i.selections).map(([k, v]) => `${k}:${v}`).join(', ')}]`
-              : '';
-            return `${i.baseName || i.name}${sel} ×${i.qty || 1}`;
-          }).join('、');
-
-          const isReady = o.status === '可取餐';
-          const isDone = o.status === '已完成';
-          const isScheduled = o.status === '已接單待排程';
-          const isCancelled = String(o.status).includes('已取消');
-          const isUnpaid = !isOrderConsiderPaid(o) && !isCancelled;
-          const notifyCount = Number(o.notifyCount) || 0;
-          const isInLiveQueue = o.status === '製作中' && normalizeDateStr(o.pickupDate) === todayStr;
-          const elapsedMin = getOrderElapsedMinutes(o);
-          const workloadUnits = isInLiveQueue ? calcOrderRemainingWorkloadUnits(o, store.maxCapacityPer15Min) : 0;
-          const isServerVerified = isOrderServerVerified(o);
-          const verBadgeText = isServerVerified ? `🛡️ ${o.verificationCode}` : '⚠️ 離線待同步';
-
-          let cardClass = '';
-          if (isCancelled) cardClass = 'cancelled';
-          else if (isReady) cardClass = 'ready';
-          else if (isScheduled) cardClass = 'scheduled';
-          else if (isUnpaid) cardClass = 'unpaid';
-
-          return `
-            <div class="kds-ticket-card ${cardClass}" style="${isDone ? 'opacity:0.72;' : ''}">
-              <div>
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:6px;">
-                  <div>
-                    <span style="font-size:1.3rem; font-weight:950; color:var(--text-primary);">#${escapeHtml(o.pickupNumber)}</span>
-                    <span style="font-family:monospace; font-size:0.74rem; font-weight:900; background:${isServerVerified ? '#EEF2FF' : '#FEF3C7'}; color:${isServerVerified ? '#312E81' : '#92400E'}; padding:2px 7px; border-radius:6px; margin-left:4px;">
-                      ${escapeHtml(verBadgeText)}
-                    </span>
-                    <span style="font-size:0.74rem; font-weight:800; background:#F1F5F9; color:#334155; padding:2px 7px; border-radius:6px; margin-left:4px;">
-                      📅 ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}
-                    </span>
-                    ${isInLiveQueue ? `
-                      <span class="kds-elapsed-badge ${elapsedMin >= 15 ? 'overdue' : ''}" style="margin-left:4px;">
-                        ⏱️ 已下鍋 ${elapsedMin}分 (負荷 ${workloadUnits})
-                      </span>
-                    ` : ''}
-                  </div>
-                  <span style="font-size:0.74rem; font-weight:900; padding:3px 9px; border-radius:999px; background:${isCancelled ? '#FEE2E2' : isDone ? '#E2E8F0' : isReady ? '#DCFCE7' : isScheduled ? '#DBEAFE' : '#FEF3C7'}; color:${isCancelled ? '#DC2626' : isDone ? '#475569' : isReady ? '#047857' : isScheduled ? '#1E40AF' : '#B45309'};">
-                    ${escapeHtml(o.status)} ${notifyCount > 0 && !isDone && !isCancelled ? `(叫號${notifyCount}次)` : ''}
-                  </span>
-                </div>
-
-                <div style="font-size:0.9rem; font-weight:800; color:var(--text-primary); line-height:1.45; margin-bottom:6px; background:#F8FAFC; padding:8px 10px; border-radius:8px; border:1px solid #E2E8F0;">
-                  ${escapeHtml(itemStr)}
-                </div>
-
-                <div style="font-size:0.76rem; color:var(--text-secondary); margin-bottom:6px; display:flex; flex-wrap:wrap; gap:6px;">
-                  <span style="font-weight:800; color:var(--text-primary);">🍽️ ${escapeHtml(o.dineType || '外帶自取')}</span>
-                  ${o.needCutlery ? `<span style="color:var(--brand-dark); font-weight:800;">・🥢 需餐具(+$${o.cutleryFee})</span>` : ''}
-                  ${o.customerNote ? `<span style="color:var(--indigo); font-weight:800;">・📝 備註：${escapeHtml(o.customerNote)}</span>` : ''}
-                  ${o.customerPhone ? `<span>・<strong style="color:var(--brand-dark);">📱 ${escapeHtml(o.customerPhone)}</strong></span>` : ''}
-                  ${o.cashReceived > 0 ? `<span>・💵 實收$${o.cashReceived}/找零$${o.changeGiven}</span>` : ''}
-                </div>
-
-                <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px dashed var(--border);">
-                  <div>
-                    <span style="font-size:0.75rem; font-weight:800; padding:2px 8px; border-radius:6px; background:${isCancelled ? '#FEE2E2' : isUnpaid ? '#FEF3C7' : '#DCFCE7'}; color:${isCancelled ? '#DC2626' : isUnpaid ? '#B45309' : '#047857'};">
-                      ${isCancelled ? '🚫 已作廢退單' : isUnpaid ? `⏳ ${escapeHtml(o.paymentStatus || '待收款')}` : `✅ ${escapeHtml(o.paymentStatus)} (${escapeHtml(o.paymentMethod)})`}
-                    </span>
-                  </div>
-                  <span style="font-size:1.05rem; font-weight:950; color:var(--red); ${isCancelled ? 'text-decoration:line-through;' : ''}">NT$ ${o.finalTotal}</span>
-                </div>
-              </div>
-
-              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;">
-                ${isUnpaid ? `
-                  <button type="button" onclick="openOrderPayModal('${escapeHtml(o.orderId)}', false)" style="flex:1 1 100%; border:none; background:#F59E0B; color:#FFFFFF; padding:8px 12px; border-radius:8px; font-weight:900; font-size:0.84rem; cursor:pointer;">
-                    💵 點此收款結帳 (NT$ ${o.finalTotal})
-                  </button>
-                ` : ''}
-
-                ${isScheduled ? `
-                  <button type="button" onclick="forceStartCookingScheduledOrder('${escapeHtml(o.orderId)}')" style="flex:1 1 100%; border:1.5px solid #2563EB; background:#EFF6FF; color:#1D4ED8; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.8rem; cursor:pointer;">
-                    🔥 提前轉入廚房下鍋製作
-                  </button>
-                ` : ''}
-
-                <button type="button" onclick="openReceiptPrintModal('${escapeHtml(o.orderId)}')" style="border:1px solid var(--border); background:#FFFFFF; color:var(--text-primary); padding:7px 9px; border-radius:8px; font-weight:800; font-size:0.76rem; cursor:pointer;">
-                  🖨️ 小票
-                </button>
-
-                ${!isDone && !isCancelled ? `
-                  <button type="button" onclick="speakOrder(${JSON.stringify(o.pickupNumber + '號，' + itemStr).replace(/"/g, '&quot;')})" style="border:1px solid var(--border); background:#F8FAFC; color:var(--text-primary); padding:7px 9px; border-radius:8px; font-weight:800; font-size:0.76rem; cursor:pointer;">
-                    🔊 讀單
-                  </button>
-                  <button type="button" onclick="markOrderReady('${escapeHtml(o.orderId)}')" style="flex:1; border:none; background:#3B82F6; color:#FFFFFF; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.78rem; cursor:pointer;">
-                    🔔 ${notifyCount > 0 ? `再次叫號 (${notifyCount})` : '通知取餐'}
-                  </button>
-                  <button type="button" onclick="completeOrderFinal('${escapeHtml(o.orderId)}')" style="flex:1; border:none; background:#10B981; color:#FFFFFF; padding:7px 10px; border-radius:8px; font-weight:900; font-size:0.78rem; cursor:pointer;">
-                    ✅ ${isUnpaid ? '收款並結單' : '完成結單'}
-                  </button>
-                  <button type="button" class="btn-danger-soft" onclick="cancelMerchantOrder('${escapeHtml(o.orderId)}')">
-                    🚫 退單
-                  </button>
-                ` : ''}
-              </div>
-            </div>
-          `;
-        }).join('')}
+      <div id="kdsOrdersGridBox" class="kds-orders-grid">
+        ${kdsOrdersCardsHtml}
       </div>
     </div>
   `;
@@ -6288,7 +6246,7 @@ function openReceiptPrintModal(orderId) {
     body.innerHTML = `
       <div class="thermal-receipt-paper">
         <div style="text-align:center; margin-bottom:8px;">
-          <div style="font-size:0.78rem; font-weight:800;">東吳大學學餐智慧點餐系統</div>
+          <div style="font-size:0.78rem; font-weight:800;">${escapeHtml(BRAND_CONFIG.fullTitle)}</div>
           <div style="font-size:1.1rem; font-weight:950; margin:2px 0;">${escapeHtml(o.storeName)}</div>
           <div style="font-size:0.75rem; color:#4B5563;">${escapeHtml(o.dineType || '外帶自取')} ・ 80mm 廚房出單聯</div>
           <div style="font-size:2.6rem; font-weight:950; line-height:1.1; margin:6px 0; border:2px solid #000000; border-radius:8px; padding:4px 0;">
@@ -6449,9 +6407,9 @@ function renderOrderPayModalContent() {
       </div>
     </div>
 
-    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:10px;">
-      ${['現場現金', 'LINE Pay', '街口支付'].map(m => `
-        <button type="button" class="pos-chip-btn ${state.payingOrderMethod === m ? 'active' : ''}" onclick="setOrderPayMethod('${m}')">${m}</button>
+    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; margin-bottom:10px;">
+      ${['現場現金', 'LINE Pay'].map(m => `
+        <button type="button" class="pos-chip-btn ${state.payingOrderMethod === m ? 'active' : ''}" onclick="setOrderPayMethod(${escapeJsAttr(m)})">${m === 'LINE Pay' ? '💚 LINE Pay' : '💵 現場現金'}</button>
       `).join('')}
     </div>
 
@@ -6899,9 +6857,9 @@ function renderMerchantAnalyticsPanel(store) {
         const isSelected = state.analyticsSelectedFilter?.type === 'BUCKET' && state.analyticsSelectedFilter?.key === b.key;
         return `
           <g class="chart-interactive-bar ${isSelected ? 'active-bar' : ''}"
-             onmousemove="showAnalyticsTooltip(event, '${escapeHtml(b.label)} 營運數據', '已入帳淨營收：NT$ ${b.rev.toLocaleString()} (總計 ${b.count} 單)', '點擊柱狀圖可於下方篩選檢視明細')"
-             ontouchstart="showAnalyticsTooltip(event, '${escapeHtml(b.label)} 營運數據', '已入帳淨營收：NT$ ${b.rev.toLocaleString()} (總計 ${b.count} 單)', '點擊下方篩選明細')"
-             onclick="filterAnalyticsOrdersByKey('BUCKET', '${escapeHtml(b.key)}', '時段/日期：${escapeHtml(b.label)}')">
+             onmousemove="showAnalyticsTooltip(event, ${escapeJsAttr(b.label + ' 營運數據')}, ${escapeJsAttr('已入帳淨營收：NT$ ' + b.rev.toLocaleString() + ' (總計 ' + b.count + ' 單)')}, '點擊柱狀圖可於下方篩選檢視明細')"
+             ontouchstart="showAnalyticsTooltip(event, ${escapeJsAttr(b.label + ' 營運數據')}, ${escapeJsAttr('已入帳淨營收：NT$ ' + b.rev.toLocaleString() + ' (總計 ' + b.count + ' 單)')}, '點擊下方篩選明細')"
+             onclick="filterAnalyticsOrdersByKey('BUCKET', ${escapeJsAttr(b.key)}, ${escapeJsAttr('時段/日期：' + b.label)})">
             <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6"
                   fill="${isSelected ? '#F97316' : (b.rev > 0 ? 'url(#barGrad)' : '#E2E8F0')}"
                   stroke="${isSelected ? '#C2410C' : 'none'}" stroke-width="2" />
@@ -6980,10 +6938,10 @@ function renderMerchantAnalyticsPanel(store) {
               r="15.915" cx="21" cy="21" fill="transparent"
               stroke="${seg.color}" stroke-width="6.5"
               stroke-dasharray="${dashArray}" stroke-dashoffset="${dashOffset}"
-              onmouseenter="highlightDonutSlice(${idx}, '${escapeHtml(seg.name)}', ${seg.qty}, ${seg.rev}, ${seg.pct}, '${seg.color}')"
-              onmousemove="showAnalyticsTooltip(event, '🍽️ ${escapeHtml(seg.name)}', '真實銷量：${seg.qty} 份 ・ 營收：NT$ ${seg.rev}', '佔比 ${seg.pct}%（點擊可篩選包含此餐點的真實訂單）')"
-              onmouseleave="resetDonutSlice('${escapeHtml(topPie.name)}', ${topPie.pct}, '${topPie.qty}份 / $${topPie.rev}', '${topPie.color}'); hideAnalyticsTooltip();"
-              onclick="filterAnalyticsOrdersByKey('ITEM', '${escapeHtml(seg.name)}', '餐點包含：${escapeHtml(seg.name)}')"></circle>
+              onmouseenter="highlightDonutSlice(${idx}, ${escapeJsAttr(seg.name)}, ${seg.qty}, ${seg.rev}, ${seg.pct}, ${escapeJsAttr(seg.color)})"
+              onmousemove="showAnalyticsTooltip(event, ${escapeJsAttr('🍽️ ' + seg.name)}, ${escapeJsAttr('真實銷量：' + seg.qty + ' 份 ・ 營收：NT$ ' + seg.rev)}, ${escapeJsAttr('佔比 ' + seg.pct + '%（點擊可篩選包含此餐點的真實訂單）')})"
+              onmouseleave="resetDonutSlice(${escapeJsAttr(topPie.name)}, ${topPie.pct}, ${escapeJsAttr(topPie.qty + '份 / $' + topPie.rev)}, ${escapeJsAttr(topPie.color)}); hideAnalyticsTooltip();"
+              onclick="filterAnalyticsOrdersByKey('ITEM', ${escapeJsAttr(seg.name)}, ${escapeJsAttr('餐點包含：' + seg.name)})"></circle>
     `;
   }).join('');
 
@@ -7077,9 +7035,9 @@ function renderMerchantAnalyticsPanel(store) {
             <div style="flex:1; min-width:170px; display:flex; flex-direction:column; gap:5px;">
               ${pieItems.map((p, idx) => `
                 <div class="legend-interactive-row ${state.analyticsSelectedFilter?.type === 'ITEM' && state.analyticsSelectedFilter?.key === p.name ? 'active active-legend' : ''}"
-                     onmouseenter="highlightDonutSlice(${idx}, '${escapeHtml(p.name)}', ${p.qty}, ${p.rev}, ${p.pct}, '${p.color}')"
-                     onmouseleave="resetDonutSlice('${escapeHtml(topPie.name)}', ${topPie.pct}, '${topPie.qty}份 / $${topPie.rev}', '${topPie.color}')"
-                     onclick="filterAnalyticsOrdersByKey('ITEM', '${escapeHtml(p.name)}', '餐點包含：${escapeHtml(p.name)}')">
+                     onmouseenter="highlightDonutSlice(${idx}, ${escapeJsAttr(p.name)}, ${p.qty}, ${p.rev}, ${p.pct}, ${escapeJsAttr(p.color)})"
+                     onmouseleave="resetDonutSlice(${escapeJsAttr(topPie.name)}, ${topPie.pct}, ${escapeJsAttr(topPie.qty + '份 / $' + topPie.rev)}, ${escapeJsAttr(topPie.color)})"
+                     onclick="filterAnalyticsOrdersByKey('ITEM', ${escapeJsAttr(p.name)}, ${escapeJsAttr('餐點包含：' + p.name)})">
                   <div style="display:flex; align-items:center; gap:6px;">
                     <span style="width:10px; height:10px; border-radius:3px; background:${p.color}; display:inline-block;"></span>
                     <span style="font-weight:800; font-size:0.8rem; color:var(--text-primary);">${escapeHtml(p.name)}</span>
@@ -7104,9 +7062,9 @@ function renderMerchantAnalyticsPanel(store) {
             <polyline fill="none" stroke="#10B981" stroke-width="3" points="${polylinePoints}" />
             ${pts.map(p => `
               <g style="cursor:pointer;"
-                 onmousemove="showAnalyticsTooltip(event, '⏱️ ${escapeHtml(p.label)} 候餐負載', '尖峰預估候餐：約 ${p.w} 分鐘（區間共 ${p.count} 單 / $${p.rev}）', '依據店家基礎出餐時間與 15 分鐘最大密度精算')"
-                 ontouchstart="showAnalyticsTooltip(event, '⏱️ ${escapeHtml(p.label)} 候餐負載', '尖峰預估候餐：約 ${p.w} 分鐘（區間共 ${p.count} 單 / $${p.rev}）', '點擊篩選此時段訂單')"
-                 onclick="filterAnalyticsOrdersByKey('BUCKET', '${escapeHtml(p.key)}', '時段/日期：${escapeHtml(p.label)}')">
+                 onmousemove="showAnalyticsTooltip(event, ${escapeJsAttr('⏱️ ' + p.label + ' 候餐負載')}, ${escapeJsAttr('尖峰預估候餐：約 ' + p.w + ' 分鐘（區間共 ' + p.count + ' 單 / $' + p.rev + '）')}, '依據店家基礎出餐時間與 15 分鐘最大密度精算')"
+                 ontouchstart="showAnalyticsTooltip(event, ${escapeJsAttr('⏱️ ' + p.label + ' 候餐負載')}, ${escapeJsAttr('尖峰預估候餐：約 ' + p.w + ' 分鐘（區間共 ' + p.count + ' 單 / $' + p.rev + '）')}, '點擊篩選此時段訂單')"
+                 onclick="filterAnalyticsOrdersByKey('BUCKET', ${escapeJsAttr(p.key)}, ${escapeJsAttr('時段/日期：' + p.label)})">
                 <circle class="chart-interactive-point" cx="${p.x}" cy="${p.y}" r="5.5" fill="#FFFFFF" stroke="#059669" stroke-width="3" />
                 <text x="${p.x}" y="${p.y - 10}" text-anchor="middle" font-size="10" font-weight="900" fill="#065F46">${p.w}分(${p.count}單)</text>
                 <text x="${p.x}" y="164" text-anchor="middle" font-size="10.5" font-weight="700" fill="#64748B">${escapeHtml(p.label)}</text>
@@ -7129,13 +7087,6 @@ function renderMerchantAnalyticsPanel(store) {
               <strong>📅 未來預訂排程與配額隔離保護：</strong><br>
               系統共有 <strong>${futureReservations.length} 筆未來日期預訂單</strong>，已全數納入 15 分鐘時段配額控管並置於「已接單待排程」狀態，不會提前擠佔今日廚房佇列或污染今日營收。
             </div>
-            <div style="background:#FFFFFF; padding:8px 12px; border-radius:10px; border-left:4px solid #F59E0B; display:flex; justify-content:space-between; align-items:center;">
-              <span><strong>🧪 壓力測試樣本管理：</strong>${hasSeedOrders ? '目前含壓力測試訂單' : '目前為純淨正式環境'}</span>
-              ${hasSeedOrders
-                ? `<button type="button" class="btn-danger-soft" onclick="clearSampleOrdersData()">🧹 清除測試數據</button>`
-                : `<button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.74rem;" onclick="restoreSampleOrdersData()">🧪 載入測試數據</button>`
-              }
-            </div>
           </div>
         </div>
       </div>
@@ -7148,7 +7099,7 @@ function renderMerchantAnalyticsPanel(store) {
             </span>
           </div>
           ${activeFilter ? `
-            <button type="button" class="pos-cat-pill active" onclick="filterAnalyticsOrdersByKey('${escapeHtml(activeFilter.type)}', '${escapeHtml(activeFilter.key)}', '')">
+            <button type="button" class="pos-cat-pill active" onclick="filterAnalyticsOrdersByKey(${escapeJsAttr(activeFilter.type)}, ${escapeJsAttr(activeFilter.key)}, '')">
               ✖ 清除篩選（顯示全部 ${periodOrders.length} 筆）
             </button>
           ` : ''}
@@ -7195,7 +7146,7 @@ function renderMerchantSettingsPanel(store) {
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button type="button" class="pos-cat-pill ${sub === 'menu' ? 'active' : ''}" onclick="switchSettingsSubTab('menu')">🍔 菜單管理與智慧照片辨識</button>
           <button type="button" class="pos-cat-pill ${sub === 'promo' ? 'active' : ''}" onclick="switchSettingsSubTab('promo')">🥢 營業狀態・餐具收費與離峰優惠</button>
-          <button type="button" class="pos-cat-pill ${sub === 'line' ? 'active' : ''}" onclick="switchSettingsSubTab('line')">💚 推播設定・安全授權碼與壓力測試</button>
+          <button type="button" class="pos-cat-pill ${sub === 'line' ? 'active' : ''}" onclick="switchSettingsSubTab('line')">💚 推播設定與安全授權碼</button>
         </div>
 
         <select class="select-input" style="width:auto; padding:6px 10px; font-weight:800;" onchange="switchMerchantStore(this.value)">
@@ -7318,11 +7269,6 @@ function renderMerchantSettingsPanel(store) {
             </div>
 
             <div>
-              <label class="field-label">🍲 現場外加佇列偏移量 (目前真實製作中 ${store.liveCookingCount || 0} 單)</label>
-              <input type="number" id="cfgBaseQueueOffset" class="select-input" min="0" max="100" value="${store.baseQueueOffset || 0}">
-            </div>
-
-            <div>
               <label class="field-label">🎁 離峰分流優惠模式（預訂 11:45~12:45 尖峰自動排除）</label>
               <select id="cfgPromoMode" class="select-input">
                 <option value="none" ${store.promoMode === 'none' ? 'selected' : ''}>關閉優惠</option>
@@ -7422,24 +7368,15 @@ function renderMerchantSettingsPanel(store) {
               🛡️ 目前 Session 憑證有效（範圍: ${escapeHtml(state.merchantAuthorizedStoreScope)} ・ 剩餘約 ${remainMins} 分鐘）
             </span>
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:end; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border);">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:end;">
             <div>
-              <label class="field-label">變更「${escapeHtml(store.name)}」專屬 4～8 位數安全授權碼</label>
-              <input type="password" id="cfgMerchantPinInput" maxlength="8" class="select-input" placeholder="請輸入新 4 至 8 位數字授權碼" value="">
+              <label class="field-label">變更「${escapeHtml(store.name)}」專屬安全授權碼</label>
+              <input type="password" id="cfgMerchantPinInput" maxlength="8" class="select-input" placeholder="請輸入新數字授權碼" value="">
             </div>
             <div style="display:flex; gap:8px;">
               <button type="button" class="btn-outline" onclick="saveNewMerchantPin()">💾 更新本店雲端授權碼</button>
               <button type="button" class="btn-danger-soft" onclick="lockMerchantSession()">🔒 立即登出並銷毀憑證</button>
             </div>
-          </div>
-
-          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-            <button type="button" id="simTrafficBtn" class="btn-tip-action" onclick="triggerTrafficSimulation('PEAK')">⚡ 觸發午間 12:10 尖峰滿載壓力測試</button>
-            <button type="button" class="btn-outline" onclick="triggerTrafficSimulation('NORMAL')">🟢 恢復正常離峰佇列狀態</button>
-            ${hasSeedOrders
-              ? `<button type="button" class="btn-danger-soft" onclick="clearSampleOrdersData()">🧹 清除壓力測試訂單</button>`
-              : `<button type="button" class="filter-chip" onclick="restoreSampleOrdersData()">🧪 載入 6 筆營運壓力測試訂單</button>`
-            }
           </div>
         </div>
       ` : ''}
@@ -8058,7 +7995,7 @@ async function saveMerchantConfig() {
   store.cutleryPrice = Math.max(0, parseInt(document.getElementById('cfgCutleryPrice')?.value || '1', 10));
   store.basePrepMinutes = Math.max(1, parseInt(document.getElementById('cfgBasePrepMin')?.value || '4', 10));
   store.maxCapacityPer15Min = Math.max(5, parseInt(document.getElementById('cfgMaxCap')?.value || '20', 10));
-  store.baseQueueOffset = Math.max(0, parseInt(document.getElementById('cfgBaseQueueOffset')?.value || '0', 10));
+  store.baseQueueOffset = 0;
   store.promoMode = document.getElementById('cfgPromoMode')?.value || 'none';
   store.promoText = document.getElementById('cfgPromoText')?.value.trim() || '';
   store.promoDiscount = Math.max(0, parseInt(document.getElementById('cfgPromoDiscount')?.value || '0', 10));
@@ -8092,58 +8029,8 @@ async function saveMerchantConfig() {
   } catch (e) {}
 }
 
-async function triggerTrafficSimulation(mode = 'PEAK') {
-  if (!isMerchantSessionValidNow()) {
-    checkMerchantSecurityGate();
-    return;
-  }
-  const btn = document.getElementById('simTrafficBtn');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = '⏳ 正在切換佇列模擬...';
-  }
-
-  state.stores.forEach(s => {
-    if (mode === 'PEAK') {
-      if (s.id === 'S01' || s.id === 'S03' || s.id === 'S05') {
-        s.baseQueueOffset = Math.round(s.maxCapacityPer15Min * 0.95);
-      } else {
-        s.baseQueueOffset = 0;
-        if (s.promoMode === 'none') {
-          s.promoMode = 'discount';
-          s.promoDiscount = 10;
-          s.promoText = '💰 離峰分流現折$10';
-        }
-      }
-    } else {
-      s.baseQueueOffset = 0;
-    }
-  });
-
-  state.lastLocalStoreConfigUpdateTs = Date.now();
-  enrichStoresAndAi();
-  saveLocalStores(state.stores);
-  renderMerchantView();
-  showToast(mode === 'PEAK' ? '⚡ 已觸發午間 12:10 尖峰滿載與動態分流壓力測試！' : '🟢 已恢復正常離峰佇列狀態！');
-
-  try {
-    await fetch(GAS_URL, {
-      method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'simulateTraffic',
-        ...getMerchantAuthPayload(),
-        mode,
-        campus: state.campus
-      })
-    });
-  } catch (e) {} finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = '⚡ 觸發午間 12:10 尖峰滿載壓力測試';
-    }
-  }
+async function triggerTrafficSimulation(mode = 'NORMAL') {
+  showToast('🛡️ 正式營運環境已停用壓力模擬與假負載注入功能');
 }
 
 function toggleStoreCustomLineMode(useCustom) {
