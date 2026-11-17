@@ -1,0 +1,25 @@
+{
+  "name": "MealFlow 線上點餐",
+  "short_name": "MealFlow 點餐",
+  "description": "MealFlow 行動掃碼點餐與即時取餐追蹤",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F4F6F9",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {
+      "src": "../logo-icon.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "../logo-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

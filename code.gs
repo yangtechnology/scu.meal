@@ -17,7 +17,7 @@ const BRAND_NAME = 'MealFlow';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500;
 const SESSION_TTL_MS = 8 * 3600 * 1000; // 店務 Session Token 效期 8 小時
-const ORDERS_TAIL_WINDOW_SIZE = 400;    // 滑動視窗：僅掃描最近 400 筆活躍訂單，保護 GAS 記憶體與執行時間
+const ORDERS_TAIL_WINDOW_SIZE = 1200;   // 滑動視窗：掃描最近 1200 筆訂單，確保單店整日日結、7日分析與預約單完整不漏單
 
 const scriptProps = PropertiesService.getScriptProperties();
 const SYSTEM_LINE_CLIENT_ID = scriptProps.getProperty('LINE_CLIENT_ID') || '2012260287';
@@ -129,10 +129,28 @@ function dispatchAction(ss, action, params) {
     case 'updateStoreConfig':
       assertMerchantAuthorized(params, params.storeId || '');
       return updateStoreSettings(ss, params);
+    case 'saveStoreProfile':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return saveStoreProfileOnServer(ss, params);
+    case 'createStore':
+      assertMerchantAuthorized(params, '');
+      return createNewStoreOnServer(ss, params);
+    case 'deleteStore':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return deleteStoreOnServer(ss, params);
     case 'saveStoreMenus':
     case 'saveStoreMenu':
       assertMerchantAuthorized(params, params.storeId || '');
       return saveStoreMenusAtomic(ss, params);
+    case 'upsertSingleMenuItem':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return upsertSingleMenuItemOnServer(ss, params);
+    case 'deleteSingleMenuItem':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return deleteSingleMenuItemOnServer(ss, params);
+    case 'toggleMenuSoldOut':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return toggleSingleMenuSoldOutOnServer(ss, params);
     case 'aiParseMenu':
       assertMerchantAuthorized(params, params.storeId || '');
       return handleAiParseMenu(ss, params);
@@ -275,8 +293,16 @@ function assertMerchantAuthorized(params, requiredStoreId) {
 function handleVerifyMerchantPin(params) {
   const rawPin = String(params.pin || '').trim();
   const requestedStoreId = String(params.storeId || '').trim();
-  if (!rawPin || !/^\d{4,8}$/.test(rawPin)) {
-    throw new Error('請輸入有效的 4 至 8 位數店務管理授權碼');
+  if (!rawPin || !/^\d{4}$/.test(rawPin)) {
+    throw new Error('請輸入有效的 4 位數店務管理授權碼');
+  }
+
+  // 防暴力破解：使用 CacheService 限制單店 60 秒內最多嘗試 5 次錯誤
+  const cache = CacheService.getScriptCache();
+  const rateKey = 'PIN_FAIL_' + (requestedStoreId || 'GLOBAL');
+  const failCount = cache ? Number(cache.get(rateKey) || 0) : 0;
+  if (failCount >= 5) {
+    throw new Error('授權碼連續輸入錯誤達 5 次，系統已暫時鎖定 60 秒，請稍後再試');
   }
 
   const candidateHash = hashMerchantPinWithServerSalt(rawPin);
@@ -284,7 +310,8 @@ function handleVerifyMerchantPin(params) {
   const masterHash = getStoredMasterPinHash();
 
   if (storeSpecificHash && constantTimeEquals(candidateHash, storeSpecificHash)) {
-    const tokenObj = issueMerchantSessionToken(requestedStoreId);
+    if (cache) cache.remove(rateKey);
+    const tokenObj = issueMerchantSessionToken(requestedStoreId || 'ALL');
     return {
       verified: true,
       sessionToken: tokenObj.sessionToken,
@@ -294,6 +321,7 @@ function handleVerifyMerchantPin(params) {
   }
 
   if (constantTimeEquals(candidateHash, masterHash)) {
+    if (cache) cache.remove(rateKey);
     const tokenObj = issueMerchantSessionToken('ALL');
     return {
       verified: true,
@@ -303,25 +331,40 @@ function handleVerifyMerchantPin(params) {
     };
   }
 
-  throw new Error('店務授權碼錯誤，拒絕存取');
+  if (cache) cache.put(rateKey, String(failCount + 1), 60);
+  throw new Error('店務 4 碼授權碼錯誤，拒絕存取');
 }
 
 function handleUpdateMerchantPin(params) {
+  const oldPin = String(params.oldPin || '').trim();
   const newPin = String(params.newPin || '').trim();
   const targetStoreId = String(params.storeId || '').trim();
-  if (!/^\d{4,8}$/.test(newPin)) {
-    throw new Error('新授權碼必須為 4 至 8 位數字');
+  if (!/^\d{4}$/.test(newPin)) {
+    throw new Error('新授權碼必須為 4 位數字');
+  }
+
+  // 強制驗證舊密碼，防止借用平板者未經授權竄改店務密碼
+  if (oldPin) {
+    const oldCandidateHash = hashMerchantPinWithServerSalt(oldPin);
+    const storeSpecificHash = getStoredStorePinHash(targetStoreId);
+    const masterHash = getStoredMasterPinHash();
+    const oldMatchesStore = storeSpecificHash && constantTimeEquals(oldCandidateHash, storeSpecificHash);
+    const oldMatchesMaster = constantTimeEquals(oldCandidateHash, masterHash);
+    if (!oldMatchesStore && !oldMatchesMaster) {
+      throw new Error('原授權碼驗證錯誤，無法變更密碼');
+    }
+  } else {
+    throw new Error('請輸入目前使用的舊 4 碼授權碼以驗證身分');
   }
 
   const session = parseVerifiedMerchantSession(params);
   const newHash = hashMerchantPinWithServerSalt(newPin);
   const props = PropertiesService.getScriptProperties();
 
-  if (!targetStoreId || (session && session.storeScope === 'ALL')) {
-    props.setProperty('MERCHANT_PIN_HMAC_V12', newHash);
-  }
   if (targetStoreId) {
     props.setProperty('MERCHANT_PIN_HMAC_STORE_' + targetStoreId, newHash);
+  } else if (session && session.storeScope === 'ALL') {
+    props.setProperty('MERCHANT_PIN_HMAC_V12', newHash);
   }
 
   const nextScope = (session && session.storeScope === 'ALL') ? 'ALL' : (targetStoreId || 'ALL');
@@ -551,14 +594,17 @@ function ensureDatabaseInitialized(ss, forceCheck) {
   }
 
   let orderSheet = ss.getSheetByName('Orders');
+  const expectedOrderHeaders = [
+    'orderId', 'pickupNumber', 'storeId', 'storeName', 'studentId', 'studentName',
+    'itemsJson', 'subtotal', 'discount', 'finalTotal', 'promoApplied',
+    'pickupTimeSlot', 'paymentMethod', 'status', 'isDivertedOrder', 'createdAt',
+    'extraMetaJson'
+  ];
   if (!orderSheet) {
     orderSheet = ss.insertSheet('Orders');
-    orderSheet.appendRow([
-      'orderId', 'pickupNumber', 'storeId', 'storeName', 'studentId', 'studentName',
-      'itemsJson', 'subtotal', 'discount', 'finalTotal', 'promoApplied',
-      'pickupTimeSlot', 'paymentMethod', 'status', 'isDivertedOrder', 'createdAt',
-      'extraMetaJson'
-    ]);
+    orderSheet.appendRow(expectedOrderHeaders);
+  } else {
+    orderSheet.getRange(1, 1, 1, expectedOrderHeaders.length).setValues([expectedOrderHeaders]);
   }
 
   let bindSheet = ss.getSheetByName('LineBindings');
@@ -599,20 +645,52 @@ function readSheetTailObjects(sheet, maxTailRows) {
   if (lastRow <= 1) return [];
 
   const limit = Math.max(10, Number(maxTailRows) || ORDERS_TAIL_WINDOW_SIZE);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   const startRow = Math.max(2, lastRow - limit + 1);
   const numRows = lastRow - startRow + 1;
   const rows = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
+  const isOrdersSheet = sheet.getName() === 'Orders';
+  const headers = isOrdersSheet ? [] : sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
 
   const list = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row[0]) continue;
-    const obj = { __sheetRowIndex: startRow + i };
-    for (let c = 0; c < headers.length; c++) {
-      if (headers[c]) obj[headers[c]] = row[c];
+    if (isOrdersSheet) {
+      let col11 = row[11];
+      let col12 = row[12];
+      const s11 = String(col11 || '');
+      const s12 = String(col12 || '');
+      if ((s12.indexOf('立即製作') >= 0 || s12.indexOf('預訂') >= 0) && (s11.indexOf('現金') >= 0 || s11.indexOf('付現') >= 0 || s11.indexOf('Pay') >= 0)) {
+        col11 = row[12];
+        col12 = row[11];
+      }
+      list.push({
+        __sheetRowIndex: startRow + i,
+        orderId: row[0],
+        pickupNumber: row[1],
+        storeId: row[2],
+        storeName: row[3],
+        studentId: row[4],
+        studentName: row[5],
+        itemsJson: row[6],
+        subtotal: row[7],
+        discount: row[8],
+        finalTotal: row[9],
+        promoApplied: row[10],
+        pickupTimeSlot: col11,
+        paymentMethod: col12,
+        status: row[13],
+        isDivertedOrder: row[14],
+        createdAt: row[15],
+        extraMetaJson: row[16]
+      });
+    } else {
+      const obj = { __sheetRowIndex: startRow + i };
+      for (let c = 0; c < headers.length; c++) {
+        if (headers[c]) obj[headers[c]] = row[c];
+      }
+      list.push(obj);
     }
-    list.push(obj);
   }
   return list;
 }
@@ -652,6 +730,14 @@ function locateOrderRowById(orderSheet, orderId) {
 
 function rowArrayToOrderObject(rowVals) {
   if (!rowVals || !rowVals[0]) return null;
+  let col11 = rowVals[11];
+  let col12 = rowVals[12];
+  const s11 = String(col11 || '');
+  const s12 = String(col12 || '');
+  if ((s12.indexOf('立即製作') >= 0 || s12.indexOf('預訂') >= 0) && (s11.indexOf('現金') >= 0 || s11.indexOf('付現') >= 0 || s11.indexOf('Pay') >= 0)) {
+    col11 = rowVals[12];
+    col12 = rowVals[11];
+  }
   return enrichOrderObject({
     orderId: rowVals[0],
     pickupNumber: rowVals[1],
@@ -664,8 +750,8 @@ function rowArrayToOrderObject(rowVals) {
     discount: rowVals[8],
     finalTotal: rowVals[9],
     promoApplied: rowVals[10],
-    pickupTimeSlot: rowVals[11],
-    paymentMethod: rowVals[12],
+    pickupTimeSlot: col11,
+    paymentMethod: col12,
     status: rowVals[13],
     isDivertedOrder: rowVals[14],
     createdAt: rowVals[15],
@@ -750,8 +836,38 @@ function evaluateServerOrderLifecycleStatus(statusStr, isReservation, paymentSta
   return '製作中';
 }
 
+function getServerOrderElapsedMinutes(orderObj, nowMs, nowMinutesOfDay) {
+  if (!orderObj) return 0;
+  const cookTs = Number(orderObj.cookingStartedAtTs || 0);
+  if (cookTs > 0) {
+    return Math.max(0, Math.floor((nowMs - cookTs) / 60000));
+  }
+  if (orderObj.isReservation) {
+    const pt = normalizeSheetTimeStr(orderObj.pickupTime, false);
+    const m = pt.match(/(\d{1,2}):(\d{2})/);
+    if (m) {
+      const pickupMinOfDay = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      const scheduledCookStartMin = pickupMinOfDay - 25;
+      return Math.max(0, nowMinutesOfDay - scheduledCookStartMin);
+    }
+    return 0;
+  }
+  const createTs = Number(orderObj.createdAtTs || 0);
+  if (createTs > 0) {
+    return Math.max(0, Math.floor((nowMs - createTs) / 60000));
+  }
+  const ca = normalizeSheetTimeStr(orderObj.createdAt, false);
+  const m = ca.match(/(\d{1,2}):(\d{2})/);
+  if (m) {
+    const createdMinOfDay = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    return Math.max(0, nowMinutesOfDay - createdMinOfDay);
+  }
+  return 0;
+}
+
 /**
- * 除「製作中」外，剛按「可取餐」3 分鐘內的出餐口待領訂單亦計入緩衝負荷
+ * 除「製作中」外，剛按「可取餐」3 分鐘內的出餐口待領訂單亦計入緩衝負荷；
+ * 若「製作中」已逾 45 分鐘（店員忙碌未按結單），自動排除於即時排隊負荷外，避免造成假性滿載久候 (B13)
  */
 function isOrderActivelyCookingOnServer(orderObj, todayStr, nowMinutesOfDay, nowMs) {
   if (!orderObj) return false;
@@ -767,7 +883,10 @@ function isOrderActivelyCookingOnServer(orderObj, todayStr, nowMinutesOfDay, now
     todayStr,
     nowMinutesOfDay
   );
-  if (effectiveStatus === '製作中') return true;
+  if (effectiveStatus === '製作中') {
+    const elapsedMin = getServerOrderElapsedMinutes(orderObj, nowMs, nowMinutesOfDay);
+    return elapsedMin <= 45;
+  }
   if (effectiveStatus === '可取餐' && orderObj.readyAtTs && (nowMs - Number(orderObj.readyAtTs)) < 180000) {
     return true;
   }
@@ -789,19 +908,8 @@ function calcOrderRemainingWorkloadOnServer(orderObj, maxCapPer15Min, nowMs, now
   });
 
   const rawUnits = Math.max(0.6, 0.7 + totalWeightedUnits * 0.75);
-
-  let elapsedMin = 0;
-  const startTs = Number(orderObj.cookingStartedAtTs || orderObj.createdAtTs || 0);
-  if (startTs > 0 && !orderObj.isReservation) {
-    elapsedMin = Math.max(0, Math.floor((nowMs - startTs) / 60000));
-  } else {
-    const ca = normalizeSheetTimeStr(orderObj.createdAt, false);
-    const m = ca.match(/(\d{1,2}):(\d{2})/);
-    if (m) {
-      const createdMinOfDay = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-      elapsedMin = Math.max(0, nowMinutesOfDay - createdMinOfDay);
-    }
-  }
+  const elapsedMin = getServerOrderElapsedMinutes(orderObj, nowMs, nowMinutesOfDay);
+  if (elapsedMin > 45) return 0;
 
   const muPerMin = Math.max(5, Number(maxCapPer15Min) || 20) / 15;
   const digestedUnits = Math.min(rawUnits * 0.85, elapsedMin * muPerMin * 0.6);
@@ -1437,8 +1545,6 @@ function isCorruptedOrMockOrderOnServer(o) {
   if (oid.indexOf('ORD-DEMO-') === 0 || /^ORD-\d+$/.test(oid)) return true;
   const pNum = String(o.pickupNumber || '');
   if (/^[SCP]\d{3}$/.test(pNum)) return true;
-  const pm = String(o.paymentMethod || '');
-  if (pm.indexOf('立即製作') >= 0 || pm.indexOf('預訂') >= 0) return true;
   return false;
 }
 
@@ -1471,11 +1577,16 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   const props = PropertiesService.getScriptProperties();
   let simOffsets = {};
   let openStateMap = {};
+  let customStoreMetaMap = {};
+  let deletedStoreIdsMap = {};
   try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
   try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
+  try { customStoreMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
+  try { deletedStoreIdsMap = JSON.parse(props.getProperty('DELETED_STORE_IDS') || '{}'); } catch (e) {}
 
-  // 滑動視窗讀取最近 200 筆訂單，並自動排除舊版損壞或壓力測試假單
-  const rawTailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 200)
+  const orderSheet = ss.getSheetByName('Orders');
+  // 滑動視窗讀取最近 ORDERS_TAIL_WINDOW_SIZE 筆訂單，並自動排除早期壓力測試假單
+  const rawTailOrders = readSheetTailObjects(orderSheet, ORDERS_TAIL_WINDOW_SIZE)
     .reverse()
     .map(enrichOrderObject)
     .filter(o => o && !isCorruptedOrMockOrderOnServer(o));
@@ -1484,31 +1595,47 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   const slotQuotaMap = buildSlotQuotaMap(rawTailOrders);
   const storeQueueProgressMap = buildStoreQueueProgressMap(rawTailOrders);
 
-  // 【最小權限原則】若為已授權之店家後台，回傳該店（或全區）訂單；若為未登入之學生端，僅回傳該學生傳入的 myOrderIds 訂單！
+  // 【最小權限原則】若為已授權之店家後台，回傳該店（或全區）訂單；若為未登入之學生端，回傳該學生傳入的 myOrderIds 訂單（若不在尾端視窗亦精準補查）
   const session = parseVerifiedMerchantSession(params);
   let clientOrders = [];
 
   if (session) {
     clientOrders = rawTailOrders
       .filter(ord => session.storeScope === 'ALL' || session.storeScope === String(ord.storeId))
+      .slice(0, 600)
       .map(ord => sanitizeOrderForClientOutput(ord, true));
   } else {
     const requestedIds = Array.isArray(params && params.myOrderIds)
-      ? params.myOrderIds.map(id => String(id || '').trim()).filter(Boolean).slice(0, 30)
+      ? params.myOrderIds.map(id => String(id || '').trim()).filter(Boolean).slice(0, 35)
       : [];
     if (requestedIds.length > 0) {
       const reqSet = new Set(requestedIds);
-      clientOrders = rawTailOrders
-        .filter(ord => reqSet.has(String(ord.orderId)))
-        .map(ord => sanitizeOrderForClientOutput(ord, false));
+      const foundMap = {};
+      rawTailOrders.forEach(ord => {
+        const oid = String(ord.orderId);
+        if (reqSet.has(oid)) {
+          foundMap[oid] = sanitizeOrderForClientOutput(ord, false);
+        }
+      });
+      requestedIds.forEach(reqId => {
+        if (!foundMap[reqId]) {
+          const singleOrd = findOrderById(ss, reqId, false);
+          if (singleOrd && !isCorruptedOrMockOrderOnServer(singleOrd)) {
+            foundMap[reqId] = singleOrd;
+          }
+        }
+      });
+      clientOrders = Object.values(foundMap);
     }
   }
 
-  const stores = sheetToObjects(ss.getSheetByName('Stores'));
+  const stores = sheetToObjects(ss.getSheetByName('Stores'))
+    .filter(s => s && s.id && !deletedStoreIdsMap[String(s.id)]);
   const menus = sheetToObjects(ss.getSheetByName('Menus'));
 
   const enrichedStores = stores.map(s => {
     const storeIdStr = String(s.id);
+    const customMeta = customStoreMetaMap[storeIdStr] || {};
     const storeMenus = menus
       .filter(m => String(m.storeId) === storeIdStr)
       .map(m => {
@@ -1555,6 +1682,9 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
 
     const storeObj = {
       ...s,
+      icon: String(customMeta.icon || s.icon || ''),
+      openTime: String(customMeta.openTime || s.openTime || '10:30'),
+      closeTime: String(customMeta.closeTime || s.closeTime || '19:30'),
       isOpen: isOpen,
       maxCapacityPer15Min: maxCap,
       basePrepMinutes: basePrepMinutes,
@@ -1650,7 +1780,11 @@ function enrichOrderObject(o) {
 
 function computeAiTrafficRecommendations(enrichedStores) {
   const recs = {};
-  ['雙溪校區', '城中校區'].forEach(campus => {
+  const campuses = Array.from(new Set((enrichedStores || []).map(s => String(s.campus || '').trim()).filter(Boolean)));
+  if (campuses.length === 0) {
+    campuses.push('雙溪校區', '城中校區');
+  }
+  campuses.forEach(campus => {
     const campusStores = (enrichedStores || []).filter(s => s.campus === campus && s.isOpen !== false);
     const congested = campusStores
       .filter(s => s.loadState === 'FULL' || Number(s.avgPrepMinutes) >= 16)
@@ -1898,10 +2032,25 @@ function handleOrderSubmission(ss, params) {
 
   const authoritativeFinalTotal = Math.max(0, authoritativeSubtotal + cutleryFee - authoritativeDiscount - manualDiscount);
 
+  // 【取餐號碼權威防撞號機制 B6】統一由伺服器原子序號產生，僅在離線補送且該號碼尚未被佔用時才保留原離線單號
   let pickupNumber = '';
-  if (isMerchantPosRequest && params.pickupNumber && /^\d{4,5}$/.test(String(params.pickupNumber))) {
-    pickupNumber = String(params.pickupNumber);
-  } else {
+  const requestedPosNum = String(params.pickupNumber || '').trim();
+  const isOfflineResync = Boolean(params.isOfflineSync || params.isOfflinePending);
+  if (isMerchantPosRequest && isOfflineResync && /^\d{3,5}$/.test(requestedPosNum)) {
+    const isTaken = recentOrders.some(o =>
+      o && String(o.storeId) === storeId &&
+      normalizeSheetDateStr(o.pickupDate) === pickupDateVal &&
+      String(o.pickupNumber) === requestedPosNum
+    );
+    if (!isTaken) {
+      pickupNumber = requestedPosNum;
+      const propKey = `SEQ_${storeId}_${pickupDateVal}`;
+      const curSaved = parseInt(props.getProperty(propKey) || '0', 10);
+      const numVal = parseInt(requestedPosNum, 10);
+      if (numVal > curSaved) props.setProperty(propKey, String(numVal));
+    }
+  }
+  if (!pickupNumber) {
     pickupNumber = generateBackendSequentialPickupNumber(ss, storeId, pickupDateVal);
   }
 
@@ -2289,6 +2438,223 @@ function saveStoreMenusAtomic(ss, params) {
     storeId: storeId,
     menuCount: newStoreRows.length
   };
+}
+
+/**
+ * 【單一菜單品項原子更新 B12】避免多台平板同時修改價格或切換售罄時整份菜單互相覆蓋
+ */
+function toggleSingleMenuSoldOutOnServer(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const menuId = String(params.menuId || '').trim();
+  if (!storeId || !menuId) throw new Error('缺少店家編號或品項 ID');
+  assertMerchantAuthorized(params, storeId);
+
+  const menuSheet = ss.getSheetByName('Menus');
+  const lastRow = menuSheet.getLastRow();
+  if (lastRow <= 1) throw new Error('Menus 資料表為空');
+
+  const rows = menuSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][1]).trim() === storeId && String(rows[i][0]).trim() === menuId) {
+      const nextSoldOut = Boolean(params.soldOut);
+      menuSheet.getRange(i + 2, 9).setValue(nextSoldOut);
+      return { updated: true, storeId: storeId, menuId: menuId, soldOut: nextSoldOut };
+    }
+  }
+  throw new Error('找不到該菜單品項: ' + menuId);
+}
+
+function upsertSingleMenuItemOnServer(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const item = params.item || {};
+  const cleanName = String(item.name || '').trim();
+  if (!storeId || !cleanName) throw new Error('缺少店家編號或餐點名稱');
+  assertMerchantAuthorized(params, storeId);
+
+  const menuId = String(item.id || generateStableMenuItemIdOnServer(storeId, cleanName)).trim();
+  let cleanOpts = (item.options && typeof item.options === 'object' && !Array.isArray(item.options)) ? item.options : {};
+  if (cleanOpts['__soldOut'] !== undefined) delete cleanOpts['__soldOut'];
+
+  const rowValues = [
+    menuId,
+    storeId,
+    cleanName,
+    Math.max(0, Number(item.price) || 0),
+    String(item.tag || '').trim(),
+    String(item.category || '招牌主餐').trim(),
+    String(item.image || '').trim(),
+    JSON.stringify(cleanOpts),
+    Boolean(item.soldOut)
+  ];
+
+  const menuSheet = ss.getSheetByName('Menus');
+  const lastRow = menuSheet.getLastRow();
+  if (lastRow > 1) {
+    const rows = menuSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][1]).trim() === storeId && (String(rows[i][0]).trim() === menuId || String(rows[i][2]).trim() === cleanName)) {
+        rowValues[0] = String(rows[i][0]).trim() || menuId;
+        menuSheet.getRange(i + 2, 1, 1, 9).setValues([rowValues]);
+        return { updated: true, storeId: storeId, menuId: rowValues[0] };
+      }
+    }
+  }
+  menuSheet.appendRow(rowValues);
+  return { updated: true, storeId: storeId, menuId: menuId };
+}
+
+function deleteSingleMenuItemOnServer(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const menuId = String(params.menuId || '').trim();
+  if (!storeId || !menuId) throw new Error('缺少店家編號或品項 ID');
+  assertMerchantAuthorized(params, storeId);
+
+  const menuSheet = ss.getSheetByName('Menus');
+  const lastRow = menuSheet.getLastRow();
+  if (lastRow <= 1) return { deleted: false };
+
+  const rows = menuSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][1]).trim() === storeId && String(rows[i][0]).trim() === menuId) {
+      menuSheet.deleteRow(i + 2);
+      return { deleted: true, storeId: storeId, menuId: menuId };
+    }
+  }
+  return { deleted: false, storeId: storeId, menuId: menuId };
+}
+
+/**
+ * 【動態餐廳與校區管理 A6】支援修改餐廳名稱、分類、校區、圖示、營業時間，以及新增與刪除餐廳
+ */
+function saveStoreProfileOnServer(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const storeSheet = ss.getSheetByName('Stores');
+  const range = storeSheet.getDataRange();
+  const rows = range.getValues();
+  let found = false;
+
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === storeId) {
+      if (params.campus !== undefined && String(params.campus).trim()) {
+        rows[i][1] = String(params.campus).trim();
+      }
+      if (params.name !== undefined && String(params.name).trim()) {
+        rows[i][2] = String(params.name).trim();
+      }
+      if (params.category !== undefined && String(params.category).trim()) {
+        rows[i][3] = String(params.category).trim();
+      }
+      storeSheet.getRange(i + 1, 1, 1, rows[i].length).setValues([rows[i]]);
+      found = true;
+      break;
+    }
+  }
+  if (!found) throw new Error('找不到店家: ' + storeId);
+
+  const props = PropertiesService.getScriptProperties();
+  let customMetaMap = {};
+  try { customMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
+  customMetaMap[storeId] = {
+    ...(customMetaMap[storeId] || {}),
+    icon: params.icon !== undefined ? String(params.icon).trim() : (customMetaMap[storeId]?.icon || ''),
+    openTime: params.openTime !== undefined ? String(params.openTime).trim() : (customMetaMap[storeId]?.openTime || '10:30'),
+    closeTime: params.closeTime !== undefined ? String(params.closeTime).trim() : (customMetaMap[storeId]?.closeTime || '19:30')
+  };
+  props.setProperty('STORE_CUSTOM_META', JSON.stringify(customMetaMap));
+
+  return { updated: true, storeId: storeId };
+}
+
+function createNewStoreOnServer(ss, params) {
+  const name = String(params.name || '').trim();
+  const campus = String(params.campus || '雙溪校區').trim();
+  const category = String(params.category || '人氣特餐・便當').trim();
+  const icon = String(params.icon || '🍱').trim();
+  if (!name) throw new Error('請輸入新餐廳名稱');
+
+  const storeSheet = ss.getSheetByName('Stores');
+  const rows = storeSheet.getDataRange().getValues();
+  let maxNum = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const m = String(rows[i][0] || '').match(/^S(\d+)$/i);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  }
+  const nextId = 'S' + String(maxNum + 1).padStart(2, '0');
+  const newStoreRow = [
+    nextId, campus, name, category, 20, 0, 4, true, 'none', '無優惠', 0, 120, 4.8, 1, 4
+  ];
+  storeSheet.appendRow(newStoreRow);
+
+  const props = PropertiesService.getScriptProperties();
+  let customMetaMap = {};
+  try { customMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
+  customMetaMap[nextId] = {
+    icon: icon,
+    openTime: String(params.openTime || '10:30').trim(),
+    closeTime: String(params.closeTime || '19:30').trim()
+  };
+  props.setProperty('STORE_CUSTOM_META', JSON.stringify(customMetaMap));
+
+  let deletedMap = {};
+  try { deletedMap = JSON.parse(props.getProperty('DELETED_STORE_IDS') || '{}'); } catch (e) {}
+  if (deletedMap[nextId]) {
+    delete deletedMap[nextId];
+    props.setProperty('DELETED_STORE_IDS', JSON.stringify(deletedMap));
+  }
+
+  return {
+    created: true,
+    store: {
+      id: nextId,
+      campus: campus,
+      name: name,
+      category: category,
+      icon: icon,
+      openTime: customMetaMap[nextId].openTime,
+      closeTime: customMetaMap[nextId].closeTime,
+      isOpen: true,
+      maxCapacityPer15Min: 20,
+      basePrepMinutes: 4,
+      avgPrepMinutes: 4,
+      cutleryPrice: 1,
+      promoMode: 'none',
+      promoText: '無優惠',
+      promoDiscount: 0,
+      rating: 4.8,
+      menus: []
+    }
+  };
+}
+
+function deleteStoreOnServer(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  if (!storeId) throw new Error('缺少店家編號');
+  assertMerchantAuthorized(params, storeId);
+
+  const storeSheet = ss.getSheetByName('Stores');
+  const lastRow = storeSheet.getLastRow();
+  if (lastRow > 1) {
+    const rows = storeSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (String(rows[i][0]).trim() === storeId) {
+        storeSheet.deleteRow(i + 2);
+      }
+    }
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  let deletedMap = {};
+  try { deletedMap = JSON.parse(props.getProperty('DELETED_STORE_IDS') || '{}'); } catch (e) {}
+  deletedMap[storeId] = Date.now();
+  props.setProperty('DELETED_STORE_IDS', JSON.stringify(deletedMap));
+
+  return { deleted: true, storeId: storeId };
 }
 
 function runTrafficSimulation(ss, params) {

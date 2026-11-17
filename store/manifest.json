@@ -1,0 +1,25 @@
+{
+  "name": "MealFlow POS 店家營運系統",
+  "short_name": "MealFlow POS",
+  "description": "MealFlow 平板收銀、廚房控單 (KDS) 與營運分析系統",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0F172A",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {
+      "src": "../logo-icon.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "../logo-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
