@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * MealFlow 學餐智慧點餐與全螢幕平板收銀系統 - 雲端後端引擎 (Google Apps Script)
+ * MealFlow - 雲端後端引擎 (Google Apps Script)
  * ============================================================================
  * 核心架構與資安升級：
  * 1. 常數時間比對 (Constant-Time Comparison) + 4~8 碼店務 PIN + 綁定 storeId 之 HMAC Session Token
@@ -13,7 +13,7 @@
 
 const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
 const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V14_0';
-const BRAND_NAME = 'MealFlow 學餐智慧點餐';
+const BRAND_NAME = 'MealFlow';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500;
 const SESSION_TTL_MS = 8 * 3600 * 1000; // 店務 Session Token 效期 8 小時
@@ -1332,9 +1332,9 @@ function saveLineDevConfig(ss, params) {
 function handleManualLinePush(ss, params) {
   const flexMeta = {
     storeId: params.storeId || '',
-    title: params.title || '東吳學餐通知',
+    title: params.title || (BRAND_NAME + ' 通知'),
     pickupNumber: params.pickupNumber || '',
-    storeName: params.storeName || '東吳學餐',
+    storeName: params.storeName || BRAND_NAME,
     statusText: params.statusText || '即時通知',
     orderUrl: params.orderUrl || 'https://yangbrian01.github.io/scu.meal/order/'
   };
@@ -1430,6 +1430,43 @@ function parseMenuRowOptionsAndSoldOut(menuRowObj) {
   return { parsedOptions, isSoldOut: explicitSoldOut };
 }
 
+function isCorruptedOrMockOrderOnServer(o) {
+  if (!o) return true;
+  if (o.isSeedSample) return true;
+  const oid = String(o.orderId || '');
+  if (oid.indexOf('ORD-DEMO-') === 0 || /^ORD-\d+$/.test(oid)) return true;
+  const pNum = String(o.pickupNumber || '');
+  if (/^[SCP]\d{3}$/.test(pNum)) return true;
+  const pm = String(o.paymentMethod || '');
+  if (pm.indexOf('立即製作') >= 0 || pm.indexOf('預訂') >= 0) return true;
+  return false;
+}
+
+function buildStoreQueueProgressMap(ordersList) {
+  const todayStr = getTodayTaipeiStr();
+  const map = {};
+  (ordersList || []).forEach(o => {
+    if (!o || isCorruptedOrMockOrderOnServer(o)) return;
+    if (String(o.status || '').indexOf('已取消') >= 0) return;
+    if (normalizeSheetDateStr(o.pickupDate) !== todayStr) return;
+    const sid = String(o.storeId || '');
+    if (!sid) return;
+    if (!map[sid]) {
+      map[sid] = { readyNumbers: [], cookingOrderIds: [], latestCalledNumber: '' };
+    }
+    if (o.status === '可取餐') {
+      map[sid].readyNumbers.push(String(o.pickupNumber));
+      if (!map[sid].latestCalledNumber) map[sid].latestCalledNumber = String(o.pickupNumber);
+    } else if (o.status === '製作中') {
+      map[sid].cookingOrderIds.push(String(o.orderId));
+    }
+  });
+  Object.keys(map).forEach(sid => {
+    map[sid].cookingOrderIds.reverse(); // 由先下單到後下單排序
+  });
+  return map;
+}
+
 function getInitBundle(ss, params, persistQueueUpdate = false) {
   const props = PropertiesService.getScriptProperties();
   let simOffsets = {};
@@ -1437,13 +1474,15 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   try { simOffsets = JSON.parse(props.getProperty('SIM_QUEUE_OFFSETS') || '{}'); } catch (e) {}
   try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
 
-  // 滑動視窗讀取最近 200 筆訂單以精算佇列負載與時段配額
+  // 滑動視窗讀取最近 200 筆訂單，並自動排除舊版損壞或壓力測試假單
   const rawTailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 200)
     .reverse()
-    .map(enrichOrderObject);
+    .map(enrichOrderObject)
+    .filter(o => o && !isCorruptedOrMockOrderOnServer(o));
 
   const queueStatsMap = recomputeAllStoreQueuesInMemory(ss, rawTailOrders, persistQueueUpdate);
   const slotQuotaMap = buildSlotQuotaMap(rawTailOrders);
+  const storeQueueProgressMap = buildStoreQueueProgressMap(rawTailOrders);
 
   // 【最小權限原則】若為已授權之店家後台，回傳該店（或全區）訂單；若為未登入之學生端，僅回傳該學生傳入的 myOrderIds 訂單！
   const session = parseVerifiedMerchantSession(params);
@@ -1540,6 +1579,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   return {
     stores: enrichedStores,
     slotQuotaMap: slotQuotaMap,
+    storeQueueProgressMap: storeQueueProgressMap,
     recentOrders: clientOrders,
     orders: clientOrders,
     aiRecommendations: aiRecommendations,
@@ -1547,6 +1587,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     bundle: {
       stores: enrichedStores,
       slotQuotaMap: slotQuotaMap,
+      storeQueueProgressMap: storeQueueProgressMap,
       aiRecommendations: aiRecommendations,
       orders: clientOrders,
       recentOrders: clientOrders,

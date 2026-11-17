@@ -1,15 +1,15 @@
 /**
  * ============================================================================
- * MealFlow 學餐智慧點餐與全螢幕平板 POS 系統 - 前端核心引擎
+ * MealFlow - 前端核心引擎
  * Part 1 / 2：ISO/IEC 18004 真實 QR 編碼器、鏡頭掃碼核銷、時段配額模型、安全 PIN 閘門、最小權限同步
  * ============================================================================
  */
 
 const BRAND_CONFIG = {
   name: 'MealFlow',
-  subtitle: '學餐智慧點餐',
-  fullTitle: 'MealFlow 學餐智慧點餐與 POS 系統',
-  posTitle: 'MealFlow 學餐智慧 POS 系統',
+  subtitle: 'MealFlow',
+  fullTitle: 'MealFlow',
+  posTitle: 'MealFlow POS',
   merchantTitle: 'MealFlow 特約商店'
 };
 
@@ -589,14 +589,26 @@ function addOrderToMyHistory(orderId) {
   } catch (e) {}
 }
 
+function isCorruptedOrMockOrder(o) {
+  if (!o) return true;
+  if (o.isSeedSample) return true;
+  const oid = String(o.orderId || '');
+  if (oid.startsWith('ORD-DEMO-') || /^ORD-\d+$/.test(oid)) return true;
+  const pNum = String(o.pickupNumber || '');
+  if (/^[SCP]\d{3}$/.test(pNum)) return true;
+  // 舊版壓力測試或錯位寫入造成 paymentMethod 變成取餐時間字串 (如 ⚡ 立即製作)
+  const pm = String(o.paymentMethod || '');
+  if (pm.includes('立即製作') || pm.includes('預訂')) return true;
+  return false;
+}
+
 function loadCachedOrders() {
   try {
     const raw = localStorage.getItem('mealflow_orders_v14') || localStorage.getItem('mealflow_orders_v13');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        // 自動過濾舊版殘留之壓力測試假單 (isSeedSample / ORD-DEMO-)，防止假單永久滯留污染正式環境
-        const cleanList = parsed.filter(o => !o?.isSeedSample && !String(o?.orderId || '').startsWith('ORD-DEMO-'));
+        const cleanList = parsed.filter(o => !isCorruptedOrMockOrder(o));
         if (cleanList.length !== parsed.length) {
           localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanList.slice(0, 200)));
         }
@@ -609,17 +621,13 @@ function loadCachedOrders() {
 
 function saveCachedOrders(orders) {
   try {
-    const cleanOrders = (orders || []).filter(o => !o?.isSeedSample && !String(o?.orderId || '').startsWith('ORD-DEMO-'));
+    const cleanOrders = (orders || []).filter(o => !isCorruptedOrMockOrder(o));
     localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanOrders.slice(0, 200)));
   } catch (e) {}
 }
 
-function buildSandboxDemoOrders() {
-  return [];
-}
-
 function clearSampleOrdersData() {
-  state.orders = state.orders.filter(o => !o.isSeedSample && !String(o.orderId || '').startsWith('ORD-DEMO-'));
+  state.orders = state.orders.filter(o => !isCorruptedOrMockOrder(o));
   saveCachedOrders(state.orders);
   enrichStoresAndAi();
   renderMerchantView();
@@ -1097,6 +1105,27 @@ function encodeRealIsoQrMatrix(rawText) {
         }
       }
     }
+    // N3: 1:1:3:1:1 類定位圖形比例懲罰 (搭配前後 4 格留白)
+    const isN3Match = (arr, idx) => {
+      if (idx + 7 > size) return false;
+      if (!(arr[idx] && !arr[idx + 1] && arr[idx + 2] && arr[idx + 3] && arr[idx + 4] && !arr[idx + 5] && arr[idx + 6])) {
+        return false;
+      }
+      const leftWhite = idx >= 4 && !arr[idx - 1] && !arr[idx - 2] && !arr[idx - 3] && !arr[idx - 4];
+      const rightWhite = idx + 11 <= size && !arr[idx + 7] && !arr[idx + 8] && !arr[idx + 9] && !arr[idx + 10];
+      return leftWhite || rightWhite;
+    };
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c <= size - 7; c++) {
+        if (isN3Match(mat[r], c)) penalty += 40;
+      }
+    }
+    for (let c = 0; c < size; c++) {
+      const colArr = mat.map(row => row[c]);
+      for (let r = 0; r <= size - 7; r++) {
+        if (isN3Match(colArr, r)) penalty += 40;
+      }
+    }
     // N4: 深色模組比例偏離 50%
     let darkCount = 0;
     for (let r = 0; r < size; r++) {
@@ -1128,11 +1157,15 @@ function encodeRealIsoQrMatrix(rawText) {
   return bestMatrix || matrix;
 }
 
-function generateDeterministicQrSvg(dataString, size = 104) {
+function generateDeterministicQrSvg(dataString, targetSize = 188) {
   const matrix = encodeRealIsoQrMatrix(String(dataString || 'MEALFLOW'));
   const gridSize = matrix.length;
   const quietZone = 4;
   const totalView = gridSize + quietZone * 2;
+
+  // 強制使用整數格寬 (Integer Module Scale)，避免非整數像素在 crispEdges 下造成寬度不均與鋸齒，大幅提升手機相機與平板掃描成功率
+  const scale = Math.max(3, Math.round(targetSize / totalView));
+  const exactSize = totalView * scale;
 
   let pathData = '';
   for (let r = 0; r < gridSize; r++) {
@@ -1143,7 +1176,7 @@ function generateDeterministicQrSvg(dataString, size = 104) {
     }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalView} ${totalView}" width="${size}" height="${size}" shape-rendering="crispEdges" style="display:block; background:#FFFFFF; border-radius:6px;"><path d="${pathData}" fill="#0F172A"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalView} ${totalView}" width="${exactSize}" height="${exactSize}" shape-rendering="crispEdges" style="display:block; background:#FFFFFF; max-width:100%; height:auto;"><path d="${pathData}" fill="#000000"/></svg>`;
 }
 
 /**
@@ -1420,12 +1453,42 @@ function isStorePromoActive(store, isReserveMode = false, reserveTimeStr = '') {
   return true;
 }
 
-// ==================== 震動、叮咚響鈴、語音播報與本機推播紀錄匣 ====================
-function playPickupChime() {
+// ==================== 震動、叮咚響鈴、語音播報、平板防休眠與本機推播紀錄匣 ====================
+let sharedAudioContext = null;
+let screenWakeLockSentinel = null;
+
+function ensureAudioContextUnlocked() {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    if (!AudioCtx) return null;
+    if (!sharedAudioContext) {
+      sharedAudioContext = new AudioCtx();
+    }
+    if (sharedAudioContext.state === 'suspended') {
+      sharedAudioContext.resume().catch(() => {});
+    }
+    return sharedAudioContext;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function requestMerchantWakeLock() {
+  if (!('wakeLock' in navigator) || state.routeMode !== 'store' || !state.isMerchantUnlocked) return;
+  try {
+    if (!screenWakeLockSentinel) {
+      screenWakeLockSentinel = await navigator.wakeLock.request('screen');
+      screenWakeLockSentinel.addEventListener('release', () => {
+        screenWakeLockSentinel = null;
+      });
+    }
+  } catch (e) {}
+}
+
+function playPickupChime() {
+  try {
+    const ctx = ensureAudioContextUnlocked();
+    if (!ctx) return;
     const playTone = (freq, startTime, duration) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -1540,7 +1603,7 @@ function recordLocalPushNotificationLog(eventType, title, message, order = null)
   const targetEmail = (order && order.customerEmail) || state.lineProfile.email || '';
   const storeObj = order ? state.stores.find(s => s.id === order.storeId) : state.stores.find(s => s.id === state.selectedStoreId);
   const usingStoreCustomLine = Boolean(storeObj && storeObj.useCustomLineOa);
-  const senderLabel = usingStoreCustomLine ? `${storeObj.name} 官方帳號` : '學餐預設官方通知';
+  const senderLabel = usingStoreCustomLine ? `${storeObj.name} 官方帳號` : 'MealFlow 官方通知';
 
   const channels = [];
   if (targetUserId && targetUserId.startsWith('U')) channels.push(`LINE (${targetUserId.slice(0, 8)}...)`);
@@ -1581,7 +1644,7 @@ function openLineBindModal() {
       statusBanner.innerHTML = `
         <div style="background:#DCFCE7; border:1.5px solid #22C55E; border-radius:10px; padding:10px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
           <div>
-            <div style="font-size:0.84rem; font-weight:900; color:#166534;">✅ 已啟用通知：${escapeHtml(state.lineProfile.lineDisplayName || '東吳同學')}</div>
+            <div style="font-size:0.84rem; font-weight:900; color:#166534;">✅ 已啟用通知：${escapeHtml(state.lineProfile.lineDisplayName || '顧客')}</div>
             ${state.lineProfile.lineUserId ? `<div style="font-size:0.72rem; color:#15803D; font-family:monospace;">識別碼: ${escapeHtml(state.lineProfile.lineUserId)}</div>` : ''}
             ${state.lineProfile.email ? `<div style="font-size:0.72rem; color:#15803D;">📧 信箱: ${escapeHtml(state.lineProfile.email)}</div>` : ''}
           </div>
@@ -1666,7 +1729,7 @@ async function checkLineOAuthCallbackOnLoad() {
 }
 
 function saveLineBindConfig() {
-  const name = document.getElementById('lineInputName')?.value.trim() || '東吳同學';
+  const name = document.getElementById('lineInputName')?.value.trim() || '顧客';
   const email = document.getElementById('lineInputEmail')?.value.trim() || '';
   const rawUid = document.getElementById('lineInputId')?.value.trim() || '';
 
@@ -2197,6 +2260,7 @@ async function flushPendingMerchantOfflineOrders() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     state.pollFailureCount = 0;
+    requestMerchantWakeLock();
     syncCloud(false);
     scheduleAdaptiveCloudPoll();
   } else {
@@ -2217,6 +2281,14 @@ window.addEventListener('offline', () => {
 });
 
 window.addEventListener('DOMContentLoaded', () => {
+  // 使用者首次點擊或觸控畫面時自動解鎖 Web Audio 與平板防休眠 Wake Lock
+  const unlockMediaAndWakeLock = () => {
+    ensureAudioContextUnlocked();
+    requestMerchantWakeLock();
+  };
+  document.addEventListener('pointerdown', unlockMediaAndWakeLock, { passive: true });
+  document.addEventListener('keydown', unlockMediaAndWakeLock, { passive: true });
+
   ensureSharedModalsMounted();
   detectRouteFromUrl();
   state.orders.forEach(o => {
@@ -2302,6 +2374,9 @@ function applyCloudBundle(data) {
   if (payload.slotQuotaMap && typeof payload.slotQuotaMap === 'object') {
     state.slotQuotaMap = payload.slotQuotaMap;
   }
+  if (payload.storeQueueProgressMap && typeof payload.storeQueueProgressMap === 'object') {
+    state.storeQueueProgressMap = payload.storeQueueProgressMap;
+  }
 
   const nowTs = Date.now();
   const isRecentLocalStoreEdit = (nowTs - state.lastLocalStoreConfigUpdateTs) < 12000;
@@ -2352,14 +2427,16 @@ function applyCloudBundle(data) {
     const mergedMap = new Map();
 
     cloudOrders.forEach(rawOrd => {
+      if (isCorruptedOrMockOrder(rawOrd)) return;
       const o = sanitizeIncomingOrder(rawOrd);
+      if (isCorruptedOrMockOrder(o)) return;
       const deletedTs = state.locallyDeletedOrderIds[o.orderId];
       if (deletedTs && (nowTs - deletedTs < 45000)) return;
       mergedMap.set(o.orderId, o);
     });
 
     state.orders.forEach(localOrd => {
-      if (localOrd.isSeedSample || String(localOrd.orderId || '').startsWith('ORD-DEMO-')) return;
+      if (isCorruptedOrMockOrder(localOrd)) return;
       const deletedTs = state.locallyDeletedOrderIds[localOrd.orderId];
       if (deletedTs && (nowTs - deletedTs < 45000)) return;
 
@@ -3072,13 +3149,16 @@ function renderPortalView() {
   const box = document.getElementById('portalContentBox') || document.getElementById('viewPortal');
   if (!box) return;
   box.innerHTML = `
-    <div style="text-align:center; padding: 14px 0 22px;">
-      <div style="display:inline-block; background:#EEF2FF; color:#4338CA; font-weight:800; font-size:0.78rem; padding:4px 12px; border-radius:999px; margin-bottom:10px;">
+    <div style="text-align:center; padding: 18px 0 22px;">
+      <div style="display:flex; justify-content:center; align-items:center; gap:12px; margin-bottom:12px;">
+        <img src="./logo-icon.jpg" alt="MealFlow Icon" style="width:52px; height:52px; object-fit:contain; border-radius:12px;">
+        <img src="./logo-text.png" alt="MealFlow" style="height:38px; width:auto; object-fit:contain;">
+      </div>
+      <div style="display:inline-block; background:#EEF2FF; color:#4338CA; font-weight:800; font-size:0.78rem; padding:4px 12px; border-radius:999px; margin-bottom:8px;">
         🛡️ ISO/IEC 18004 真實 QR 核銷 × 時段配額控管 × KDS 鏡頭掃碼 × 會計級交班 Z-Report
       </div>
-      <h1 style="font-size:1.55rem; font-weight:900; margin-bottom:8px;">${escapeHtml(BRAND_CONFIG.fullTitle)}</h1>
       <p style="font-size:0.86rem; color:var(--text-secondary); max-width:640px; margin:0 auto;">
-        整合<strong>學生線上掃碼點餐 (<code>/order/</code>)</strong>、<strong>標準可掃描防偽 QR 電子憑證</strong>，以及<strong>全螢幕平板 POS + KDS 鏡頭掃碼核銷 + 會計日結後台 (<code>/store/</code>)</strong>。
+        整合<strong>線上掃碼點餐 (<code>/order/</code>)</strong>、<strong>標準可掃描防偽 QR 電子憑證</strong>，以及<strong>全螢幕平板 POS + KDS 鏡頭掃碼核銷 + 會計日結後台 (<code>/store/</code>)</strong>。
       </p>
     </div>
 
@@ -3768,7 +3848,7 @@ function setCheckoutMode(field, val) {
 }
 /**
  * ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業企業版前端核心引擎 (Commercial v14.0 Pro)
+ * MealFlow - 前端核心引擎
  * Part 2A：時段配額購物車、白名單計價結帳、ISO QR 電子憑證、POS 收銀與會計級 Z-Report
  * ============================================================================
  */
@@ -4318,20 +4398,20 @@ async function askAiConcierge(presetQuery) {
   if (/^(你好|您好|哈囉|嗨|hi|hello|hey|在嗎|你是誰|測試|早安|午安|晚安|幹嘛|能做什麼)[！!？?\s]*$/i.test(q)) {
     const storeNames = activeStoresPool.map(s => `${s.name}(約${s.avgPrepMinutes}分)`).join('、');
     appendAiAssistantReply({
-      reasoning: `👋 你好！我是東吳學餐智慧選餐顧問。目前「${state.campus}」正常營業中的餐廳有：${storeNames}。你可以直接問我：「推薦 $100 內不排隊的餐」、「想吃辣的麵」、「哪家有送優惠？」或「無痕模式怎麼找回訂單？」，我會自動幫你排除已售罄品項與休息中店家！`,
+      reasoning: `👋 你好！我是 MealFlow 智慧選餐顧問。目前「${state.campus}」正常營業中的餐廳有：${storeNames}。你可以直接問我：「推薦 $100 內不排隊的餐」、「想吃辣的麵」、「哪家有送優惠？」或「無痕模式怎麼找回訂單？」，我會自動幫你排除已售罄品項與休息中店家！`,
       storeId: fastestStore.id,
       menuId: firstAvailDish.id,
-      engine: '智慧語意選餐顧問'
+      engine: 'MealFlow 選餐顧問'
     });
     return;
   }
 
   if (q.includes('預訂') || q.includes('預約') || q.includes('現金') || q.includes('付錢') || q.includes('付款') || q.includes('餐具') || q.includes('找回') || q.includes('查單') || q.includes('無痕')) {
     appendAiAssistantReply({
-      reasoning: `📋 學餐取餐與查單說明：1️⃣ 為保護點餐隱私，跨裝置或無痕視窗查單請輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」雙重驗證找回。2️⃣ 每張電子取餐單皆附有標準可掃描 ISO QR Code 供櫃檯鏡頭秒速核銷。3️⃣ 離峰優惠限「立即製作」或「非 11:45~12:45 尖峰之預訂時段」使用！`,
+      reasoning: `📋 取餐與查單說明：1️⃣ 為保護點餐隱私，跨裝置或無痕視窗查單請輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」雙重驗證找回。2️⃣ 每張電子取餐單與現場小票皆附有標準可掃描 ISO QR Code 供手機追蹤進度與櫃檯鏡頭秒速核銷。3️⃣ 離峰優惠限「立即製作」或「非 11:45~12:45 尖峰之預訂時段」使用！`,
       storeId: fastestStore.id,
       menuId: firstAvailDish.id,
-      engine: '學餐規則知識庫'
+      engine: 'MealFlow 規則知識庫'
     });
     return;
   }
@@ -4676,16 +4756,50 @@ function renderSingleTicketView() {
 
   const verCodeDisplay = formatVerificationCodeDisplay(o);
   const isServerVerified = isOrderServerVerified(o);
-  const shareUrl = `${window.location.origin}${getOrderPageUrl('id=' + encodeURIComponent(o.orderId))}`;
-  // 真實可掃描之 ISO/IEC 18004 QR Code 內容：格式為 MEALFLOW|核銷碼|取餐號|訂單號
-  const qrPayloadText = isServerVerified ? `MEALFLOW|${verCodeDisplay}|${o.pickupNumber}|${o.orderId}` : `${o.orderId}|${o.pickupNumber}`;
-  const inlineQrSvg = generateDeterministicQrSvg(qrPayloadText, 102);
+  const shareUrl = `${window.location.origin}${getOrderPageUrl('id=' + encodeURIComponent(o.orderId) + (isServerVerified ? '&v=' + encodeURIComponent(verCodeDisplay) : ''))}`;
+  // 真實可掃描之 ISO/IEC 18004 QR Code 內容：直接編碼為訂單追蹤網址 shareUrl，讓顧客用手機相機一掃即開網頁，同時店員 KDS 掃描亦可解析核銷
+  const qrPayloadText = shareUrl;
+  const inlineQrSvg = generateDeterministicQrSvg(qrPayloadText, 188);
 
   const isCompleted = o.status === '已完成';
   const isReady = o.status === '可取餐';
   const isScheduled = o.status === '已接單待排程';
   const isPendingPay = o.status === '待付款確認';
   const isCancelled = o.status && o.status.includes('已取消');
+  const isCooking = o.status === '製作中';
+
+  // 計算此店家目前叫號進度與前方等候單數 (結合雲端 storeQueueProgressMap 與本機訂單)
+  const storeObj = state.stores.find(s => s.id === o.storeId);
+  const cloudProg = (state.storeQueueProgressMap && state.storeQueueProgressMap[o.storeId]) || null;
+  const todayStoreActive = state.orders.filter(ord =>
+    ord.storeId === o.storeId &&
+    normalizeDateStr(ord.pickupDate) === normalizeDateStr(o.pickupDate) &&
+    !String(ord.status).includes('已取消')
+  );
+  const readyNumsLocal = todayStoreActive.filter(ord => ord.status === '可取餐').map(ord => String(ord.pickupNumber));
+  const cookingOrdersLocal = todayStoreActive.filter(ord => ord.status === '製作中');
+
+  const readyNumbersList = (cloudProg && Array.isArray(cloudProg.readyNumbers) && cloudProg.readyNumbers.length > 0)
+    ? cloudProg.readyNumbers
+    : readyNumsLocal;
+  const latestCalledNum = readyNumbersList[0] || (cloudProg && cloudProg.latestCalledNumber) || (cookingOrdersLocal[0] ? cookingOrdersLocal[0].pickupNumber : '--');
+
+  let ordersAheadCount = 0;
+  if (isCooking) {
+    if (cloudProg && Array.isArray(cloudProg.cookingOrderIds) && cloudProg.cookingOrderIds.length > 0) {
+      const idxInQueue = cloudProg.cookingOrderIds.indexOf(o.orderId);
+      ordersAheadCount = idxInQueue >= 0 ? idxInQueue : Math.max(0, cloudProg.cookingOrderIds.length - 1);
+    } else {
+      const myNumVal = parseInt(String(o.pickupNumber || '0').replace(/\D/g, ''), 10) || 0;
+      ordersAheadCount = cookingOrdersLocal.filter(ord => {
+        if (ord.orderId === o.orderId) return false;
+        const otherVal = parseInt(String(ord.pickupNumber || '0').replace(/\D/g, ''), 10) || 0;
+        return otherVal > 0 && myNumVal > 0 ? otherVal < myNumVal : (Number(ord.createdAtTs || 0) < Number(o.createdAtTs || 0));
+      }).length;
+    }
+  }
+  const basePrepMin = storeObj ? (Number(storeObj.basePrepMinutes) || 4) : 4;
+  const estRemainingMins = isReady ? 0 : Math.max(1, Math.min(45, basePrepMin + ordersAheadCount * 2 - getOrderElapsedMinutes(o)));
 
   const step1Class = isCancelled ? '' : 'done';
   const step2Class = isCancelled ? '' : (isScheduled ? 'active' : (o.status === '製作中' || isReady || isCompleted ? 'done' : ''));
@@ -4740,7 +4854,30 @@ function renderSingleTicketView() {
 
       <div style="font-size:0.84rem; color:var(--text-secondary); margin-top:12px; font-weight:700;">您的專屬取餐流水號</div>
       <div class="ticket-Serial" style="color:${statusColor};">#${escapeHtml(o.pickupNumber)}</div>
-      <div style="font-size:1rem; font-weight:900; color:${statusColor}; margin-bottom:6px;">${escapeHtml(statusHeadline)}</div>
+      <div style="font-size:1rem; font-weight:900; color:${statusColor}; margin-bottom:10px;">${escapeHtml(statusHeadline)}</div>
+
+      ${!isCompleted && !isCancelled ? `
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; background:#F8FAFC; border:1.5px solid #E2E8F0; border-radius:14px; padding:12px 10px; margin:10px 0;">
+          <div>
+            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">📢 目前叫號</div>
+            <div style="font-size:1.25rem; font-weight:950; color:var(--green); margin-top:2px;">
+              ${latestCalledNum !== '--' ? `#${escapeHtml(latestCalledNum)}` : '準備中'}
+            </div>
+          </div>
+          <div style="border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">🍳 前方等候</div>
+            <div style="font-size:1.25rem; font-weight:950; color:${isReady ? 'var(--green)' : 'var(--brand-dark)'}; margin-top:2px;">
+              ${isReady ? '輪到您了' : isScheduled ? '預約排程' : `${ordersAheadCount} 單`}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">⏱️ 預估剩餘</div>
+            <div style="font-size:1.25rem; font-weight:950; color:var(--indigo); margin-top:2px;">
+              ${isReady ? '立即取餐' : isScheduled ? escapeHtml(o.pickupTime) : `約 ${estRemainingMins} 分`}
+            </div>
+          </div>
+        </div>
+      ` : ''}
 
       <div class="hmac-verify-badge-box ${isServerVerified ? '' : 'unverified-warning'}">
         <div style="text-align:left;">
@@ -4816,12 +4953,12 @@ function renderSingleTicketView() {
         </div>
       </div>
 
-      <div style="display:flex; align-items:center; justify-content:center; gap:16px; background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:14px; padding:14px; margin-bottom:16px; flex-wrap:wrap;">
-        <div class="svg-qr-box" title="ISO/IEC 18004 標準核銷條碼">${inlineQrSvg}</div>
+      <div style="display:flex; align-items:center; justify-content:center; gap:18px; background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:14px; padding:16px; margin-bottom:16px; flex-wrap:wrap;">
+        <div class="svg-qr-box" title="ISO/IEC 18004 標準追蹤與核銷條碼">${inlineQrSvg}</div>
         <div style="text-align:left; max-width:270px;">
-          <div style="font-size:0.85rem; font-weight:900; color:var(--text-primary); margin-bottom:4px;">📷 標準光學核銷 QR Code</div>
-          <p style="font-size:0.76rem; color:var(--text-secondary); line-height:1.4; margin-bottom:8px;">
-            支援櫃檯平板鏡頭或掃碼槍直接光學掃描核銷，亦可複製專屬憑證連結保存。
+          <div style="font-size:0.9rem; font-weight:900; color:var(--text-primary); margin-bottom:4px;">📷 顧客追蹤 & 櫃檯核銷 QR Code</div>
+          <p style="font-size:0.78rem; color:var(--text-secondary); line-height:1.45; margin-bottom:10px;">
+            手機相機直接掃描即可<strong>開啟此訂單即時追蹤網頁</strong>；取餐時出示供店家平板鏡頭或掃碼槍掃描即可秒速核銷。
           </p>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="copyOrderUrl(${escapeJsAttr(shareUrl)})">📋 複製訂單網址</button>
@@ -5536,12 +5673,14 @@ async function submitMerchantPosOrder() {
       syncLocalSeqWithAuthoritativeNumber(store.id, pickupDateVal, draftOrder.pickupNumber);
       saveCachedOrders(state.orders);
       renderMerchantView();
-      showToast(`🖨️ 櫃檯出單成功！單號 #${draftOrder.pickupNumber} (核銷碼 ${draftOrder.verificationCode})${changeAmount > 0 ? `，找零 NT$ ${changeAmount}` : ''}`);
+      openReceiptPrintModal(draftOrder.orderId);
+      showToast(`🖨️ 櫃檯出單成功！單號 #${draftOrder.pickupNumber} (已開啟含顧客追蹤 QR 之小票)${changeAmount > 0 ? `，找零 NT$ ${changeAmount}` : ''}`);
       return;
     }
   } catch (e) {}
 
-  showToast(`⚠️ 門市網路暫時離線：已開立本地暫時單號 #${draftOrder.pickupNumber} (⚠️ 離線待同步)，連線恢復後將自動補發雲端防偽碼！`);
+  openReceiptPrintModal(draftOrder.orderId);
+  showToast(`⚠️ 門市網路暫時離線：已開立單號 #${draftOrder.pickupNumber} 並開啟小票預覽，連線恢復後將自動同步！`);
 }
 
 function isOrderConsiderPaid(order) {
@@ -5678,16 +5817,16 @@ function handleKdsSearchInput(val) {
 }
 
 /**
- * 支援解析「6 碼防偽碼」、「取餐號」、「訂單號」或「MEALFLOW|核銷碼|取餐號|訂單號」QR 掃描字串
+ * 支援解析「訂單追蹤網址 (?id=ORD-...&v=...)」、「6 碼防偽碼」、「取餐號」、「訂單號」或「MEALFLOW|核銷碼|取餐號|訂單號」QR 掃描字串
  */
 function quickVerifyAndCompleteByCode(rawInput) {
   if (!isMerchantSessionValidNow()) {
     checkMerchantSecurityGate();
     return;
   }
-  let raw = String(rawInput ?? document.getElementById('kdsQuickVerifyInput')?.value ?? '').trim().toUpperCase();
+  let raw = String(rawInput ?? document.getElementById('kdsQuickVerifyInput')?.value ?? '').trim();
   if (!raw) {
-    showToast('🛡️ 請輸入或掃描顧客憑證上的 6 碼防偽核銷碼或 QR Code！');
+    showToast('🛡️ 請輸入或掃描顧客憑證上的 QR Code 或 6 碼防偽核銷碼！');
     return;
   }
 
@@ -5695,22 +5834,42 @@ function quickVerifyAndCompleteByCode(rawInput) {
   let candidatePickup = '';
   let candidateOrdId = '';
 
-  if (raw.startsWith('MEALFLOW|') || raw.includes('|')) {
-    const parts = raw.split('|').map(s => s.trim());
-    if (parts[0] === 'MEALFLOW') {
-      candidateVerCode = parts[1] || '';
-      candidatePickup = parts[2] || '';
-      candidateOrdId = parts[3] || '';
-    } else {
-      candidateOrdId = parts[0] || '';
-      candidatePickup = parts[1] || '';
-      candidateVerCode = parts[2] || '';
+  // 1. 優先檢查是否為訂單追蹤網址 (例如 https://.../order/?id=ORD-xxxx&v=XXXXXX)
+  if (/^https?:\/\//i.test(raw) || raw.includes('id=ORD-') || raw.includes('order=')) {
+    try {
+      const urlObj = new URL(raw, window.location.origin);
+      const idParam = (urlObj.searchParams.get('id') || urlObj.searchParams.get('order') || '').trim().toUpperCase();
+      const vParam = (urlObj.searchParams.get('v') || urlObj.searchParams.get('code') || '').trim().toUpperCase();
+      if (idParam) candidateOrdId = idParam;
+      if (vParam) candidateVerCode = vParam;
+    } catch (e) {
+      const mId = raw.match(/[?&](?:id|order)=(ORD-[A-Za-z0-9\-]+)/i);
+      const mV = raw.match(/[?&](?:v|code)=([A-Za-z0-9]{6})/i);
+      if (mId) candidateOrdId = mId[1].toUpperCase();
+      if (mV) candidateVerCode = mV[1].toUpperCase();
     }
-  } else {
-    const clean = raw.replace(/^#/, '');
-    candidateVerCode = clean;
-    candidatePickup = clean;
-    candidateOrdId = clean;
+  }
+
+  // 2. 若非網址，檢查是否為 MEALFLOW|... 分隔字串或純單號/防偽碼
+  if (!candidateOrdId && !candidateVerCode) {
+    const upper = raw.toUpperCase();
+    if (upper.startsWith('MEALFLOW|') || upper.includes('|')) {
+      const parts = upper.split('|').map(s => s.trim());
+      if (parts[0] === 'MEALFLOW') {
+        candidateVerCode = parts[1] || '';
+        candidatePickup = parts[2] || '';
+        candidateOrdId = parts[3] || '';
+      } else {
+        candidateOrdId = parts[0] || '';
+        candidatePickup = parts[1] || '';
+        candidateVerCode = parts[2] || '';
+      }
+    } else {
+      const clean = upper.replace(/^#/, '');
+      candidateVerCode = clean;
+      candidatePickup = clean;
+      candidateOrdId = clean;
+    }
   }
 
   const allStoreOrders = state.orders.filter(o => o.storeId === state.merchantStoreId);
@@ -5764,7 +5923,7 @@ function quickVerifyAndCompleteByCode(rawInput) {
 
 /**
  * 【商業級改造 2】開啟 KDS 平板/手機鏡頭即時光學 QR Code 掃描器
- * 支援原生 BarcodeDetector API 與手動輸入雙重備援
+ * 支援原生 BarcodeDetector API 與 jsQR (Canvas 跨平台解碼引擎，完整相容 iOS Safari / iPad / Firefox / 桌面瀏覽器)
  */
 async function openKdsCameraScannerModal() {
   if (!isMerchantSessionValidNow()) {
@@ -5781,11 +5940,12 @@ async function openKdsCameraScannerModal() {
   body.innerHTML = `
     <div class="qr-scanner-viewport">
       <video id="kdsScannerVideo" autoplay playsinline muted></video>
+      <canvas id="kdsScannerCanvas" style="display:none;"></canvas>
       <div class="qr-scanner-frame"></div>
       <div class="qr-scanner-laser"></div>
     </div>
     <p id="kdsScannerStatusText" style="font-size:0.82rem; font-weight:800; color:var(--text-secondary); text-align:center; margin-bottom:12px;">
-      📷 正在啟動相機鏡頭，請將顧客手機上的電子取餐單 QR Code 對準綠框中央...
+      📷 正在啟動相機鏡頭，請將顧客手機或小票上的取餐單 QR Code 對準綠框中央...
     </p>
     <div style="display:flex; gap:8px;">
       <input type="text" id="kdsModalManualVerifyInput" class="select-input" style="flex:1; font-family:monospace; font-weight:900; text-transform:uppercase;" placeholder="或直接在此輸入 6 碼核銷碼 / 取餐號" onkeydown="if(event.key==='Enter'){ const v=this.value; closeKdsCameraScannerModal(); quickVerifyAndCompleteByCode(v); }">
@@ -5796,10 +5956,11 @@ async function openKdsCameraScannerModal() {
   modal.classList.add('open');
 
   const videoEl = document.getElementById('kdsScannerVideo');
+  const canvasEl = document.getElementById('kdsScannerCanvas');
   const statusEl = document.getElementById('kdsScannerStatusText');
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    if (statusEl) statusEl.innerText = '⚠️ 此裝置瀏覽器不支援直接調用相機，請使用下方輸入框或外接掃碼槍核銷。';
+    if (statusEl) statusEl.innerText = '⚠️ 此瀏覽器環境不支援調用相機（需 HTTPS 安全連線），請使用下方輸入框或外接掃碼槍核銷。';
     return;
   }
 
@@ -5811,24 +5972,57 @@ async function openKdsCameraScannerModal() {
     state.scannerStream = stream;
     if (videoEl) {
       videoEl.srcObject = stream;
+      videoEl.setAttribute('playsinline', 'true');
       await videoEl.play();
     }
 
+    let nativeDetector = null;
     if ('BarcodeDetector' in window) {
-      const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-      if (statusEl) statusEl.innerText = '🟢 光學掃描引擎運作中：請將顧客憑證 QR Code 對準取景框...';
+      try {
+        nativeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (e) {
+        nativeDetector = null;
+      }
+    }
+
+    const hasJsQr = typeof window.jsQR === 'function';
+    const ctx2d = (canvasEl && hasJsQr) ? canvasEl.getContext('2d', { willReadFrequently: true }) : null;
+
+    if (nativeDetector || ctx2d) {
+      if (statusEl) {
+        statusEl.innerText = nativeDetector
+          ? '🟢 原生光學掃描引擎運作中：請將顧客 QR Code 對準取景框...'
+          : '🟢 跨平台光學掃描引擎 (iOS/iPad 相容) 運作中：請將顧客 QR Code 對準取景框...';
+      }
 
       const scanTick = async () => {
         if (!state.scannerStream || !modal.classList.contains('open')) return;
         try {
-          if (videoEl && videoEl.readyState >= 2) {
-            const barcodes = await detector.detect(videoEl);
-            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-              const rawVal = barcodes[0].rawValue;
-              playPickupChime();
-              closeKdsCameraScannerModal();
-              quickVerifyAndCompleteByCode(rawVal);
-              return;
+          if (videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+            if (nativeDetector) {
+              const barcodes = await nativeDetector.detect(videoEl);
+              if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                const rawVal = barcodes[0].rawValue;
+                playPickupChime();
+                closeKdsCameraScannerModal();
+                quickVerifyAndCompleteByCode(rawVal);
+                return;
+              }
+            }
+            if (ctx2d && canvasEl) {
+              canvasEl.width = videoEl.videoWidth;
+              canvasEl.height = videoEl.videoHeight;
+              ctx2d.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+              const imgData = ctx2d.getImageData(0, 0, canvasEl.width, canvasEl.height);
+              const codeObj = window.jsQR(imgData.data, imgData.width, imgData.height, {
+                inversionAttempts: 'dontInvert'
+              });
+              if (codeObj && codeObj.data) {
+                playPickupChime();
+                closeKdsCameraScannerModal();
+                quickVerifyAndCompleteByCode(codeObj.data);
+                return;
+              }
             }
           }
         } catch (e) {}
@@ -5837,7 +6031,7 @@ async function openKdsCameraScannerModal() {
       state.scannerRafId = requestAnimationFrame(scanTick);
     } else {
       if (statusEl) {
-        statusEl.innerText = '💡 鏡頭已開啟（您的瀏覽器核心未啟用原生 BarcodeDetector，可搭配外接掃碼槍或於下方輸入 6 碼核銷碼）。';
+        statusEl.innerText = '💡 鏡頭已開啟，請搭配外接掃碼槍或於下方輸入 6 碼核銷碼。';
       }
     }
   } catch (err) {
@@ -6236,19 +6430,22 @@ function openReceiptPrintModal(orderId) {
   state.printingOrderId = orderId;
 
   const titleEl = document.getElementById('receiptPrintModalTitle');
-  if (titleEl) titleEl.innerText = '🖨️ 廚房出單小票與收據預覽 (80mm)';
+  if (titleEl) titleEl.innerText = '🖨️ 廚房出單小票與顧客追蹤收據 (80mm)';
 
   const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
   const verDisplay = formatVerificationCodeDisplay(o);
+  const isServerVerified = isOrderServerVerified(o);
+  const receiptTrackUrl = `${window.location.origin}${getOrderPageUrl('id=' + encodeURIComponent(o.orderId) + (isServerVerified ? '&v=' + encodeURIComponent(verDisplay) : ''))}`;
+  const receiptQrSvg = generateDeterministicQrSvg(receiptTrackUrl, 148);
 
   const body = document.getElementById('receiptPrintModalBody');
   if (body) {
     body.innerHTML = `
       <div class="thermal-receipt-paper">
         <div style="text-align:center; margin-bottom:8px;">
-          <div style="font-size:0.78rem; font-weight:800;">${escapeHtml(BRAND_CONFIG.fullTitle)}</div>
+          <div style="font-size:0.82rem; font-weight:900; letter-spacing:0.5px;">${escapeHtml(BRAND_CONFIG.name)}</div>
           <div style="font-size:1.1rem; font-weight:950; margin:2px 0;">${escapeHtml(o.storeName)}</div>
-          <div style="font-size:0.75rem; color:#4B5563;">${escapeHtml(o.dineType || '外帶自取')} ・ 80mm 廚房出單聯</div>
+          <div style="font-size:0.75rem; color:#4B5563;">${escapeHtml(o.dineType || '外帶自取')} ・ 80mm 出單收據聯</div>
           <div style="font-size:2.6rem; font-weight:950; line-height:1.1; margin:6px 0; border:2px solid #000000; border-radius:8px; padding:4px 0;">
             #${escapeHtml(o.pickupNumber)}
           </div>
@@ -6320,6 +6517,17 @@ function openReceiptPrintModal(orderId) {
           ` : ''}
           <div style="text-align:right; font-size:0.75rem; font-weight:800; margin-top:2px;">
             付款狀態：${escapeHtml(o.paymentStatus || '已付款')}
+          </div>
+        </div>
+
+        <div class="thermal-divider"></div>
+        <div style="text-align:center; padding:4px 0;">
+          <div style="font-size:0.78rem; font-weight:900; margin-bottom:4px;">📱 手機掃碼即時看叫號進度 & 取餐通知</div>
+          <div style="display:inline-flex; justify-content:center; padding:6px; border:1.5px solid #000; border-radius:6px; background:#fff; margin-bottom:4px;">
+            ${receiptQrSvg}
+          </div>
+          <div style="font-size:0.68rem; color:#111827; font-weight:700;">
+            免站櫃檯久候！相機掃描上方 QR 即可在手機追蹤製作進度與綁定 LINE 響鈴通知
           </div>
         </div>
 
@@ -6766,7 +6974,7 @@ function exportStoreAnalyticsCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `東吳學餐_${store.name}_營運財務報表_${getTodayDateStr()}.csv`;
+  a.download = `MealFlow_${store.name}_營運財務報表_${getTodayDateStr()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

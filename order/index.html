@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#FFFFFF">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>東吳學餐線上點餐與電子憑證</title>
+  <title>MealFlow</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -20,9 +20,9 @@
   <header class="app-header">
     <div class="header-inner">
       <div class="brand-title-group">
-        <a href="../" style="text-decoration:none; color:inherit; display:flex; align-items:center; gap:6px;">
-          <span style="font-size:1.35rem;">🍱</span>
-          <span style="font-weight:900; font-size:1.08rem; letter-spacing:-0.3px;">東吳學餐智慧點餐</span>
+        <a href="../" class="brand-logo-link">
+          <img src="../logo-icon.jpg" alt="MealFlow Icon" class="brand-logo-icon-img">
+          <img src="../logo-text.png" alt="MealFlow" class="brand-logo-text-img">
         </a>
         <span class="role-badge" id="headerRoleBadge">📱 線上點餐系統</span>
         <span class="sync-status" title="點擊立即同步雲端資料" style="cursor:pointer;" onclick="syncCloud(true)">
@@ -66,7 +66,7 @@
         <div class="ai-concierge-box">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <div>
-              <span style="font-size:0.72rem; font-weight:800; background:rgba(255,255,255,0.18); padding:2px 8px; border-radius:999px;">✨ 學餐智慧選餐與免排隊顧問</span>
+              <span style="font-size:0.72rem; font-weight:800; background:rgba(255,255,255,0.18); padding:2px 8px; border-radius:999px;">✨ MealFlow 智慧選餐與免排隊顧問</span>
               <h3 style="font-size:1rem; font-weight:800; margin-top:4px;">不知道吃什麼或想問取餐規則？依即時排隊狀況幫你解答與配餐</h3>
             </div>
           </div>
@@ -129,6 +129,7 @@
     </section>
   </main>
 
+  <script src="../jsQR.min.js"></script>
   <script src="../app.js"></script>
 </body>
 </html>

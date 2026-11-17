@@ -1,5 +1,5 @@
 /* ============================================================================
- * 東吳學餐智慧點餐與全螢幕平板 POS 系統 - 商業企業版樣式表 (Commercial v14.0 Pro)
+ * MealFlow - 樣式表
  * 支援：三端 HTML 100% 雙向相容、平板觸控收銀、KDS 規格備料看板、鏡頭掃碼核銷、
  *       4~8 碼安全 PIN 閘門、時段配額標示、會計級交班 Z-Report、80mm 熱感應列印
  * ============================================================================ */
@@ -127,29 +127,20 @@ input, select, textarea {
   gap: 8px;
 }
 
-.brand-logo-svg {
+.brand-logo-icon-img {
+  height: 36px;
+  width: 36px;
+  object-fit: contain;
+  border-radius: 8px;
   flex-shrink: 0;
-  border-radius: 9px;
-  box-shadow: 0 2px 8px rgba(255, 90, 31, 0.25);
+  display: block;
 }
 
-.brand-logo-text-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.brand-logo-primary {
-  font-weight: 950;
-  font-size: 1.15rem;
-  letter-spacing: -0.4px;
-  color: var(--slate-dark);
-}
-
-.brand-logo-sub {
-  font-weight: 800;
-  font-size: 0.86rem;
-  color: var(--text-secondary);
+.brand-logo-text-img {
+  height: 26px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .role-badge {
@@ -1971,17 +1962,23 @@ body.store-mode-active .page-container,
 }
 
 .svg-qr-box {
-  width: 118px;
-  height: 118px;
-  padding: 8px;
+  width: 204px;
+  height: 204px;
+  padding: 6px;
   background: #FFFFFF;
-  border: 1.5px solid var(--border);
-  border-radius: 12px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.svg-qr-box svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* ==================== 共用 Modal 彈窗與 Bottom Sheet ==================== */
