@@ -832,43 +832,48 @@ body.store-mode-active .page-container,
   border-radius: 6px;
 }
 
-/* ==================== 學生端進入餐廳後的分類菜單與售罄狀態 ==================== */
+/* ==================== 學生端進入餐廳後的分類菜單與售罄狀態（精品級高質感視覺） ==================== */
 .in-store-banner {
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(145deg, #FFFFFF 0%, #FFFBF7 100%);
+  border-radius: 22px;
+  border: 1px solid #F1E4D8;
+  padding: 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 12px 32px -8px rgba(15, 23, 42, 0.06);
+  position: relative;
+  overflow: hidden;
 }
 
 .category-group-title {
-  font-size: 1.12rem;
+  font-size: 1.08rem;
   font-weight: 900;
-  color: var(--brand-dark);
-  border-bottom: 2px solid #FED7AA;
-  padding-bottom: 6px;
-  margin: 18px 0 12px;
+  color: #0F172A;
+  padding: 4px 0 8px;
+  margin: 22px 0 12px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  letter-spacing: -0.01em;
+  border-bottom: 1.5px solid #F1F5F9;
 }
 
 .menu-item-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 12px;
+  background: #FFFFFF;
+  border: 1.5px solid rgba(226, 232, 240, 0.9);
+  border-radius: 18px;
+  padding: 14px 16px;
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 15px;
   cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, border-color 0.18s ease;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.035);
   position: relative;
 }
 
 .menu-item-card:hover {
-  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.075);
   border-color: #FDBA74;
 }
 
@@ -876,9 +881,15 @@ body.store-mode-active .page-container,
   transform: scale(0.985);
 }
 
+.menu-item-card.in-cart-active {
+  border-color: #FF5A1F;
+  background: linear-gradient(135deg, #FFFFFF 45%, #FFF8F4 100%);
+  box-shadow: 0 8px 24px rgba(255, 90, 31, 0.1);
+}
+
 .menu-item-card.sold-out,
 .pos-dish-tile.sold-out {
-  opacity: 0.58;
+  opacity: 0.56;
   background: #F8FAFC;
   border-style: dashed;
   cursor: not-allowed;
@@ -902,41 +913,108 @@ body.store-mode-active .page-container,
 }
 
 .menu-img-box {
-  width: 84px;
-  height: 84px;
-  border-radius: 12px;
-  background: #FFF7ED;
-  border: 1px solid #FFEDD5;
+  width: 82px;
+  height: 82px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #FFF7ED 0%, #FFEDD5 100%);
+  border: 1px solid rgba(254, 215, 170, 0.85);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.9), 0 3px 10px rgba(251, 146, 60, 0.08);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.2rem;
+  font-size: 2.15rem;
 }
 
 .menu-img-box img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .menu-plus-badge {
   position: absolute;
   bottom: 5px;
   right: 5px;
-  background: var(--brand);
+  background: linear-gradient(135deg, #FF5A1F 0%, #EA580C 100%);
   color: #FFFFFF;
-  width: 24px;
-  height: 24px;
+  width: 25px;
+  height: 25px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 900;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 3px 8px rgba(234, 88, 12, 0.35);
+  border: 1.5px solid #FFFFFF;
+}
+
+.menu-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  background: #FFF3EE;
+  color: #E04812;
+  border: 1px solid #FED7AA;
+  transition: all 0.15s ease;
+}
+
+.menu-item-card:hover .menu-action-pill {
+  background: var(--brand);
+  color: #FFFFFF;
+  border-color: var(--brand);
+}
+
+.menu-item-card.in-cart-active .menu-action-pill {
+  background: var(--brand);
+  color: #FFFFFF;
+  border-color: var(--brand);
+}
+
+/* 購物車預訂日期與時段防重疊響應式雙欄網格 */
+.checkout-reserve-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.checkout-two-col-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.checkout-reserve-grid > div,
+.checkout-two-col-grid > div {
+  min-width: 0;
+  width: 100%;
+}
+
+input[type="date"].select-input,
+input[type="time"].select-input,
+select.select-input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 560px) {
+  .checkout-reserve-grid,
+  .checkout-two-col-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
 }
 
 .floating-cart-bar {
@@ -944,33 +1022,37 @@ body.store-mode-active .page-container,
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 12px 16px 16px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.06);
+  padding: 12px 16px 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(244,246,249,0.92) 35%, rgba(244,246,249,0.98) 100%);
+  pointer-events: none;
   z-index: 140;
 }
 
 .floating-cart-inner {
   max-width: 680px;
   margin: 0 auto;
+  pointer-events: auto;
 }
 
 .btn-view-cart {
   width: 100%;
-  padding: 14px 20px;
-  background: var(--brand);
+  padding: 15px 22px;
+  background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
   color: #FFFFFF;
-  border: none;
-  border-radius: 16px;
-  font-size: 1.02rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  font-size: 1rem;
   font-weight: 800;
-  box-shadow: 0 8px 22px rgba(255, 90, 31, 0.3);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.28);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  transition: 0.2s;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.btn-view-cart:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.34);
 }
 
 .btn-view-cart:disabled {
@@ -981,12 +1063,13 @@ body.store-mode-active .page-container,
 }
 
 .cart-count-pill {
-  background: #FFFFFF;
-  color: var(--brand-dark);
-  padding: 3px 12px;
+  background: var(--brand);
+  color: #FFFFFF;
+  padding: 4px 13px;
   border-radius: 999px;
   font-size: 0.85rem;
   font-weight: 900;
+  box-shadow: 0 2px 8px rgba(255, 90, 31, 0.35);
 }
 
 /* ==================== 預訂時段配額標示 (Slot Capacity Quota) ==================== */

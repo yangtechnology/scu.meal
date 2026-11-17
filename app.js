@@ -286,24 +286,56 @@ function getSlotBookedCount(storeId, dateStr, timeStr) {
 }
 
 /**
- * 商業級時段配額產生器：回傳包含已預訂數、剩餘名額與是否額滿之結構化清單
+ * 商業級時段配額產生器 (B7)：支援依各店獨立設定之 openTime、closeTime、午休時段 (breakStartTime~breakEndTime) 與公休日 (closedDays) 動態產生時段
  */
+function parseTimeToMins(tStr, fallbackMins) {
+  const m = String(tStr || '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return fallbackMins;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function isStoreClosedOnDate(store, dateStr) {
+  if (!store || !store.closedDays) return false;
+  const cleanDate = normalizeDateStr(dateStr);
+  const parts = cleanDate.split('-').map(Number);
+  if (parts.length !== 3) return false;
+  const dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay(); // 0=週日, 6=週六
+  const closedArr = Array.isArray(store.closedDays)
+    ? store.closedDays.map(Number)
+    : String(store.closedDays || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+  return closedArr.includes(dayOfWeek);
+}
+
 function getValidPickupTimeSlotsWithQuota(targetDateStr, storeId = null) {
-  const cleanDate = normalizeDateStr(targetDateStr);
   const todayStr = getTodayDateStr();
+  let cleanDate = normalizeDateStr(targetDateStr);
+  if (cleanDate < todayStr) {
+    cleanDate = todayStr;
+  }
   const isToday = cleanDate === todayStr;
   const now = getTaipeiDateObj();
-  const minAllowedMinutesOfDay = isToday ? (now.getHours() * 60 + now.getMinutes() + 25) : 0;
-
   const store = storeId ? state.stores.find(s => s.id === storeId) : null;
+  if (store && isStoreClosedOnDate(store, cleanDate)) {
+    return [];
+  }
+
+  const leadMins = store && store.reserveLeadMinutes ? Math.max(10, Number(store.reserveLeadMinutes)) : 25;
+  const minAllowedMinutesOfDay = isToday ? (now.getHours() * 60 + now.getMinutes() + leadMins) : 0;
   const maxCap = store ? Math.max(5, Number(store.maxCapacityPer15Min) || 20) : 20;
 
+  const openMins = parseTimeToMins(store ? store.openTime : '10:30', 10 * 60 + 30);
+  const closeMins = parseTimeToMins(store ? store.closeTime : '19:30', 19 * 60 + 30);
+  const breakStartMins = (store && store.breakStartTime) ? parseTimeToMins(store.breakStartTime, -1) : -1;
+  const breakEndMins = (store && store.breakEndTime) ? parseTimeToMins(store.breakEndTime, -1) : -1;
+
   const result = [];
-  for (let hr = 10; hr <= 19; hr++) {
+  for (let hr = 6; hr <= 22; hr++) {
     for (let min of [0, 15, 30, 45]) {
-      if (hr === 10 && min < 30) continue;
-      if (hr === 19 && min > 30) continue;
       const totalMins = hr * 60 + min;
+      if (totalMins < openMins || totalMins > closeMins) continue;
+      if (breakStartMins >= 0 && breakEndMins > breakStartMins && totalMins >= breakStartMins && totalMins < breakEndMins) {
+        continue;
+      }
       if (isToday && totalMins < minAllowedMinutesOfDay) continue;
       const timeLabel = `${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
       const booked = storeId ? getSlotBookedCount(storeId, cleanDate, timeLabel) : 0;
@@ -438,12 +470,27 @@ function normalizeOrderItemEntry(rawItem) {
 function evaluateOrderLifecycleStatus(order) {
   if (!order) return '製作中';
   const curStatus = String(order.status || '製作中');
-  if (curStatus === '已完成' || curStatus === '可取餐' || curStatus.includes('已取消')) {
+  if (curStatus === '已完成' || curStatus.includes('已取消')) {
+    return curStatus;
+  }
+
+  const todayStr = getTodayDateStr();
+  const cleanOrderDate = normalizeDateStr(order.pickupDate || todayStr);
+  const payStatus = String(order.paymentStatus || '已付款');
+
+  // 跨日自動日結與逾期歸檔：過去日期 (例如 10/31、11/01、11/12) 的訂單絕不可在今日仍停留於「製作中」或「可取餐」
+  if (cleanOrderDate < todayStr) {
+    if (payStatus === '待櫃檯繳費' || payStatus === '待付訂確認' || payStatus === '取餐付現') {
+      return '已取消 (歷史逾期未取)';
+    }
+    return '已完成';
+  }
+
+  if (curStatus === '可取餐') {
     return curStatus;
   }
 
   const isReserve = Boolean(order.isReservation);
-  const payStatus = String(order.paymentStatus || '已付款');
 
   if (payStatus === '待櫃檯繳費' || payStatus === '待付訂確認') {
     return '待付款確認';
@@ -535,10 +582,12 @@ function sanitizeIncomingOrder(o) {
     paymentMethod: rawPaymentMethod || '現場櫃檯付現',
     pickupDate: cleanDate,
     pickupTime: cleanTime,
+    paidAtDate: o.paidAtDate ? normalizeDateStr(o.paidAtDate) : cleanDate,
     paymentDeadline: o.paymentDeadline ? normalizeDateStr(o.paymentDeadline) : '',
     paymentStatus: rawPayStatus,
     dineType,
     customerNote,
+    taxId: String(o.taxId || '').replace(/\D/g, '').slice(0, 8),
     customerPhone: String(o.customerPhone || '').trim(),
     customerPhoneLast3: String(o.customerPhoneLast3 || extractPhoneLast3(o.customerPhone)),
     cashReceived,
@@ -549,6 +598,8 @@ function sanitizeIncomingOrder(o) {
     manualDiscount,
     manualDiscountReason: String(o.manualDiscountReason || ''),
     finalTotal,
+    refundAmount: Math.max(0, Number(o.refundAmount) || 0),
+    refundMethod: String(o.refundMethod || ''),
     verificationCode: serverVerCode,
     isOfflinePending,
     readyAtTs: Number(o.readyAtTs || 0),
@@ -558,6 +609,9 @@ function sanitizeIncomingOrder(o) {
   };
 
   normalized.status = evaluateOrderLifecycleStatus(normalized);
+  if (normalized.status.includes('歷史逾期未取') && normalized.paymentStatus !== '已退單作廢') {
+    normalized.paymentStatus = '已退單作廢';
+  }
   return normalized;
 }
 
@@ -571,7 +625,7 @@ function formatCleanOrderMetaSummary(dineType, needCutlery, cutleryFee, customer
 function autoPromoteScheduledOrdersToCooking() {
   let changed = false;
   state.orders.forEach(o => {
-    if (o.status === '已接單待排程' || o.status === '待付款確認') {
+    if (o.status !== '已完成' && !String(o.status || '').includes('已取消')) {
       const nextStatus = evaluateOrderLifecycleStatus(o);
       if (nextStatus !== o.status) {
         o.status = nextStatus;
@@ -648,7 +702,7 @@ function loadCachedOrders() {
       if (Array.isArray(parsed)) {
         const cleanList = parsed.filter(o => !isCorruptedOrMockOrder(o));
         if (cleanList.length !== parsed.length) {
-          localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanList.slice(0, 600)));
+          localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanList.slice(0, 1500)));
         }
         return cleanList.map(sanitizeIncomingOrder);
       }
@@ -660,7 +714,7 @@ function loadCachedOrders() {
 function saveCachedOrders(orders) {
   try {
     const cleanOrders = (orders || []).filter(o => !isCorruptedOrMockOrder(o));
-    localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanOrders.slice(0, 600)));
+    localStorage.setItem('mealflow_orders_v14', JSON.stringify(cleanOrders.slice(0, 1500)));
   } catch (e) {}
 }
 
@@ -726,7 +780,13 @@ function loadStudentCartDraft() {
     const raw = localStorage.getItem('mealflow_cart_draft_v14');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') {
+        const todayStr = getTodayDateStr();
+        if (!parsed.checkoutReserveDate || normalizeDateStr(parsed.checkoutReserveDate) < todayStr) {
+          parsed.checkoutReserveDate = todayStr;
+        }
+        return parsed;
+      }
     }
   } catch (e) {}
   return null;
@@ -734,6 +794,10 @@ function loadStudentCartDraft() {
 
 function saveStudentCartDraft() {
   try {
+    const todayStr = getTodayDateStr();
+    const cleanResDate = (!state.checkoutReserveDate || normalizeDateStr(state.checkoutReserveDate) < todayStr)
+      ? todayStr
+      : normalizeDateStr(state.checkoutReserveDate);
     const draft = {
       selectedStoreId: state.selectedStoreId || null,
       campus: state.campus || '雙溪校區',
@@ -741,13 +805,38 @@ function saveStudentCartDraft() {
       checkoutDineType: state.checkoutDineType || '外帶自取',
       checkoutNeedCutlery: Boolean(state.checkoutNeedCutlery),
       checkoutTimeMode: state.checkoutTimeMode || 'NOW',
-      checkoutReserveDate: state.checkoutReserveDate || getTodayDateStr(),
+      checkoutReserveDate: cleanResDate,
       checkoutReserveTime: state.checkoutReserveTime || '12:15',
       checkoutPayMethod: state.checkoutPayMethod || 'LINE Pay',
       checkoutNote: state.checkoutNote || '',
+      checkoutTaxId: state.checkoutTaxId || '',
       savedAt: Date.now()
     };
     localStorage.setItem('mealflow_cart_draft_v14', JSON.stringify(draft));
+  } catch (e) {}
+}
+
+function loadMerchantAuditLogs() {
+  try {
+    const raw = localStorage.getItem('mealflow_audit_logs_v15');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch (e) {}
+  return [];
+}
+
+function recordMerchantAuditLog(actionTitle, detailText) {
+  try {
+    const entry = {
+      ts: `${getTodayDateStr()} ${getTaipeiTimeHHMMSS()}`,
+      storeId: state.merchantStoreId || 'S01',
+      action: String(actionTitle || ''),
+      detail: String(detailText || '')
+    };
+    state.merchantAuditLogs = [entry, ...(state.merchantAuditLogs || [])].slice(0, 120);
+    localStorage.setItem('mealflow_audit_logs_v15', JSON.stringify(state.merchantAuditLogs));
   } catch (e) {}
 }
 
@@ -794,6 +883,7 @@ function savePendingOrderMutationsQueue(queue) {
 
 let state = {
   routeMode: 'portal', // 'portal' | 'order' | 'ticket' | 'store'
+  lang: localStorage.getItem('mealflow_lang') || 'zh-TW', // 'zh-TW' | 'en' (A3 多國語系)
   trackingOrderId: null,
   myCreatedOrderId: sessionStorage.getItem('mealflow_my_created_order_id') || null,
   myOrderHistoryIds: loadMyOrderHistoryIds(),
@@ -807,6 +897,7 @@ let state = {
   slotQuotaMap: {}, // 各店各時段已預訂配額映射表
   aiRecommendations: {},
   orders: loadCachedOrders(),
+  merchantAuditLogs: loadMerchantAuditLogs(),
 
   // 樂觀鎖與離線補送佇列：保護本地剛送出之訂單、狀態變更與店家剛修改之設定
   pendingLocalOrdersMap: {},
@@ -816,6 +907,7 @@ let state = {
   knownStoreOrderIds: new Set(),
   unacknowledgedOrderIds: new Set(),
   unackReminderTimer: null,
+  lastStudentSubmitTs: 0,
 
   // 商業級資安：後端核發之具備時效性與店家權限範圍之 HMAC Session Token + 閒置自動上鎖 (A7, A8)
   merchantAuthToken: sessionStorage.getItem('mealflow_merchant_session_v13') || '',
@@ -847,6 +939,7 @@ let state = {
   checkoutPhone: localStorage.getItem('mealflow_saved_customer_phone_v12') || '',
   checkoutPayMethod: loadStudentCartDraft()?.checkoutPayMethod || 'LINE Pay',
   checkoutNote: loadStudentCartDraft()?.checkoutNote || '',
+  checkoutTaxId: loadStudentCartDraft()?.checkoutTaxId || '',
   checkoutErrorBannerMsg: '',
   pendingPaymentResolver: null,
   autoFetchedMissingOrderIds: {},
@@ -860,6 +953,7 @@ let state = {
   settingsSubTab: 'menu', // 'menu' | 'promo' | 'storeProfile' | 'line'
   merchantStoreId: localStorage.getItem('mealflow_bound_store_id') || localStorage.getItem('mealflow_last_merchant_store_id') || 'S01',
   kdsSoundEnabled: true,
+  kdsAutoPrintNewOrder: Boolean(localStorage.getItem('mealflow_auto_print_new') === '1'),
 
   // 店家櫃檯 POS 狀態
   posSelectedCategory: '全部',
@@ -871,10 +965,16 @@ let state = {
   posReserveTime: '12:15',
   posCustomerPhone: '',
   posCustomerNote: '',
+  posTaxId: '',
   posManualDiscount: 0,
   posManualDiscountReason: '',
   posPayment: '現場現金',
   posCashReceived: '',
+
+  // 班別交班日結狀態 (B5)
+  shiftOpeningFloat: parseInt(localStorage.getItem('mealflow_shift_float') || '2000', 10) || 2000,
+  shiftActualCountedCash: '',
+  shiftCashierName: localStorage.getItem('mealflow_shift_cashier') || '',
 
   // 訂單管理 (KDS) 分天檢視、快速核銷碼、鏡頭掃碼與收款攔截狀態
   kdsSelectedDate: getTodayDateStr(),
@@ -1387,6 +1487,103 @@ function calcAiUtilityScore(store) {
   return Math.max(35, Math.min(99, Math.round(raw)));
 }
 
+function t(zhText, enText) {
+  return (state && state.lang === 'en') ? enText : zhText;
+}
+
+const I18N_DICTIONARY = {
+  '雙溪校區': 'Waishuangxi Campus',
+  '城中校區': 'Downtown Campus',
+  '趙班長海苔飯捲': "Capt. Zhao's Kimbap",
+  '雙溪-丼物園': 'Donburi Garden',
+  '丼物園': 'Donburi Garden',
+  '雙溪-四海遊龍': 'Sihai Youlong Dumplings',
+  '四海遊龍': 'Sihai Youlong Dumplings',
+  '蒲家廚房': 'Pu Family Kitchen',
+  '城中-咖哩食堂': 'Curry House',
+  '城中-吳葉食堂': 'Wuye Bento & Grill',
+  '大熊涼麵 X 吃好食堂': 'Big Bear Cold Noodles',
+  '人氣韓式・飯捲': 'Korean Kimbap & Rolls',
+  '日式蓋飯・烏龍麵': 'Donburi & Udon',
+  '鍋貼水餃・麵食': 'Potstickers & Dumplings',
+  '中式特餐・便當': 'Signature Bento',
+  '熟成咖哩・炸物': 'Aged Curry & Cutlets',
+  '精緻台式簡餐': 'Taiwanese Set Meals',
+  '手工涼麵・味噌湯': 'Cold Noodles & Miso Soup',
+  '韓式海苔飯捲': 'Korean Kimbap Rolls',
+  '韓式湯品與飲品': 'Soups & Drinks',
+  '炙燒日式丼飯': 'Flame-Seared Donburi',
+  '讚岐烏龍麵': 'Sanuki Udon',
+  '單點炸物與茶飲': 'Fried Sides & Tea',
+  '手工鍋貼與水餃': 'Potstickers & Dumplings',
+  '開胃小菜與湯飲': 'Sides, Soups & Drinks',
+  '人氣特餐便當': 'Signature Bento Box',
+  '單點小菜與湯品': 'Side Dishes & Soups',
+  '熟成濃咖哩': 'Rich Aged Curry',
+  '炸物點心': 'Fried Snacks',
+  '主廚鐵板與簡餐': 'Teppanyaki & Sets',
+  '特色麵食': 'Specialty Noodles',
+  '手工現拌涼麵': 'Handmade Cold Noodles',
+  '招牌味噌湯品': 'Signature Miso Soup',
+  '丼飯(3菜)': 'Donburi (with 3 Sides)',
+  '咖哩(3菜)': 'Curry Rice (with 3 Sides)',
+  '定食(3菜)': 'Set Meal (with 3 Sides)',
+  '單點': 'À La Carte Sides',
+  '主食份量': 'Rice Portion',
+  '正常飯量': 'Regular Rice',
+  '飯少(減醣)': 'Less Rice (Low Carb)',
+  '大盛加飯': 'Extra Rice',
+  '辣度選擇': 'Spice Level',
+  '不辣': 'Non-Spicy',
+  '微辣': 'Mild Spicy',
+  '小辣': 'Medium Spicy',
+  '中辣': 'Spicy',
+  '大辣': 'Extra Hot',
+  '人氣加料': 'Add-ons',
+  '加香濃起司': 'Add Cheese',
+  '加溏心溫泉蛋': 'Add Onsen Egg',
+  '不要蔥花/香菜': 'No Scallions/Cilantro',
+  '麵條份量': 'Noodle Portion',
+  '標準份量': 'Regular Noodles',
+  '加麵大碗': 'Extra Noodles',
+  '單點加料': 'Add-ons',
+  '加滷蛋': 'Add Braised Egg',
+  '加貢丸(2顆)': 'Add 2 Pork Balls',
+  '不要蔥花': 'No Scallions',
+  '外帶自取': 'Takeout Pickup',
+  '內用自取': 'Dine-in Pickup',
+  '製作中': 'Preparing',
+  '可取餐': 'Ready for Pickup',
+  '已接單待排程': 'Scheduled',
+  '待付款確認': 'Pending Payment',
+  '已完成': 'Completed',
+  '已付款': 'Paid',
+  '取餐付現': 'Pay Cash at Pickup',
+  '現場櫃檯付現': 'Pay Cash at Counter'
+};
+
+function trTerm(rawStr) {
+  const s = String(rawStr || '');
+  if (!state || state.lang !== 'en') return s;
+  if (I18N_DICTIONARY[s]) return I18N_DICTIONARY[s];
+  if (s.includes('🔥')) return s.replace('必點人氣', 'Popular').replace('店長推薦', "Chef's Pick").replace('招牌必點', 'Signature').replace('銷量冠軍', 'Best Seller').replace('排隊人氣', 'Top Pick').replace('現點現做', 'Made to Order').replace('經典酥脆', 'Crispy Classic');
+  if (s.includes('⭐')) return s.replace('主廚推薦', "Chef's Special").replace('飽足首選', 'Hearty Choice').replace('限量供應', 'Limited').replace('學生最愛', 'Student Favorite');
+  if (s.includes('⚡')) return s.replace('快速出餐', 'Express').replace('極速出餐', 'Express').replace('極速便當', 'Fast Bento').replace('秒取', 'Fast Pickup');
+  return s;
+}
+
+function toggleAppLanguage() {
+  state.lang = state.lang === 'en' ? 'zh-TW' : 'en';
+  try { localStorage.setItem('mealflow_lang', state.lang); } catch (e) {}
+  const langBtn = document.getElementById('headerLangToggleBtn');
+  if (langBtn) {
+    langBtn.innerText = state.lang === 'en' ? '🌐 中文' : '🌐 EN';
+  }
+  applyRouteView();
+  updateCartUI();
+  showToast(state.lang === 'en' ? '🌐 Switched to English interface' : '🌐 已切換為繁體中文介面');
+}
+
 function normalizeMenuItem(m, fallbackStoreId) {
   let opts = m.options || {};
   if (typeof opts === 'string') {
@@ -1401,18 +1598,52 @@ function normalizeMenuItem(m, fallbackStoreId) {
 
   const nameStr = String(m.name || '招牌餐點').trim();
   const priceNum = Math.max(0, Number(m.price) || 0);
-  const catStr = String(m.category || m.cat || '招牌主餐').replace(/\(八方計價模式\)|\(按顆計價\)/g, '').trim();
   const storeIdStr = String(m.storeId || fallbackStoreId || 'S02');
+  const itemId = String(m.id || generateStableMenuItemId(storeIdStr, nameStr));
+
+  let catStr = String(m.category || m.cat || '招牌主餐').replace(/\(八方計價模式\)|\(按顆計價\)/g, '').trim();
+  let tagStr = String(m.tag || '').trim();
+  let rawImg = String(m.image || '').trim();
+
+  // 防護與修復舊版試算表欄位錯位 (例如 image 為 "true" / "false"、tag 為純數字出餐時間 "4"、category 為推薦標籤 "🔥 必點人氣")
+  if (!/^(https?:\/\/|data:image\/)/i.test(rawImg)) {
+    rawImg = '';
+  }
+
+  let defMatchedItem = null;
+  for (const ds of DEFAULT_STORES) {
+    const found = (ds.menus || []).find(dm => dm.id === itemId || dm.name === nameStr);
+    if (found) {
+      defMatchedItem = found;
+      break;
+    }
+  }
+
+  if (/^\d+$/.test(tagStr)) {
+    if (defMatchedItem) {
+      tagStr = defMatchedItem.tag || '';
+      catStr = defMatchedItem.category || '招牌主餐';
+      if (Object.keys(opts).length === 0 && defMatchedItem.options) {
+        opts = JSON.parse(JSON.stringify(defMatchedItem.options));
+      }
+    } else if (/^[🔥⭐⚡🥣🥤🍗🍵🌶️🥛✨🧀🎁]/.test(catStr)) {
+      tagStr = catStr;
+      catStr = '招牌推薦';
+    } else {
+      tagStr = '';
+    }
+  }
 
   return {
-    id: String(m.id || generateStableMenuItemId(storeIdStr, nameStr)),
+    id: itemId,
     storeId: storeIdStr,
     category: catStr || '招牌主餐',
     name: nameStr,
     price: priceNum,
-    tag: String(m.tag || '').trim(),
+    tag: tagStr,
     soldOut: Boolean(m.soldOut),
-    image: String(m.image || ''),
+    dailyLimit: m.dailyLimit !== undefined && m.dailyLimit !== '' ? Math.max(0, parseInt(m.dailyLimit, 10) || 0) : 0,
+    image: rawImg,
     options: opts
   };
 }
@@ -2872,8 +3103,10 @@ async function syncCloud(showSuccessToast = false) {
 function updateMerchantHeaderBadgesOnly() {
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (!store) return;
+  const todayStr = getTodayDateStr();
   const storeActiveOrders = state.orders.filter(o =>
     o.storeId === store.id &&
+    normalizeDateStr(o.pickupDate || todayStr) >= todayStr &&
     !String(o.status).includes('已取消') &&
     o.status !== '已完成'
   );
@@ -2894,8 +3127,11 @@ function ensureHeaderExtraControls() {
   const lineBtn = document.getElementById('headerLineBindBtn');
   if (lineBtn && !document.getElementById('headerMyOrdersBtn')) {
     lineBtn.insertAdjacentHTML('beforebegin', `
+      <button type="button" id="headerLangToggleBtn" class="btn-my-orders" style="padding:5px 10px;" onclick="toggleAppLanguage()" title="Switch Language / 切換語系">
+        ${state.lang === 'en' ? '🌐 中文' : '🌐 EN'}
+      </button>
       <button type="button" id="headerMyOrdersBtn" class="btn-my-orders" style="display:none;" onclick="openMyOrdersDrawer()">
-        <span>🧾 我的訂單 / 查單</span>
+        <span>🧾 ${t('我的訂單 / 查單', 'My Orders')}</span>
         <span id="headerMyOrdersCount" class="my-orders-count-badge" style="display:none;">0</span>
       </button>
     `);
@@ -2906,6 +3142,13 @@ function ensureHeaderExtraControls() {
     storeControls.insertAdjacentHTML('afterbegin', `
       <button type="button" id="headerStoreOpenToggleBtn" class="store-status-toggle" onclick="toggleCurrentStoreOpenStatus()">
         🟢 營業中
+      </button>
+    `);
+  }
+  if (storeControls && !document.getElementById('headerPickupBoardBtn')) {
+    storeControls.insertAdjacentHTML('beforeend', `
+      <button type="button" id="headerPickupBoardBtn" class="filter-chip" style="padding:6px 12px; font-size:0.78rem; background:#0F172A; color:#FFFFFF; border-color:#0F172A;" onclick="openCustomerPickupBoardModal()" title="開啟顧客叫號大螢幕看板">
+        📺 叫號看板
       </button>
     `);
   }
