@@ -1094,7 +1094,7 @@ function savePendingOrderMutationsQueue(queue) {
   } catch (e) {}
 }
 
-let state = {
+var state = {
   routeMode: 'portal', // 'portal' | 'order' | 'ticket' | 'store'
   lang: localStorage.getItem('mealflow_lang') || 'zh-TW', // 'zh-TW' | 'en' (A3 多國語系)
   trackingOrderId: null,
@@ -8102,7 +8102,7 @@ function openCustomerPickupBoardModal() {
   }
   renderCustomerPickupBoardContent(false);
   boardModal.classList.add('open');
-  acquireMerchantScreenWakeLock();
+  requestMerchantWakeLock();
 }
 
 function renderCustomerPickupBoardContent(playChimeOnNew = false) {
