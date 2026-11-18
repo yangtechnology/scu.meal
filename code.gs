@@ -12,12 +12,12 @@
  */
 
 const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
-const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V14_0';
+const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V16_0';
 const BRAND_NAME = 'MealFlow';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500;
 const SESSION_TTL_MS = 8 * 3600 * 1000; // 店務 Session Token 效期 8 小時
-const ORDERS_TAIL_WINDOW_SIZE = 1200;   // 滑動視窗：掃描最近 1200 筆訂單，確保單店整日日結、7日分析與預約單完整不漏單
+const ORDERS_TAIL_WINDOW_SIZE = 2500;   // 【滑動視窗擴充 B4】掃描最近 2500 筆訂單，確保高單量下單店整日日結、7日分析與預約單完整不漏單
 
 const scriptProps = PropertiesService.getScriptProperties();
 const SYSTEM_LINE_CLIENT_ID = scriptProps.getProperty('LINE_CLIENT_ID') || '2012260287';
@@ -811,14 +811,24 @@ function calcAiUtilityScore(store) {
 
 function evaluateServerOrderLifecycleStatus(statusStr, isReservation, paymentStatus, pickupDateStr, pickupTimeStr, todayStr, nowMinutesOfDay) {
   const cur = String(statusStr || '製作中');
-  if (cur === '已完成' || cur === '可取餐' || cur.indexOf('已取消') >= 0) {
+  if (cur.indexOf('已取消') >= 0 || cur === '已完成') {
+    return cur;
+  }
+  const cleanDate = normalizeSheetDateStr(pickupDateStr || todayStr);
+  // 【過期歷史訂單自動歸檔】早於今日之未結訂單自動轉為「已完成」或「已取消 (歷史逾期未取)」，絕不再卡在「製作中」或「可取餐」
+  if (cleanDate < todayStr) {
+    if (paymentStatus === '待櫃檯繳費' || paymentStatus === '待付訂確認' || paymentStatus === '取餐付現') {
+      return '已取消 (歷史逾期未取)';
+    }
+    return '已完成';
+  }
+  if (cur === '可取餐') {
     return cur;
   }
   if (paymentStatus === '待櫃檯繳費' || paymentStatus === '待付訂確認') {
     return '待付款確認';
   }
   if (isReservation) {
-    const cleanDate = normalizeSheetDateStr(pickupDateStr || todayStr);
     if (cleanDate > todayStr) {
       return '已接單待排程';
     }
@@ -951,11 +961,12 @@ function autoPromoteAndCleanOrdersBatch(ss) {
 
   for (let i = 0; i < rows.length; i++) {
     const curStatus = String(rows[i][13] || '製作中');
-    if (curStatus === '已完成' || curStatus === '可取餐' || curStatus.indexOf('已取消') >= 0) continue;
+    if (curStatus === '已完成' || curStatus.indexOf('已取消') >= 0) continue;
 
     let meta = {};
     try { meta = JSON.parse(rows[i][16] || '{}'); } catch (e) {}
 
+    const cleanPickupDate = normalizeSheetDateStr(meta.pickupDate || todayStr);
     const cleanDeadline = meta.paymentDeadline ? normalizeSheetDateStr(meta.paymentDeadline) : '';
     if (meta.paymentStatus === '待櫃檯繳費' && cleanDeadline && todayStr > cleanDeadline) {
       const targetRowIdx = startRow + i;
@@ -969,7 +980,7 @@ function autoPromoteAndCleanOrdersBatch(ss) {
       curStatus,
       Boolean(meta.isReservation),
       String(meta.paymentStatus || '已付款'),
-      meta.pickupDate,
+      cleanPickupDate,
       meta.pickupTime,
       todayStr,
       nowMinutesOfDay
@@ -978,7 +989,10 @@ function autoPromoteAndCleanOrdersBatch(ss) {
     if (nextStatus !== curStatus) {
       const targetRowIdx = startRow + i;
       orderSheet.getRange(targetRowIdx, 14).setValue(nextStatus);
-      if (nextStatus === '製作中' && !meta.cookingStartedAtTs) {
+      if (nextStatus.indexOf('已取消') >= 0) {
+        meta.paymentStatus = '已退單作廢';
+        orderSheet.getRange(targetRowIdx, 17).setValue(JSON.stringify(meta));
+      } else if (nextStatus === '製作中' && !meta.cookingStartedAtTs) {
         meta.cookingStartedAtTs = now.getTime();
         orderSheet.getRange(targetRowIdx, 17).setValue(JSON.stringify(meta));
       }
@@ -1081,13 +1095,26 @@ function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
   return String(nextSeq);
 }
 
-// ==================== 5. 【資安修補 3】雙重驗證跨裝置訂單查詢 (杜絕盲猜遍歷) ====================
+// ==================== 5. 【資安修補 3 & B2】雙重驗證跨裝置訂單查詢與防濫用限流 ====================
 function lookupOrdersAcrossDevices(ss, params) {
   const hasMerchantAuth = isMerchantRequestValid(params, '');
   let rawQ = String(params.query || '').trim().toUpperCase().replace(/^#/, '');
   let rawPhoneLast3 = extractPhoneLast3OnServer(params.phoneLast3 || '');
 
   if (!rawQ) return { orders: [] };
+
+  // 【B2 防暴力枚舉限流】公開端點使用 CacheService 進行查詢頻率控管
+  if (!hasMerchantAuth) {
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      const qRateKey = 'LOOKUP_RATE_' + rawQ.slice(0, 8);
+      const hits = Number(cache.get(qRateKey) || 0);
+      if (hits >= 15) {
+        throw new Error('查詢頻率過高，系統已啟動安全防護，請稍候 30 秒再試');
+      }
+      cache.put(qRateKey, String(hits + 1), 30);
+    }
+  }
 
   // 支援 "2003 678" 或 "2003-678" 複合格式
   const comboMatch = rawQ.match(/^(\d{4,5})[\s\-_,/]+(\d{3})$/);
@@ -1600,9 +1627,16 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   let clientOrders = [];
 
   if (session) {
+    const reqStoreFilter = String(params && params.storeId ? params.storeId : '').trim();
     clientOrders = rawTailOrders
-      .filter(ord => session.storeScope === 'ALL' || session.storeScope === String(ord.storeId))
-      .slice(0, 600)
+      .filter(ord => {
+        if (session.storeScope !== 'ALL' && session.storeScope !== String(ord.storeId)) return false;
+        if (reqStoreFilter && session.storeScope === 'ALL' && String(ord.storeId) !== reqStoreFilter) {
+          // 若指定單店或全區皆保留足夠單店歷史視窗 (B4)
+        }
+        return true;
+      })
+      .slice(0, 1200)
       .map(ord => sanitizeOrderForClientOutput(ord, true));
   } else {
     const requestedIds = Array.isArray(params && params.myOrderIds)
@@ -1640,15 +1674,30 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       .filter(m => String(m.storeId) === storeIdStr)
       .map(m => {
         const { parsedOptions, isSoldOut } = parseMenuRowOptionsAndSoldOut(m);
+        let rawTag = String(m.tag || '').trim();
+        let rawCat = String(m.category || '招牌主餐').trim();
+        let rawImg = String(m.image || '').trim();
+        // 自動修復舊版試算表欄位錯位（如 tag='4', category='🔥 必點人氣', image='true'）
+        if (!/^https?:\/\/|^data:image\//i.test(rawImg)) {
+          rawImg = '';
+        }
+        if (/^\d+$/.test(rawTag)) {
+          if (/^[🔥⭐⚡🥣🥤🍗🍵🌶️🥛✨🧀]/.test(rawCat)) {
+            rawTag = rawCat;
+            rawCat = '招牌主餐';
+          } else {
+            rawTag = '🔥 店長推薦';
+          }
+        }
         return {
           id: String(m.id),
           storeId: String(m.storeId),
           name: String(m.name),
           price: Number(m.price) || 0,
-          tag: String(m.tag || ''),
-          category: String(m.category || '招牌主餐'),
+          tag: rawTag,
+          category: rawCat || '招牌主餐',
           soldOut: isSoldOut,
-          image: String(m.image || ''),
+          image: rawImg,
           options: parsedOptions
         };
       });
@@ -1685,6 +1734,9 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       icon: String(customMeta.icon || s.icon || ''),
       openTime: String(customMeta.openTime || s.openTime || '10:30'),
       closeTime: String(customMeta.closeTime || s.closeTime || '19:30'),
+      breakStartTime: String(customMeta.breakStartTime || s.breakStartTime || ''),
+      breakEndTime: String(customMeta.breakEndTime || s.breakEndTime || ''),
+      closedDays: Array.isArray(customMeta.closedDays) ? customMeta.closedDays : (Array.isArray(s.closedDays) ? s.closedDays : []),
       isOpen: isOpen,
       maxCapacityPer15Min: maxCap,
       basePrepMinutes: basePrepMinutes,
@@ -1841,6 +1893,20 @@ function handleOrderSubmission(ss, params) {
     return { order: sanitizeOrderForClientOutput(existingOrder, isMerchantPosRequest) };
   }
 
+  // 【B2 防惡意棄單與假單轟炸保護】非櫃檯 POS 之線上點餐執行 CacheService 速率限制
+  if (!isMerchantPosRequest) {
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      const phoneKey = extractPhoneLast3OnServer(params.customerPhone || '') || 'ANON';
+      const submitRateKey = `SUB_RATE_${storeId}_${phoneKey}`;
+      const subHits = Number(cache.get(submitRateKey) || 0);
+      if (subHits >= 5) {
+        throw new Error('送單過於頻繁，請稍候 60 秒再試');
+      }
+      cache.put(submitRateKey, String(subHits + 1), 60);
+    }
+  }
+
   const stores = sheetToObjects(ss.getSheetByName('Stores'));
   const storeRow = stores.find(s => String(s.id) === storeId);
   if (!storeRow) {
@@ -1858,11 +1924,30 @@ function handleOrderSubmission(ss, params) {
   }
 
   const maxCap = Math.max(5, Number(storeRow.maxCapacityPer15Min) || 20);
-  const recentOrders = readSheetTailObjects(orderSheet, 200).map(enrichOrderObject);
-  const pickupDateVal = isReservation ? normalizeSheetDateStr(params.pickupDate) : getTodayTaipeiStr();
+  const recentOrders = readSheetTailObjects(orderSheet, 250).map(enrichOrderObject);
+  const todayStr = getTodayTaipeiStr();
+  let pickupDateVal = isReservation ? normalizeSheetDateStr(params.pickupDate) : todayStr;
+  if (pickupDateVal < todayStr) {
+    pickupDateVal = todayStr;
+  }
   const now = new Date();
   const createdAtStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm:ss');
   const pickupTimeVal = isReservation ? normalizeSheetTimeStr(params.pickupTime, false) : createdAtStr.slice(0, 5);
+
+  // 【商業級改造 B7】後端檢核店鋪公休日與營業時段/午休時段
+  let customStoreMetaMap = {};
+  try { customStoreMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
+  const storeCustomMeta = customStoreMetaMap[storeId] || {};
+  const closedDays = Array.isArray(storeCustomMeta.closedDays) ? storeCustomMeta.closedDays.map(Number) : [];
+  if (!isMerchantPosRequest && closedDays.length > 0) {
+    const dParts = pickupDateVal.split('-');
+    if (dParts.length === 3) {
+      const dtObj = new Date(Number(dParts[0]), Number(dParts[1]) - 1, Number(dParts[2]));
+      if (closedDays.includes(dtObj.getDay())) {
+        throw new Error(`「${storeRow.name}」於 ${pickupDateVal} 公休，請選擇其他營業日期！`);
+      }
+    }
+  }
 
   // 【商業級改造 6】預訂時段 15 分鐘產能配額檢查 (Slot Capacity Quota)
   if (isReservation && !isMerchantPosRequest) {
@@ -2082,9 +2167,12 @@ function handleOrderSubmission(ss, params) {
   const dineType = String(params.dineType || '外帶自取').trim();
   const customerNote = String(params.customerNote || '').trim();
   const customerPhone = String(params.customerPhone || '').trim();
+  const taxId = String(params.taxId || '').trim().replace(/\D/g, '').slice(0, 8);
+  const paidAtDate = paymentStatus === '已付款' ? getTodayTaipeiStr() : '';
   const studentNameSummary = [
     dineType,
     needCutlery ? `🥢 需免洗餐具${cutleryFee > 0 ? `(+$${cutleryFee})` : ''}` : '',
+    taxId ? `🧾 統編:${taxId}` : '',
     customerNote ? `📝 備註：${customerNote}` : ''
   ].filter(Boolean).join(' ・ ');
 
@@ -2100,6 +2188,7 @@ function handleOrderSubmission(ss, params) {
     dineType: dineType,
     needCutlery: needCutlery,
     cutleryFee: cutleryFee,
+    taxId: taxId,
     manualDiscount: manualDiscount,
     manualDiscountReason: manualDiscountReason,
     isReservation: isReservation,
@@ -2109,6 +2198,7 @@ function handleOrderSubmission(ss, params) {
     customerNote: customerNote,
     paymentDeadline: isLargeCashReserve ? pickupDateVal : '',
     paymentStatus: paymentStatus,
+    paidAtDate: paidAtDate,
     transactionId: String(params.transactionId || ''),
     cashReceived: isMerchantPosRequest ? (Number(params.cashReceived) || 0) : 0,
     changeGiven: isMerchantPosRequest ? (Number(params.changeGiven) || 0) : 0,
@@ -2182,6 +2272,12 @@ function updateOrderStateBatch(ss, params) {
 
   if (params.paymentStatus) {
     meta.paymentStatus = String(params.paymentStatus).trim();
+    if (meta.paymentStatus === '已付款' && !meta.paidAtDate) {
+      meta.paidAtDate = getTodayTaipeiStr();
+    }
+  }
+  if (params.paidAtDate) {
+    meta.paidAtDate = normalizeSheetDateStr(params.paidAtDate);
   }
   const nextStatus = String(params.newStatus || rowVals[13] || '製作中').trim();
   if (nextStatus === '已完成' && String(meta.paymentStatus || '已付款') !== '已付款') {
@@ -2279,7 +2375,14 @@ function cancelOrderByIdBatch(ss, params) {
   try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
 
   rowVals[13] = `已取消 (${reason})`;
-  meta.paymentStatus = '已退單作廢';
+  if (params.wasPaidRefund || Number(params.refundAmount) > 0) {
+    meta.paymentStatus = '已退款作廢';
+    meta.refundAmount = Math.max(0, Number(params.refundAmount) || Number(rowVals[9]) || 0);
+    meta.refundMethod = String(params.refundMethod || rowVals[12] || '現金').trim();
+    meta.refundedAtDate = getTodayTaipeiStr();
+  } else {
+    meta.paymentStatus = '已退單作廢';
+  }
   rowVals[16] = JSON.stringify(meta);
 
   orderSheet.getRange(located.sheetRowIndex, 1, 1, 17).setValues([rowVals]);
@@ -2561,7 +2664,10 @@ function saveStoreProfileOnServer(ss, params) {
     ...(customMetaMap[storeId] || {}),
     icon: params.icon !== undefined ? String(params.icon).trim() : (customMetaMap[storeId]?.icon || ''),
     openTime: params.openTime !== undefined ? String(params.openTime).trim() : (customMetaMap[storeId]?.openTime || '10:30'),
-    closeTime: params.closeTime !== undefined ? String(params.closeTime).trim() : (customMetaMap[storeId]?.closeTime || '19:30')
+    closeTime: params.closeTime !== undefined ? String(params.closeTime).trim() : (customMetaMap[storeId]?.closeTime || '19:30'),
+    breakStartTime: params.breakStartTime !== undefined ? String(params.breakStartTime).trim() : (customMetaMap[storeId]?.breakStartTime || ''),
+    breakEndTime: params.breakEndTime !== undefined ? String(params.breakEndTime).trim() : (customMetaMap[storeId]?.breakEndTime || ''),
+    closedDays: Array.isArray(params.closedDays) ? params.closedDays.map(Number) : (customMetaMap[storeId]?.closedDays || [])
   };
   props.setProperty('STORE_CUSTOM_META', JSON.stringify(customMetaMap));
 

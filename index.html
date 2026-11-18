@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=15.0">
+  <link rel="stylesheet" href="./styles.css?v=16.0">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
             🟢 營業中
           </button>
           <select id="storeTopSwitcher" class="select-input" style="width:auto; min-width:210px; padding:6px 12px; font-weight:800; font-size:0.84rem;" onchange="switchMerchantStore(this.value)"></select>
-          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="openShiftZReportModal()" title="開啟今日錢箱交班日結單 (Z-Report)">
+          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="openShiftZReportModal()" title="開啟今日錢箱交班日結單">
             🧾 交班日結
           </button>
           <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="syncCloud(true)">
@@ -57,6 +57,9 @@
         </button>
         <button type="button" id="headerLineBindBtn" class="btn-line" style="padding:5px 11px; font-size:0.76rem;" onclick="openLineBindModal()">
           <span id="headerLineBtnText">💬 綁定取餐通知</span>
+        </button>
+        <button type="button" id="headerLangToggleBtn" class="filter-chip" style="padding:5px 10px; font-size:0.75rem; font-weight:800;" onclick="toggleAppLanguage()" title="切換語言 / Switch Language">
+          🌐 繁中 / EN
         </button>
 
         <!-- 學生端校區切換器 -->
@@ -148,6 +151,6 @@
   </main>
 
   <script src="./jsQR.min.js"></script>
-  <script src="./app.js?v=15.0"></script>
+  <script src="./app.js?v=16.0"></script>
 </body>
 </html>
