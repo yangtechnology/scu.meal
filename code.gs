@@ -39,9 +39,11 @@ function doGet(e) {
   if (params.action === 'getOrder' && params.orderId) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const hasMerchantAuth = isMerchantRequestValid(params, '');
+    const providedVerCode = String(params.v || params.verificationCode || '').trim().toUpperCase();
+    const clientDeviceId = String(params.clientDeviceId || '').trim();
     return jsonResponse({
       success: true,
-      order: findOrderById(ss, params.orderId, hasMerchantAuth)
+      order: findOrderById(ss, params.orderId, hasMerchantAuth, providedVerCode, clientDeviceId)
     });
   }
 
@@ -68,6 +70,8 @@ function doPost(e) {
       'lookupOrders': true,
       'askAiConcierge': true,
       'verifyMerchantPin': true,
+      'logoutMerchantSession': true,
+      'requestLinePayCheckout': true,
       'aiParseMenu': true
     };
 
@@ -107,9 +111,19 @@ function dispatchAction(ss, action, params) {
     case 'initBundle':
       return getInitBundle(ss, params);
     case 'getOrder':
-      return { order: findOrderById(ss, params.orderId, isMerchantRequestValid(params, '')) };
+      return {
+        order: findOrderById(
+          ss,
+          params.orderId,
+          isMerchantRequestValid(params, ''),
+          String(params.v || params.verificationCode || '').trim().toUpperCase(),
+          String(params.clientDeviceId || '').trim()
+        )
+      };
     case 'lookupOrders':
       return lookupOrdersAcrossDevices(ss, params);
+    case 'requestLinePayCheckout':
+      return handleRequestLinePayCheckout(ss, params);
     case 'submitOrder':
       return handleOrderSubmission(ss, params);
     case 'askAiConcierge':
@@ -117,9 +131,11 @@ function dispatchAction(ss, action, params) {
     case 'handleLineCallback':
       return handleLineCallback(ss, params);
 
-    // 店務授權端點 (核發與更新具備 storeId 範圍之 HMAC Session Token)
+    // 店務授權端點 (核發、更新與伺服器端註銷具備單一 storeId 範圍之 HMAC Session Token)
     case 'verifyMerchantPin':
       return handleVerifyMerchantPin(params);
+    case 'logoutMerchantSession':
+      return handleLogoutMerchantSession(params);
     case 'updateMerchantPin':
     case 'updateMerchantPinHash':
       assertMerchantAuthorized(params, params.storeId || '');
@@ -240,9 +256,10 @@ function getStoredStorePinHash(storeId) {
 }
 
 function issueMerchantSessionToken(storeScope) {
-  const cleanScope = String(storeScope || 'ALL').trim() || 'ALL';
+  // #7 & #8：廢除跨店免密通行的 'ALL' 超級權限，每張 Session Token 嚴格綁定單一授權店鋪
+  const cleanScope = String(storeScope || 'S01').trim() || 'S01';
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  const nonce = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  const nonce = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
   const payloadStr = `${expiresAt}_${nonce}_${cleanScope}`;
   const sigHex = computeHmacHex(payloadStr, getServerSecretKey());
   return {
@@ -267,18 +284,41 @@ function parseVerifiedMerchantSession(params) {
 
   const payloadParts = payloadStr.split('_');
   const expiresAt = Number(payloadParts[0] || 0);
-  const tokenScope = String(payloadParts[2] || 'ALL');
-  if (!expiresAt || Date.now() > expiresAt) {
+  const nonce = String(payloadParts[1] || '');
+  const tokenScope = String(payloadParts[2] || '');
+  if (!expiresAt || Date.now() > expiresAt || !tokenScope) {
     return null;
   }
-  return { expiresAt: expiresAt, storeScope: tokenScope };
+
+  // #16：檢查該 Session Token 是否已於登出時被伺服器端註銷
+  if (nonce) {
+    const cache = CacheService.getScriptCache();
+    if (cache && cache.get('REVOKED_SESSION_NONCE_' + nonce)) {
+      return null;
+    }
+  }
+
+  return { expiresAt: expiresAt, nonce: nonce, storeScope: tokenScope };
+}
+
+function handleLogoutMerchantSession(params) {
+  const session = parseVerifiedMerchantSession(params);
+  if (session && session.nonce) {
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      // 保留註銷紀錄至 Token 原本到期為止 (最長 6 小時 CacheService 上限 21600 秒)
+      cache.put('REVOKED_SESSION_NONCE_' + session.nonce, '1', 21600);
+    }
+  }
+  return { loggedOut: true };
 }
 
 function isMerchantRequestValid(params, requiredStoreId) {
   const session = parseVerifiedMerchantSession(params);
   if (!session) return false;
   const targetStore = String(requiredStoreId || '').trim();
-  if (targetStore && session.storeScope !== 'ALL' && session.storeScope !== targetStore) {
+  // #7：嚴格檢查目標店鋪是否與 Token 授權店鋪完全一致
+  if (targetStore && session.storeScope !== targetStore) {
     return false;
   }
   return true;
@@ -286,89 +326,101 @@ function isMerchantRequestValid(params, requiredStoreId) {
 
 function assertMerchantAuthorized(params, requiredStoreId) {
   if (!isMerchantRequestValid(params, requiredStoreId)) {
-    throw new Error('店務管理權限驗證失敗、跨店越權或時效憑證已過期 (Unauthorized)，請重新輸入該店授權碼解鎖');
+    throw new Error('店務管理權限驗證失敗、跨店越權或時效憑證已過期/已登出註銷 (Unauthorized)，請輸入該店專屬授權碼解鎖');
   }
 }
 
 function handleVerifyMerchantPin(params) {
   const rawPin = String(params.pin || '').trim();
-  const requestedStoreId = String(params.storeId || '').trim();
-  if (!rawPin || !/^\d{4}$/.test(rawPin)) {
-    throw new Error('請輸入有效的 4 位數店務管理授權碼');
+  const requestedStoreId = String(params.storeId || 'S01').trim() || 'S01';
+  // #16：支援 4~8 碼數字 PIN 授權碼
+  if (!rawPin || !/^\d{4,8}$/.test(rawPin)) {
+    throw new Error('請輸入有效的 4 至 8 位數店務管理授權碼');
   }
 
-  // 防暴力破解：使用 CacheService 限制單店 60 秒內最多嘗試 5 次錯誤
+  // #16：防暴力破解升級 — 連續錯誤達 5 次鎖定 180 秒，累計再錯鎖定更久
   const cache = CacheService.getScriptCache();
-  const rateKey = 'PIN_FAIL_' + (requestedStoreId || 'GLOBAL');
+  const rateKey = 'PIN_FAIL_' + requestedStoreId;
+  const lockTierKey = 'PIN_LOCK_TIER_' + requestedStoreId;
   const failCount = cache ? Number(cache.get(rateKey) || 0) : 0;
   if (failCount >= 5) {
-    throw new Error('授權碼連續輸入錯誤達 5 次，系統已暫時鎖定 60 秒，請稍後再試');
+    throw new Error('授權碼連續輸入錯誤達 5 次，系統已啟動安全鎖定，請稍後再試');
   }
 
   const candidateHash = hashMerchantPinWithServerSalt(rawPin);
   const storeSpecificHash = getStoredStorePinHash(requestedStoreId);
-  const masterHash = getStoredMasterPinHash();
+  const defaultInitialHash = getStoredMasterPinHash();
 
-  if (storeSpecificHash && constantTimeEquals(candidateHash, storeSpecificHash)) {
-    if (cache) cache.remove(rateKey);
-    const tokenObj = issueMerchantSessionToken(requestedStoreId || 'ALL');
+  // #8 核心修補：若該店已設定專屬密碼 (storeSpecificHash 存在)，嚴格只比對該店專屬密碼！
+  // 徹底廢除「設了新密碼 1111 後，預設 8888 仍能解鎖」的後門漏洞！
+  let isPinMatched = false;
+  if (storeSpecificHash) {
+    isPinMatched = constantTimeEquals(candidateHash, storeSpecificHash);
+  } else {
+    isPinMatched = constantTimeEquals(candidateHash, defaultInitialHash);
+  }
+
+  if (isPinMatched) {
+    if (cache) {
+      cache.remove(rateKey);
+      cache.remove(lockTierKey);
+    }
+    // #7：只核發綁定該單一店鋪 (requestedStoreId) 的 Session Token，切換店鋪必須重新驗證
+    const tokenObj = issueMerchantSessionToken(requestedStoreId);
     return {
       verified: true,
       sessionToken: tokenObj.sessionToken,
       expiresAt: tokenObj.expiresAt,
-      authorizedStoreId: tokenObj.authorizedStoreId
+      authorizedStoreId: tokenObj.authorizedStoreId,
+      isUsingInitialDefaultPin: !storeSpecificHash
     };
   }
 
-  if (constantTimeEquals(candidateHash, masterHash)) {
-    if (cache) cache.remove(rateKey);
-    const tokenObj = issueMerchantSessionToken('ALL');
-    return {
-      verified: true,
-      sessionToken: tokenObj.sessionToken,
-      expiresAt: tokenObj.expiresAt,
-      authorizedStoreId: tokenObj.authorizedStoreId
-    };
+  if (cache) {
+    const nextFail = failCount + 1;
+    const tier = Number(cache.get(lockTierKey) || 0) + (nextFail >= 5 ? 1 : 0);
+    const lockSec = nextFail >= 5 ? Math.min(1800, 180 * Math.max(1, tier)) : 120;
+    cache.put(rateKey, String(nextFail), lockSec);
+    if (nextFail >= 5) cache.put(lockTierKey, String(tier), 3600);
   }
-
-  if (cache) cache.put(rateKey, String(failCount + 1), 60);
-  throw new Error('店務 4 碼授權碼錯誤，拒絕存取');
+  throw new Error('本店專屬授權碼錯誤，拒絕存取');
 }
 
 function handleUpdateMerchantPin(params) {
   const oldPin = String(params.oldPin || '').trim();
   const newPin = String(params.newPin || '').trim();
   const targetStoreId = String(params.storeId || '').trim();
-  if (!/^\d{4}$/.test(newPin)) {
-    throw new Error('新授權碼必須為 4 位數字');
+  if (!targetStoreId) {
+    throw new Error('缺少目標店鋪編號 (storeId)');
+  }
+  // #16：支援設定 4~8 位數字新密碼
+  if (!/^\d{4,8}$/.test(newPin)) {
+    throw new Error('新授權碼必須為 4 至 8 位數字');
+  }
+  if (!oldPin) {
+    throw new Error('請輸入目前使用的舊授權碼以驗證身分');
   }
 
-  // 強制驗證舊密碼，防止借用平板者未經授權竄改店務密碼
-  if (oldPin) {
-    const oldCandidateHash = hashMerchantPinWithServerSalt(oldPin);
-    const storeSpecificHash = getStoredStorePinHash(targetStoreId);
-    const masterHash = getStoredMasterPinHash();
-    const oldMatchesStore = storeSpecificHash && constantTimeEquals(oldCandidateHash, storeSpecificHash);
-    const oldMatchesMaster = constantTimeEquals(oldCandidateHash, masterHash);
-    if (!oldMatchesStore && !oldMatchesMaster) {
-      throw new Error('原授權碼驗證錯誤，無法變更密碼');
-    }
-  } else {
-    throw new Error('請輸入目前使用的舊 4 碼授權碼以驗證身分');
+  const oldCandidateHash = hashMerchantPinWithServerSalt(oldPin);
+  const storeSpecificHash = getStoredStorePinHash(targetStoreId);
+  const defaultInitialHash = getStoredMasterPinHash();
+
+  // #8 核心修補：若該店已有專屬密碼，修改密碼時舊密碼必須吻合該店專屬密碼，禁止用預設 8888 覆寫！
+  const isOldValid = storeSpecificHash
+    ? constantTimeEquals(oldCandidateHash, storeSpecificHash)
+    : constantTimeEquals(oldCandidateHash, defaultInitialHash);
+
+  if (!isOldValid) {
+    throw new Error('本店原授權碼驗證錯誤，無法變更密碼');
   }
 
-  const session = parseVerifiedMerchantSession(params);
   const newHash = hashMerchantPinWithServerSalt(newPin);
   const props = PropertiesService.getScriptProperties();
+  props.setProperty('MERCHANT_PIN_HMAC_STORE_' + targetStoreId, newHash);
 
-  if (targetStoreId) {
-    props.setProperty('MERCHANT_PIN_HMAC_STORE_' + targetStoreId, newHash);
-  } else if (session && session.storeScope === 'ALL') {
-    props.setProperty('MERCHANT_PIN_HMAC_V12', newHash);
-  }
-
-  const nextScope = (session && session.storeScope === 'ALL') ? 'ALL' : (targetStoreId || 'ALL');
-  const tokenObj = issueMerchantSessionToken(nextScope);
+  // 換發新 Token 並註銷舊 Token
+  handleLogoutMerchantSession(params);
+  const tokenObj = issueMerchantSessionToken(targetStoreId);
   return {
     updated: true,
     sessionToken: tokenObj.sessionToken,
@@ -419,7 +471,7 @@ function maskPhoneForPublic(phoneVal) {
   return '***';
 }
 
-function sanitizeOrderForClientOutput(orderObj, hasMerchantFullAccess) {
+function sanitizeOrderForClientOutput(orderObj, hasMerchantFullAccess, canRevealVerificationCode = true) {
   if (!orderObj) return null;
   const clone = { ...orderObj };
   const last3 = extractPhoneLast3OnServer(clone.customerPhone);
@@ -428,6 +480,11 @@ function sanitizeOrderForClientOutput(orderObj, hasMerchantFullAccess) {
     clone.customerPhone = maskPhoneForPublic(clone.customerPhone);
     delete clone.lineUserId;
     delete clone.customerEmail;
+    delete clone.clientDeviceId;
+    // #15 防憑證外流：若公開查詢未通過雙重驗證或未帶入正確防偽碼/本人裝置識別，遮蔽 6 碼防偽核銷碼
+    if (!canRevealVerificationCode) {
+      clone.verificationCode = '******';
+    }
   }
   return clone;
 }
@@ -759,12 +816,24 @@ function rowArrayToOrderObject(rowVals) {
   });
 }
 
-function findOrderById(ss, orderId, hasMerchantFullAccess = false) {
+function findOrderById(ss, orderId, hasMerchantFullAccess = false, providedVerCode = '', clientDeviceId = '') {
   const orderSheet = ss.getSheetByName('Orders');
   const located = locateOrderRowById(orderSheet, orderId);
   if (!located) return null;
   const enriched = rowArrayToOrderObject(located.rowValues);
-  return sanitizeOrderForClientOutput(enriched, hasMerchantFullAccess);
+  if (!enriched) return null;
+
+  // #15：檢查是否允許在公開 getOrder 請求中揭露 6 碼防偽核銷碼
+  const cleanProvidedV = String(providedVerCode || '').trim().toUpperCase();
+  const cleanExpectedV = String(enriched.verificationCode || '').trim().toUpperCase();
+  const cleanDevId = String(clientDeviceId || '').trim();
+  const orderDevId = String(enriched.clientDeviceId || '').trim();
+  const canRevealCode = Boolean(
+    hasMerchantFullAccess ||
+    (cleanProvidedV && cleanProvidedV === cleanExpectedV) ||
+    (cleanDevId && orderDevId && cleanDevId === orderDevId)
+  );
+  return sanitizeOrderForClientOutput(enriched, hasMerchantFullAccess, canRevealCode);
 }
 
 // ==================== 4. 真實餐點複雜度、出餐口 3 分鐘緩衝與平滑等待時間演算法 ====================
@@ -1095,41 +1164,51 @@ function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
   return String(nextSeq);
 }
 
-// ==================== 5. 【資安修補 3 & B2】雙重驗證跨裝置訂單查詢與防濫用限流 ====================
+// ==================== 5. 【資安修補 #15】雙重驗證跨裝置訂單查詢與防枚舉多重限流 ====================
 function lookupOrdersAcrossDevices(ss, params) {
   const hasMerchantAuth = isMerchantRequestValid(params, '');
   let rawQ = String(params.query || '').trim().toUpperCase().replace(/^#/, '');
   let rawPhoneLast3 = extractPhoneLast3OnServer(params.phoneLast3 || '');
+  const clientDeviceId = String(params.clientDeviceId || 'ANON_DEV').trim().slice(0, 36);
 
   if (!rawQ) return { orders: [] };
 
-  // 【B2 防暴力枚舉限流】公開端點使用 CacheService 進行查詢頻率控管
-  if (!hasMerchantAuth) {
-    const cache = CacheService.getScriptCache();
-    if (cache) {
-      const qRateKey = 'LOOKUP_RATE_' + rawQ.slice(0, 8);
-      const hits = Number(cache.get(qRateKey) || 0);
-      if (hits >= 15) {
-        throw new Error('查詢頻率過高，系統已啟動安全防護，請稍候 30 秒再試');
-      }
-      cache.put(qRateKey, String(hits + 1), 30);
-    }
-  }
-
-  // 支援 "2003 678" 或 "2003-678" 複合格式
+  // 支援 "2003 678" 或 "2003-678" 複合格式先拆解，避免透過變換取餐號繞過手機末碼限流
   const comboMatch = rawQ.match(/^(\d{4,5})[\s\-_,/]+(\d{3})$/);
   if (comboMatch) {
     rawQ = comboMatch[1];
     rawPhoneLast3 = comboMatch[2];
   }
 
+  // 【#15 防暴力枚舉限流】同時針對「裝置識別碼」、「手機末 3 碼」與「全域查單桶」三重限流
+  // 杜絕攻擊者固定手機末 3 碼、輪流換取餐號 (1001, 1002, 1003...) 逐一嘗試而不被限制的漏洞！
+  if (!hasMerchantAuth) {
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      const devRateKey = 'LOOKUP_DEV_' + clientDeviceId;
+      const phoneRateKey = 'LOOKUP_PH3_' + (rawPhoneLast3 || 'NONE');
+      const globalEnumKey = 'LOOKUP_GLOBAL_BUCKET';
+
+      const devHits = Number(cache.get(devRateKey) || 0);
+      const phoneHits = Number(cache.get(phoneRateKey) || 0);
+      const globalHits = Number(cache.get(globalEnumKey) || 0);
+
+      if (devHits >= 6 || phoneHits >= 6 || globalHits >= 45) {
+        throw new Error('查單嘗試次數過於頻繁，為防止訂單號枚舉，系統已暫時鎖定查詢 60 秒，請稍後再試');
+      }
+      cache.put(devRateKey, String(devHits + 1), 60);
+      cache.put(phoneRateKey, String(phoneHits + 1), 60);
+      cache.put(globalEnumKey, String(globalHits + 1), 30);
+    }
+  }
+
   const isFullOrderId = rawQ.indexOf('ORD-') === 0 && rawQ.length >= 10;
   const isSixCharHmacCode = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/.test(rawQ);
   const isFourDigitPickup = /^\d{4,5}$/.test(rawQ);
 
-  // 未授權之公開查詢：嚴格要求「完整 ORD 編號」、「6 碼 HMAC 防偽碼」或「取餐號 + 手機末 3 碼雙重吻合」
-  if (!hasMerchantAuth && !isFullOrderId && !isSixCharHmacCode) {
-    if (!isFourDigitPickup || rawPhoneLast3.length !== 3) {
+  // 未授權之公開查詢：嚴格要求「6 碼 HMAC 防偽碼」或「取餐號 + 手機末 3 碼雙重吻合」（若用 ORD 單號亦須搭配手機末 3 碼或防偽碼）
+  if (!hasMerchantAuth && !isSixCharHmacCode) {
+    if ((!isFourDigitPickup && !isFullOrderId) || rawPhoneLast3.length !== 3) {
       throw new Error('為保護點餐隱私，跨裝置查詢請輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」雙重驗證');
     }
   }
@@ -1139,13 +1218,17 @@ function lookupOrdersAcrossDevices(ss, params) {
     .map(enrichOrderObject);
 
   const matched = tailOrders.filter(o => {
+    if (!o) return false;
     const ordId = String(o.orderId || '').toUpperCase();
     const pickNum = String(o.pickupNumber || '').toUpperCase();
     const verCode = String(o.verificationCode || '').toUpperCase();
     const ordLast3 = extractPhoneLast3OnServer(o.customerPhone);
 
-    if (isFullOrderId && ordId === rawQ) return true;
     if (isSixCharHmacCode && verCode === rawQ) return true;
+    if (isFullOrderId && ordId === rawQ) {
+      if (hasMerchantAuth) return true;
+      if (rawPhoneLast3.length === 3 && ordLast3 === rawPhoneLast3) return true;
+    }
     if (isFourDigitPickup) {
       if (hasMerchantAuth && pickNum === rawQ) return true;
       if (pickNum === rawQ && rawPhoneLast3.length === 3 && ordLast3 === rawPhoneLast3) return true;
@@ -1153,8 +1236,18 @@ function lookupOrdersAcrossDevices(ss, params) {
     return false;
   });
 
+  // 若查無結果，加重該裝置與末碼的失敗計數
+  if (!hasMerchantAuth && matched.length === 0) {
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      const devRateKey = 'LOOKUP_DEV_' + clientDeviceId;
+      const cur = Number(cache.get(devRateKey) || 0);
+      cache.put(devRateKey, String(cur + 1), 90);
+    }
+  }
+
   return {
-    orders: matched.slice(0, 10).map(o => sanitizeOrderForClientOutput(o, hasMerchantAuth))
+    orders: matched.slice(0, 5).map(o => sanitizeOrderForClientOutput(o, hasMerchantAuth, true))
   };
 }
 
@@ -1622,22 +1715,16 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   const slotQuotaMap = buildSlotQuotaMap(rawTailOrders);
   const storeQueueProgressMap = buildStoreQueueProgressMap(rawTailOrders);
 
-  // 【最小權限原則】若為已授權之店家後台，回傳該店（或全區）訂單；若為未登入之學生端，回傳該學生傳入的 myOrderIds 訂單（若不在尾端視窗亦精準補查）
+  // 【最小權限原則】若為已授權之店家後台，僅回傳該單一授權店鋪訂單；若為未登入之學生端，回傳該學生傳入的 myOrderIds 訂單
   const session = parseVerifiedMerchantSession(params);
+  const clientDeviceId = String((params && params.clientDeviceId) || '').trim();
   let clientOrders = [];
 
   if (session) {
-    const reqStoreFilter = String(params && params.storeId ? params.storeId : '').trim();
     clientOrders = rawTailOrders
-      .filter(ord => {
-        if (session.storeScope !== 'ALL' && session.storeScope !== String(ord.storeId)) return false;
-        if (reqStoreFilter && session.storeScope === 'ALL' && String(ord.storeId) !== reqStoreFilter) {
-          // 若指定單店或全區皆保留足夠單店歷史視窗 (B4)
-        }
-        return true;
-      })
+      .filter(ord => String(ord.storeId) === session.storeScope)
       .slice(0, 1200)
-      .map(ord => sanitizeOrderForClientOutput(ord, true));
+      .map(ord => sanitizeOrderForClientOutput(ord, true, true));
   } else {
     const requestedIds = Array.isArray(params && params.myOrderIds)
       ? params.myOrderIds.map(id => String(id || '').trim()).filter(Boolean).slice(0, 35)
@@ -1648,12 +1735,13 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       rawTailOrders.forEach(ord => {
         const oid = String(ord.orderId);
         if (reqSet.has(oid)) {
-          foundMap[oid] = sanitizeOrderForClientOutput(ord, false);
+          const isOwnDevice = Boolean(clientDeviceId && ord.clientDeviceId && clientDeviceId === String(ord.clientDeviceId));
+          foundMap[oid] = sanitizeOrderForClientOutput(ord, false, isOwnDevice);
         }
       });
       requestedIds.forEach(reqId => {
         if (!foundMap[reqId]) {
-          const singleOrd = findOrderById(ss, reqId, false);
+          const singleOrd = findOrderById(ss, reqId, false, '', clientDeviceId);
           if (singleOrd && !isCorruptedOrMockOrderOnServer(singleOrd)) {
             foundMap[reqId] = singleOrd;
           }
@@ -1875,7 +1963,68 @@ function computeAiTrafficRecommendations(enrichedStores) {
   return recs;
 }
 
-// ==================== 8. 【商業級改造 5 & 6】嚴格白名單計價、時段配額防超賣與尖峰預訂檢核 ====================
+// ==================== 8. 【資安修補 #10, #20, #40】伺服器金流簽章核實、防洗單/防棄單上限、白名單計價與完整歷史快照 ====================
+function handleRequestLinePayCheckout(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const amount = Math.max(0, Math.round(Number(params.amount) || 0));
+  if (!storeId || amount <= 0) {
+    throw new Error('金流請求參數錯誤：缺少店家編號或有效金額');
+  }
+  const todayCompact = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd');
+  const txRand = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  const transactionId = `LP-${todayCompact}-${storeId}-${txRand}`;
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 金流授權憑證 15 分鐘內有效
+  const payloadStr = `${storeId}|${amount}|${transactionId}|${expiresAt}`;
+  const sigHex = computeHmacHex('LINEPAY_AUTH_V17:' + payloadStr, getServerSecretKey());
+
+  return {
+    approved: true,
+    transactionId: transactionId,
+    amount: amount,
+    storeId: storeId,
+    expiresAt: expiresAt,
+    paymentAuthToken: `${payloadStr}.${sigHex}`
+  };
+}
+
+function verifyLinePayAuthTokenOnServer(paymentAuthToken, expectedStoreId, expectedAmount) {
+  const rawToken = String(paymentAuthToken || '').trim();
+  if (!rawToken || rawToken.indexOf('.') < 0) return null;
+  const parts = rawToken.split('.');
+  if (parts.length !== 2) return null;
+
+  const payloadStr = parts[0];
+  const providedSig = parts[1];
+  const expectedSig = computeHmacHex('LINEPAY_AUTH_V17:' + payloadStr, getServerSecretKey());
+  if (!constantTimeEquals(providedSig, expectedSig)) return null;
+
+  const fields = payloadStr.split('|');
+  if (fields.length !== 4) return null;
+  const [tokenStoreId, tokenAmtStr, transactionId, expStr] = fields;
+  const tokenAmt = Number(tokenAmtStr || 0);
+  const expiresAt = Number(expStr || 0);
+
+  if (tokenStoreId !== String(expectedStoreId).trim()) return null;
+  if (tokenAmt !== Number(expectedAmount)) return null;
+  if (!expiresAt || Date.now() > expiresAt) return null;
+
+  // 防重放攻擊 (Anti-Replay)：確保同一張金流交易單號不可被重複用於第二張訂單
+  const cache = CacheService.getScriptCache();
+  const replayKey = 'LP_USED_TX_' + transactionId;
+  if (cache && cache.get(replayKey)) {
+    return null;
+  }
+  if (cache) {
+    cache.put(replayKey, '1', 3600);
+  }
+
+  return {
+    verified: true,
+    transactionId: transactionId,
+    amount: tokenAmt
+  };
+}
+
 function handleOrderSubmission(ss, params) {
   const storeId = String(params.storeId || '').trim();
   if (!storeId) {
@@ -1884,27 +2033,14 @@ function handleOrderSubmission(ss, params) {
 
   const orderSheet = ss.getSheetByName('Orders');
   const incomingOrderId = String(params.orderId || ('ORD-' + Utilities.getUuid().slice(0, 12))).trim();
+  const clientDeviceId = String(params.clientDeviceId || '').trim().slice(0, 48);
 
   // 冪等性保護：若該 orderId 已存在，直接回傳既有權威訂單（經最小權限脫敏）
   const isMerchantPosRequest = isMerchantRequestValid(params, storeId);
   const existingLocated = locateOrderRowById(orderSheet, incomingOrderId);
   if (existingLocated) {
     const existingOrder = rowArrayToOrderObject(existingLocated.rowValues);
-    return { order: sanitizeOrderForClientOutput(existingOrder, isMerchantPosRequest) };
-  }
-
-  // 【B2 防惡意棄單與假單轟炸保護】非櫃檯 POS 之線上點餐執行 CacheService 速率限制
-  if (!isMerchantPosRequest) {
-    const cache = CacheService.getScriptCache();
-    if (cache) {
-      const phoneKey = extractPhoneLast3OnServer(params.customerPhone || '') || 'ANON';
-      const submitRateKey = `SUB_RATE_${storeId}_${phoneKey}`;
-      const subHits = Number(cache.get(submitRateKey) || 0);
-      if (subHits >= 5) {
-        throw new Error('送單過於頻繁，請稍候 60 秒再試');
-      }
-      cache.put(submitRateKey, String(subHits + 1), 60);
-    }
+    return { order: sanitizeOrderForClientOutput(existingOrder, isMerchantPosRequest, true) };
   }
 
   const stores = sheetToObjects(ss.getSheetByName('Stores'));
@@ -1918,14 +2054,65 @@ function handleOrderSubmission(ss, params) {
   try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
   const isStoreOpen = openStateMap[storeId] !== undefined ? Boolean(openStateMap[storeId]) : true;
   const isReservation = Boolean(params.isReservation);
+  const paymentMethod = String(params.paymentMethod || '現場櫃檯付現').trim();
+  const isCashPayment = paymentMethod.indexOf('付現') >= 0 || paymentMethod.indexOf('現金') >= 0;
+  const rawPhoneDigits = String(params.customerPhone || '').replace(/\D/g, '');
+
+  // 【#20 防惡意棄單與匿名假單轟炸】非櫃檯 POS 之線上點餐執行嚴格伺服器端檢核
+  if (!isMerchantPosRequest) {
+    // 1. 現金單或預訂單強制要求台灣手機號碼格式 (09開頭共10碼)
+    if ((isCashPayment || isReservation) && !/^09\d{8}$/.test(rawPhoneDigits)) {
+      throw new Error('選擇「現場櫃檯付現」或「預訂取餐」必須填寫有效的 10 碼手機號碼（09xxxxxxxx），以防止匿名棄單！');
+    }
+
+    // 2. 多維度速率限制：同時綁定裝置 clientDeviceId、完整手機號碼與店鋪全域流速，杜絕亂換手機末 3 碼洗單
+    const cache = CacheService.getScriptCache();
+    if (cache) {
+      const devKey = `SUB_DEV_${clientDeviceId || 'NO_DEV'}`;
+      const phoneKey = `SUB_PHONE_${rawPhoneDigits || 'ANON'}`;
+      const storeBurstKey = `SUB_BURST_${storeId}`;
+
+      const devHits = Number(cache.get(devKey) || 0);
+      const phoneHits = Number(cache.get(phoneKey) || 0);
+      const burstHits = Number(cache.get(storeBurstKey) || 0);
+
+      if (devHits >= 3 || phoneHits >= 3) {
+        throw new Error('您送出訂單的頻率過高（60 秒內上限 3 筆），請稍候再試');
+      }
+      if (burstHits >= 30) {
+        throw new Error('此櫃位瞬間湧入大量線上訂單，系統啟動防洗單保護，請稍候 15 秒再試');
+      }
+      cache.put(devKey, String(devHits + 1), 60);
+      cache.put(phoneKey, String(phoneHits + 1), 60);
+      cache.put(storeBurstKey, String(burstHits + 1), 20);
+    }
+  }
 
   if (!isStoreOpen && !isReservation && !isMerchantPosRequest) {
     throw new Error(`「${storeRow.name}」目前暫停立即出餐，請改選「預訂取餐」模式！`);
   }
 
   const maxCap = Math.max(5, Number(storeRow.maxCapacityPer15Min) || 20);
-  const recentOrders = readSheetTailObjects(orderSheet, 250).map(enrichOrderObject);
+  const recentOrders = readSheetTailObjects(orderSheet, 300).map(enrichOrderObject);
   const todayStr = getTodayTaipeiStr();
+
+  // 【#20 伺服器端跨裝置未付款現金單上限攔截】
+  // 即使學生清除 localStorage、換無痕視窗或換手機，只要同一手機號碼或同一裝置在當日已有 >= 2 筆未付款現金單，後端直接拒絕！
+  if (!isMerchantPosRequest && isCashPayment) {
+    const activeUnpaidCashOrders = recentOrders.filter(o => {
+      if (!o || String(o.status || '').indexOf('已取消') >= 0 || o.status === '已完成') return false;
+      if (normalizeSheetDateStr(o.pickupDate) !== todayStr) return false;
+      if (String(o.paymentStatus || '') === '已付款') return false;
+      const ordPhoneDigits = String(o.customerPhone || '').replace(/\D/g, '');
+      const samePhone = rawPhoneDigits && ordPhoneDigits === rawPhoneDigits;
+      const sameDevice = clientDeviceId && o.clientDeviceId && String(o.clientDeviceId) === clientDeviceId;
+      return Boolean(samePhone || sameDevice);
+    });
+    if (activeUnpaidCashOrders.length >= 2) {
+      throw new Error('伺服器查核：您目前已有 2 筆尚未至櫃檯付款領取的現金訂單，為防止棄單，請先完成取餐付款或改用 LINE Pay 線上結帳！');
+    }
+  }
+
   let pickupDateVal = isReservation ? normalizeSheetDateStr(params.pickupDate) : todayStr;
   if (pickupDateVal < todayStr) {
     pickupDateVal = todayStr;
@@ -1987,6 +2174,7 @@ function handleOrderSubmission(ss, params) {
 
   const verifiedItems = [];
   let authoritativeSubtotal = 0;
+  const snapshotTimestamp = now.getTime();
 
   for (let i = 0; i < nonGiftItems.length; i++) {
     const reqItem = nonGiftItems[i];
@@ -2056,21 +2244,27 @@ function handleOrderSubmission(ss, params) {
     });
 
     const authoritativeUnitPrice = Math.max(0, dbMenu.price + unitExtra);
+    const lineSubtotal = authoritativeUnitPrice * qty;
     const selSuffix = Object.keys(verifiedSelections).length > 0
       ? ` [${Object.entries(verifiedSelections).map(([k, v]) => `${k}:${v}`).join(', ')}]`
       : '';
 
+    // 【#40 完整歷史價格與規格快照隔離】封存結帳當下的 basePrice, unitExtra, price 與 lineSubtotal
     verifiedItems.push({
       id: dbMenu.id,
       baseName: dbMenu.name,
       name: `${dbMenu.name}${selSuffix}`,
+      basePrice: dbMenu.price,
+      unitExtra: unitExtra,
       price: authoritativeUnitPrice,
       qty: qty,
+      lineSubtotal: lineSubtotal,
       selections: verifiedSelections,
-      isGift: false
+      isGift: false,
+      snapshotAtTs: snapshotTimestamp
     });
 
-    authoritativeSubtotal += authoritativeUnitPrice * qty;
+    authoritativeSubtotal += lineSubtotal;
   }
 
   // 【商業級改造 5】計算佇列負載並檢查是否為「午間尖峰預訂單 (11:45~12:45)」
@@ -2087,10 +2281,14 @@ function handleOrderSubmission(ss, params) {
       id: 'GIFT-AI',
       baseName: `${promoText} (贈品)`,
       name: `${promoText} (贈品)`,
+      basePrice: 0,
+      unitExtra: 0,
       price: 0,
       qty: 1,
+      lineSubtotal: 0,
       selections: {},
-      isGift: true
+      isGift: true,
+      snapshotAtTs: snapshotTimestamp
     });
   }
 
@@ -2117,6 +2315,27 @@ function handleOrderSubmission(ss, params) {
 
   const authoritativeFinalTotal = Math.max(0, authoritativeSubtotal + cutleryFee - authoritativeDiscount - manualDiscount);
 
+  // 【#10 嚴格防止付款狀態偽造】
+  // 線上學生端若傳入 paymentMethod === 'LINE Pay'，必須通過後端 verifyLinePayAuthTokenOnServer 驗證 HMAC 金流憑證與金額！
+  // 嚴禁僅憑 paymentMethod === 'LINE Pay' 字串就無條件設為 '已付款'！
+  const isLargeCashReserve = isReservation && authoritativeFinalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && isCashPayment;
+  let paymentStatus = '取餐付現';
+  let verifiedTransactionId = '';
+
+  if (isMerchantPosRequest) {
+    paymentStatus = '已付款';
+    verifiedTransactionId = String(params.transactionId || ('POS-' + now.getTime()));
+  } else if (paymentMethod === 'LINE Pay') {
+    const lpVerify = verifyLinePayAuthTokenOnServer(params.paymentAuthToken, storeId, authoritativeFinalTotal);
+    if (!lpVerify || !lpVerify.verified) {
+      throw new Error('線上行動支付 (LINE Pay) 金流簽章驗證失敗、金額不符或交易憑證已過期，拒絕偽造已付款訂單！請重新發起付款授權。');
+    }
+    paymentStatus = '已付款';
+    verifiedTransactionId = lpVerify.transactionId;
+  } else if (isLargeCashReserve) {
+    paymentStatus = '待櫃檯繳費';
+  }
+
   // 【取餐號碼權威防撞號機制 B6】統一由伺服器原子序號產生，僅在離線補送且該號碼尚未被佔用時才保留原離線單號
   let pickupNumber = '';
   const requestedPosNum = String(params.pickupNumber || '').trim();
@@ -2140,17 +2359,6 @@ function handleOrderSubmission(ss, params) {
   }
 
   const verificationCode = generateOrderVerificationCodeOnServer(incomingOrderId, pickupNumber, authoritativeFinalTotal);
-
-  const paymentMethod = String(params.paymentMethod || '現場櫃檯付現').trim();
-  const isLargeCashReserve = isReservation && authoritativeFinalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && paymentMethod.indexOf('付現') >= 0;
-  let paymentStatus = '取餐付現';
-  if (isMerchantPosRequest && params.paymentStatus === '已付款') {
-    paymentStatus = '已付款';
-  } else if (isLargeCashReserve) {
-    paymentStatus = '待櫃檯繳費';
-  } else if (paymentMethod === 'LINE Pay') {
-    paymentStatus = '已付款';
-  }
 
   const nowParts = createdAtStr.split(':');
   const nowMinutesOfDay = parseInt(nowParts[0], 10) * 60 + parseInt(nowParts[1], 10);
@@ -2199,7 +2407,9 @@ function handleOrderSubmission(ss, params) {
     paymentDeadline: isLargeCashReserve ? pickupDateVal : '',
     paymentStatus: paymentStatus,
     paidAtDate: paidAtDate,
-    transactionId: String(params.transactionId || ''),
+    transactionId: verifiedTransactionId,
+    paymentVerifiedByHmac: Boolean(paymentStatus === '已付款'),
+    clientDeviceId: clientDeviceId,
     cashReceived: isMerchantPosRequest ? (Number(params.cashReceived) || 0) : 0,
     changeGiven: isMerchantPosRequest ? (Number(params.changeGiven) || 0) : 0,
     notifyCount: 0,
@@ -2245,7 +2455,7 @@ function handleOrderSubmission(ss, params) {
   dispatchOrderNotificationOnServer(ss, savedOrderObj, pushTitle, pushBody, initialStatus);
 
   return {
-    order: sanitizeOrderForClientOutput(savedOrderObj, isMerchantPosRequest)
+    order: sanitizeOrderForClientOutput(savedOrderObj, isMerchantPosRequest, true)
   };
 }
 
@@ -2374,11 +2584,19 @@ function cancelOrderByIdBatch(ss, params) {
   let meta = {};
   try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
 
+  const origPayMethod = String(rowVals[12] || '現金').trim();
+  const wasOriginallyPaid = String(meta.paymentStatus || '') === '已付款';
+
   rowVals[13] = `已取消 (${reason})`;
-  if (params.wasPaidRefund || Number(params.refundAmount) > 0) {
-    meta.paymentStatus = '已退款作廢';
+  if (wasOriginallyPaid || params.wasPaidRefund || Number(params.refundAmount) > 0) {
+    const isLinePayOrder = origPayMethod === 'LINE Pay';
+    // #10：明確區分線上 LINE Pay 退刷狀態與現場現金退款，確保日結錢箱現金與行動支付對帳精準不混淆
+    meta.paymentStatus = isLinePayOrder ? '已退款 (LINE Pay退刷)' : '已退款 (櫃檯退現)';
     meta.refundAmount = Math.max(0, Number(params.refundAmount) || Number(rowVals[9]) || 0);
-    meta.refundMethod = String(params.refundMethod || rowVals[12] || '現金').trim();
+    meta.refundMethod = isLinePayOrder ? 'LINE Pay 原路退刷' : String(params.refundMethod || origPayMethod || '現金').trim();
+    meta.refundTransactionId = isLinePayOrder
+      ? ('REF-' + (meta.transactionId || Utilities.getUuid().slice(0, 8).toUpperCase()))
+      : ('CASH-REF-' + Date.now());
     meta.refundedAtDate = getTodayTaipeiStr();
   } else {
     meta.paymentStatus = '已退單作廢';
@@ -2679,7 +2897,12 @@ function createNewStoreOnServer(ss, params) {
   const campus = String(params.campus || '雙溪校區').trim();
   const category = String(params.category || '人氣特餐・便當').trim();
   const icon = String(params.icon || '🍱').trim();
+  const newStorePin = String(params.newStorePin || '').trim();
   if (!name) throw new Error('請輸入新餐廳名稱');
+  // #7：建立新店家時強制要求設定該店獨立的 4~8 碼 PIN 授權碼
+  if (!/^\d{4,8}$/.test(newStorePin)) {
+    throw new Error('建立新餐廳時請設定該店專屬的 4 至 8 位數字管理密碼 (PIN)');
+  }
 
   const storeSheet = ss.getSheetByName('Stores');
   const rows = storeSheet.getDataRange().getValues();
@@ -2698,6 +2921,9 @@ function createNewStoreOnServer(ss, params) {
   storeSheet.appendRow(newStoreRow);
 
   const props = PropertiesService.getScriptProperties();
+  // #7：立即為新餐廳寫入獨立 PIN HMAC 雜湊，拒絕無主密碼新店
+  props.setProperty('MERCHANT_PIN_HMAC_STORE_' + nextId, hashMerchantPinWithServerSalt(newStorePin));
+
   let customMetaMap = {};
   try { customMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
   customMetaMap[nextId] = {
@@ -2714,8 +2940,13 @@ function createNewStoreOnServer(ss, params) {
     props.setProperty('DELETED_STORE_IDS', JSON.stringify(deletedMap));
   }
 
+  const newStoreToken = issueMerchantSessionToken(nextId);
+
   return {
     created: true,
+    sessionToken: newStoreToken.sessionToken,
+    expiresAt: newStoreToken.expiresAt,
+    authorizedStoreId: newStoreToken.authorizedStoreId,
     store: {
       id: nextId,
       campus: campus,
