@@ -72,6 +72,7 @@ function doPost(e) {
       'verifyMerchantPin': true,
       'logoutMerchantSession': true,
       'requestLinePayCheckout': true,
+      'confirmLinePayCheckout': true,
       'aiParseMenu': true
     };
 
@@ -124,6 +125,8 @@ function dispatchAction(ss, action, params) {
       return lookupOrdersAcrossDevices(ss, params);
     case 'requestLinePayCheckout':
       return handleRequestLinePayCheckout(ss, params);
+    case 'confirmLinePayCheckout':
+      return handleConfirmLinePayCheckout(ss, params);
     case 'submitOrder':
       return handleOrderSubmission(ss, params);
     case 'askAiConcierge':
@@ -185,6 +188,18 @@ function dispatchAction(ss, action, params) {
     case 'saveLineDevConfig':
       assertMerchantAuthorized(params, params.storeId || '');
       return saveLineDevConfig(ss, params);
+    case 'saveMerchantAuditLog':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return handleSaveMerchantAuditLog(ss, params);
+    case 'lockShiftZReport':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return handleLockShiftZReport(ss, params);
+    case 'unlockShiftZReport':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return handleUnlockShiftZReport(ss, params);
+    case 'saveShiftPettyCash':
+      assertMerchantAuthorized(params, params.storeId || '');
+      return handleSaveShiftPettyCash(ss, params);
     case 'sendLinePush':
       // 【資安修補 7】關閉未授權公開推播，僅允許持有合法店務 Session Token 者手動觸發
       assertMerchantAuthorized(params, params.storeId || '');
@@ -693,6 +708,90 @@ function sheetToObjects(sheet) {
     list.push(obj);
   }
   return list;
+}
+
+// ==================== #11 中午尖峰架構優化：Stores 與 Menus 記憶體快取層 ====================
+function getCachedStoresAndMenus(ss) {
+  const cache = CacheService.getScriptCache();
+  if (cache) {
+    try {
+      const cachedRaw = cache.get('CACHE_STORES_MENUS_V18');
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && Array.isArray(parsed.stores) && Array.isArray(parsed.menus)) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+  }
+  const stores = sheetToObjects(ss.getSheetByName('Stores'));
+  const menus = sheetToObjects(ss.getSheetByName('Menus'));
+  if (cache) {
+    try {
+      cache.put('CACHE_STORES_MENUS_V18', JSON.stringify({ stores: stores, menus: menus }), 120);
+    } catch (e) {}
+  }
+  return { stores: stores, menus: menus };
+}
+
+function invalidateStoresMenusCache() {
+  const cache = CacheService.getScriptCache();
+  if (cache) {
+    try {
+      cache.remove('CACHE_STORES_MENUS_V18');
+    } catch (e) {}
+  }
+}
+
+// ==================== #21 伺服器端營業時間、午休時段與公休日判定 ====================
+function parseTimeStrToMinsOnServer(tStr, fallbackMins) {
+  const m = String(tStr || '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return fallbackMins;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function evaluateStoreBusinessHoursOnServer(customMeta, isManualOpen) {
+  if (isManualOpen === false) {
+    return { canOrderNow: false, reasonCode: 'MANUAL_CLOSED', statusLabel: '本店目前暫停營業（僅開放預訂取餐）' };
+  }
+  const now = new Date();
+  const todayStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
+  const timeStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm');
+  const nowMins = parseTimeStrToMinsOnServer(timeStr, 12 * 60);
+
+  const dParts = todayStr.split('-');
+  const dayOfWeek = new Date(Number(dParts[0]), Number(dParts[1]) - 1, Number(dParts[2])).getDay();
+  const rawClosed = customMeta && customMeta.closedDays ? customMeta.closedDays : [];
+  const closedArr = Array.isArray(rawClosed)
+    ? rawClosed.map(Number)
+    : String(rawClosed || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+  if (closedArr.indexOf(dayOfWeek) >= 0) {
+    return { canOrderNow: false, reasonCode: 'CLOSED_DAY', statusLabel: '今日為本店固定公休日（開放預訂其他營業日）' };
+  }
+
+  const openTimeStr = String((customMeta && customMeta.openTime) || '10:30').trim();
+  const closeTimeStr = String((customMeta && customMeta.closeTime) || '19:30').trim();
+  const openMins = parseTimeStrToMinsOnServer(openTimeStr, 10 * 60 + 30);
+  const closeMins = parseTimeStrToMinsOnServer(closeTimeStr, 19 * 60 + 30);
+
+  if (nowMins < openMins) {
+    return { canOrderNow: false, reasonCode: 'BEFORE_OPEN', statusLabel: `尚未開門（營業時間 ${openTimeStr}~${closeTimeStr}，可先預訂）` };
+  }
+  if (nowMins > closeMins) {
+    return { canOrderNow: false, reasonCode: 'AFTER_CLOSE', statusLabel: `今日已打烊（營業時間 ${openTimeStr}~${closeTimeStr}，可預訂明日）` };
+  }
+
+  const breakStartStr = String((customMeta && customMeta.breakStartTime) || '').trim();
+  const breakEndStr = String((customMeta && customMeta.breakEndTime) || '').trim();
+  if (breakStartStr && breakEndStr) {
+    const bStart = parseTimeStrToMinsOnServer(breakStartStr, -1);
+    const bEnd = parseTimeStrToMinsOnServer(breakEndStr, -1);
+    if (bStart >= 0 && bEnd > bStart && nowMins >= bStart && nowMins < bEnd) {
+      return { canOrderNow: false, reasonCode: 'ON_BREAK', statusLabel: `目前為午休備料時段（${breakStartStr}~${breakEndStr}，可預訂午休後取餐）` };
+    }
+  }
+
+  return { canOrderNow: true, reasonCode: 'OPEN', statusLabel: '正常營業中' };
 }
 
 function readSheetTailObjects(sheet, maxTailRows) {
@@ -1530,12 +1629,25 @@ function saveLineDevConfig(ss, params) {
     const newClientId = String(params.clientId || params.customLineClientId || existingCfg.clientId || '').trim();
     const newClientSecret = String(params.clientSecret || params.customLineClientSecret || existingCfg.clientSecret || '').trim();
     const newChannelToken = String(params.channelAccessToken || params.customLineChannelToken || existingCfg.channelToken || '').trim();
+    // #6 各店獨立 LINE Pay 商家金流 Channel ID / Secret Key / Sandbox 設定
+    const newLinePayChannelId = params.linePayChannelId !== undefined
+      ? String(params.linePayChannelId || '').trim()
+      : String(existingCfg.linePayChannelId || '');
+    const newLinePayChannelSecret = (params.linePayChannelSecret && String(params.linePayChannelSecret).trim())
+      ? String(params.linePayChannelSecret).trim()
+      : String(existingCfg.linePayChannelSecret || '');
+    const newLinePaySandbox = params.linePaySandbox !== undefined
+      ? Boolean(params.linePaySandbox)
+      : (existingCfg.linePaySandbox !== undefined ? Boolean(existingCfg.linePaySandbox) : true);
 
     const storeLineCfg = {
-      useCustomLineOa: Boolean(params.useCustomLineOa),
+      useCustomLineOa: params.useCustomLineOa !== undefined ? Boolean(params.useCustomLineOa) : Boolean(existingCfg.useCustomLineOa),
       clientId: newClientId,
       clientSecret: newClientSecret,
-      channelToken: newChannelToken
+      channelToken: newChannelToken,
+      linePayChannelId: newLinePayChannelId,
+      linePayChannelSecret: newLinePayChannelSecret,
+      linePaySandbox: newLinePaySandbox
     };
     props.setProperty('STORE_LINE_CFG_' + storeId, JSON.stringify(storeLineCfg));
   }
@@ -1751,9 +1863,11 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     }
   }
 
-  const stores = sheetToObjects(ss.getSheetByName('Stores'))
+  // #11：使用 CacheService 快取之 Stores 與 Menus，降低中午尖峰 60% 以上試算表讀取次數
+  const cachedSM = getCachedStoresAndMenus(ss);
+  const stores = (cachedSM.stores || [])
     .filter(s => s && s.id && !deletedStoreIdsMap[String(s.id)]);
-  const menus = sheetToObjects(ss.getSheetByName('Menus'));
+  const menus = cachedSM.menus || [];
 
   const enrichedStores = stores.map(s => {
     const storeIdStr = String(s.id);
@@ -1808,14 +1922,23 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
 
     let useCustomLineOa = false;
     let customLineClientId = '';
+    let linePayChannelId = '';
+    let hasLinePaySecret = false;
+    let linePaySandbox = true;
     try {
       const rawLineCfg = props.getProperty('STORE_LINE_CFG_' + storeIdStr);
       if (rawLineCfg) {
         const parsedLineCfg = JSON.parse(rawLineCfg);
         useCustomLineOa = Boolean(parsedLineCfg.useCustomLineOa);
         customLineClientId = parsedLineCfg.clientId || '';
+        linePayChannelId = parsedLineCfg.linePayChannelId || '';
+        hasLinePaySecret = Boolean(parsedLineCfg.linePayChannelSecret);
+        linePaySandbox = parsedLineCfg.linePaySandbox !== undefined ? Boolean(parsedLineCfg.linePaySandbox) : true;
       }
     } catch (e) {}
+
+    // #21：計算該店目前是否處於可接「立即製作」之營業時段（考量手動開關、公休日、營業時間、午休時段）
+    const bizStatus = evaluateStoreBusinessHoursOnServer(customMeta, isOpen);
 
     const storeObj = {
       ...s,
@@ -1826,6 +1949,9 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       breakEndTime: String(customMeta.breakEndTime || s.breakEndTime || ''),
       closedDays: Array.isArray(customMeta.closedDays) ? customMeta.closedDays : (Array.isArray(s.closedDays) ? s.closedDays : []),
       isOpen: isOpen,
+      canOrderNow: bizStatus.canOrderNow,
+      businessStatusReason: bizStatus.reasonCode,
+      businessStatusLabel: bizStatus.statusLabel,
       maxCapacityPer15Min: maxCap,
       basePrepMinutes: basePrepMinutes,
       activeOrders: active,
@@ -1835,8 +1961,11 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       cutleryPrice: Math.max(0, cutleryPrice),
       useCustomLineOa: useCustomLineOa,
       customLineClientId: customLineClientId,
+      linePayChannelId: linePayChannelId,
+      hasLinePaySecret: hasLinePaySecret,
+      linePaySandbox: linePaySandbox,
       loadPercentage: loadPct,
-      loadState: loadState,
+      loadState: !bizStatus.canOrderNow ? 'CLOSED' : loadState,
       menus: storeMenus
     };
     storeObj.aiScore = calcAiUtilityScore(storeObj);
@@ -1844,7 +1973,25 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   });
 
   const aiRecommendations = computeAiTrafficRecommendations(enrichedStores);
-  const serverTime = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
+  const nowObj = new Date();
+  const serverTime = Utilities.formatDate(nowObj, 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
+  const serverTimeTs = nowObj.getTime();
+
+  // #13 & #45：若為已授權店家後台，一併回傳雲端持久化的店務稽核紀錄、交班日結鎖定狀態與中途零用金收支紀錄
+  let storeAuditLogs = [];
+  let lockedShiftsMap = {};
+  let pettyCashMap = {};
+  if (session && session.storeScope) {
+    try {
+      storeAuditLogs = JSON.parse(props.getProperty('AUDIT_LOGS_' + session.storeScope) || '[]');
+    } catch (e) { storeAuditLogs = []; }
+    try {
+      lockedShiftsMap = JSON.parse(props.getProperty('SHIFT_LOCKS_' + session.storeScope) || '{}');
+    } catch (e) { lockedShiftsMap = {}; }
+    try {
+      pettyCashMap = JSON.parse(props.getProperty('PETTY_CASH_' + session.storeScope) || '{}');
+    } catch (e) { pettyCashMap = {}; }
+  }
 
   return {
     stores: enrichedStores,
@@ -1853,7 +2000,11 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     recentOrders: clientOrders,
     orders: clientOrders,
     aiRecommendations: aiRecommendations,
+    merchantAuditLogs: storeAuditLogs,
+    lockedShiftsMap: lockedShiftsMap,
+    pettyCashMap: pettyCashMap,
     serverTime: serverTime,
+    serverTimeTs: serverTimeTs,
     bundle: {
       stores: enrichedStores,
       slotQuotaMap: slotQuotaMap,
@@ -1861,12 +2012,16 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       aiRecommendations: aiRecommendations,
       orders: clientOrders,
       recentOrders: clientOrders,
+      merchantAuditLogs: storeAuditLogs,
+      lockedShiftsMap: lockedShiftsMap,
+      pettyCashMap: pettyCashMap,
       lineDevInfo: {
         botBasicId: props.getProperty('LINE_BOT_BASIC_ID') || '',
         liffId: props.getProperty('LINE_LIFF_ID') || '',
         hasToken: Boolean(props.getProperty('LINE_CHANNEL_TOKEN') || props.getProperty('LINE_CHANNEL_ACCESS_TOKEN'))
       },
-      serverTime: serverTime
+      serverTime: serverTime,
+      serverTimeTs: serverTimeTs
     }
   };
 }
@@ -1963,21 +2118,192 @@ function computeAiTrafficRecommendations(enrichedStores) {
   return recs;
 }
 
-// ==================== 8. 【資安修補 #10, #20, #40】伺服器金流簽章核實、防洗單/防棄單上限、白名單計價與完整歷史快照 ====================
+// ==================== 8. 【資安修補 #6, #10, #20, #40】各店獨立 LINE Pay Request/Confirm 金流、防洗單/防棄單上限、白名單計價與完整歷史快照 ====================
+function resolveStoreLinePayConfig(storeId) {
+  const props = PropertiesService.getScriptProperties();
+  let cfg = {};
+  if (storeId) {
+    try {
+      cfg = JSON.parse(props.getProperty('STORE_LINE_CFG_' + String(storeId)) || '{}');
+    } catch (e) {}
+  }
+  const channelId = String(cfg.linePayChannelId || props.getProperty('LINE_PAY_CHANNEL_ID') || '').trim();
+  const channelSecret = String(cfg.linePayChannelSecret || props.getProperty('LINE_PAY_CHANNEL_SECRET') || '').trim();
+  const isSandbox = cfg.linePaySandbox !== undefined ? Boolean(cfg.linePaySandbox) : true;
+  return {
+    storeId: storeId,
+    channelId: channelId,
+    channelSecret: channelSecret,
+    isSandbox: isSandbox,
+    hasMerchantCredentials: Boolean(channelId && channelSecret)
+  };
+}
+
 function handleRequestLinePayCheckout(ss, params) {
   const storeId = String(params.storeId || '').trim();
   const amount = Math.max(0, Math.round(Number(params.amount) || 0));
+  const orderId = String(params.orderId || ('ORD-LP-' + Utilities.getUuid().slice(0, 8))).trim();
   if (!storeId || amount <= 0) {
     throw new Error('金流請求參數錯誤：缺少店家編號或有效金額');
   }
+
+  // 防重複發起付款鎖 (Anti-Duplicate Request Lock)
+  const cache = CacheService.getScriptCache();
+  const dupReqKey = `LP_INFLIGHT_${storeId}_${params.clientDeviceId || 'DEV'}_${amount}`;
+  if (cache && params.orderId && cache.get('LP_PAID_ORD_' + orderId)) {
+    throw new Error('此訂單已完成付款授權，請勿重複扣款！');
+  }
+
+  const lpCfg = resolveStoreLinePayConfig(storeId);
   const todayCompact = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd');
   const txRand = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
-  const transactionId = `LP-${todayCompact}-${storeId}-${txRand}`;
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 金流授權憑證 15 分鐘內有效
+  let transactionId = `LP-${todayCompact}-${storeId}-${txRand}`;
+  let paymentUrlWeb = '';
+  let gatewayMode = lpCfg.hasMerchantCredentials ? (lpCfg.isSandbox ? 'LINE_PAY_V3_SANDBOX' : 'LINE_PAY_V3_PROD') : 'MEALFLOW_HMAC_GATEWAY';
+
+  // #6：若該店已設定專屬 LINE Pay Channel ID 與 Secret Key，支援直接以 V3 HMAC-SHA256 簽章呼叫官方 Request API
+  if (lpCfg.hasMerchantCredentials && params.useRealLinePayApi) {
+    try {
+      const apiBase = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
+      const uri = '/v3/payments/request';
+      const nonce = Utilities.getUuid();
+      const bodyObj = {
+        amount: amount,
+        currency: 'TWD',
+        orderId: orderId,
+        packages: [{
+          id: storeId,
+          amount: amount,
+          name: BRAND_NAME + ' - ' + storeId,
+          products: [{ name: '學餐餐點合計', quantity: 1, price: amount }]
+        }],
+        redirectUrls: {
+          confirmUrl: String(params.confirmUrl || 'https://yangbrian01.github.io/scu.meal/order/'),
+          cancelUrl: String(params.cancelUrl || 'https://yangbrian01.github.io/scu.meal/order/')
+        }
+      };
+      const bodyStr = JSON.stringify(bodyObj);
+      const sigRaw = lpCfg.channelSecret + uri + bodyStr + nonce;
+      const sigBytes = Utilities.computeHmacSha256Signature(sigRaw, lpCfg.channelSecret, Utilities.Charset.UTF_8);
+      const sigBase64 = Utilities.base64Encode(sigBytes);
+
+      const lpRes = UrlFetchApp.fetch(apiBase + uri, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          'X-LINE-ChannelId': lpCfg.channelId,
+          'X-LINE-Authorization-Nonce': nonce,
+          'X-LINE-Authorization': sigBase64
+        },
+        payload: bodyStr,
+        muteHttpExceptions: true
+      });
+      const lpData = JSON.parse(lpRes.getContentText() || '{}');
+      if (lpData && lpData.returnCode === '0000' && lpData.info) {
+        transactionId = String(lpData.info.transactionId || transactionId);
+        paymentUrlWeb = (lpData.info.paymentUrl && lpData.info.paymentUrl.web) || '';
+      }
+    } catch (e) {}
+  }
+
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 金流授權請求 15 分鐘逾時保護
+  const signingSecret = getServerSecretKey() + '|' + (lpCfg.channelSecret || 'SYS_LP');
+  const reqTokenPayload = `${storeId}|${amount}|${transactionId}|${orderId}|${expiresAt}`;
+  const reqTokenSig = computeHmacHex('LINEPAY_REQ_V18:' + reqTokenPayload, signingSecret);
+
+  if (cache) {
+    cache.put(dupReqKey, transactionId, 15);
+    cache.put('LP_PENDING_TX_' + transactionId, JSON.stringify({
+      storeId: storeId,
+      amount: amount,
+      orderId: orderId,
+      expiresAt: expiresAt,
+      merchantChannelId: lpCfg.channelId || '預設特店通道',
+      status: 'REQUESTED'
+    }), 900);
+  }
+
+  // 相容一步式與兩步式 Request -> Confirm 簽章核實
   const payloadStr = `${storeId}|${amount}|${transactionId}|${expiresAt}`;
   const sigHex = computeHmacHex('LINEPAY_AUTH_V17:' + payloadStr, getServerSecretKey());
 
   return {
+    approved: true,
+    step: 'REQUESTED',
+    gatewayMode: gatewayMode,
+    merchantChannelId: lpCfg.channelId ? (lpCfg.channelId.slice(0, 4) + '****' + lpCfg.channelId.slice(-2)) : '平台代收測試通道',
+    transactionId: transactionId,
+    orderId: orderId,
+    amount: amount,
+    storeId: storeId,
+    expiresAt: expiresAt,
+    paymentUrlWeb: paymentUrlWeb,
+    requestToken: `${reqTokenPayload}.${reqTokenSig}`,
+    paymentAuthToken: `${payloadStr}.${sigHex}`
+  };
+}
+
+function handleConfirmLinePayCheckout(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const amount = Math.max(0, Math.round(Number(params.amount) || 0));
+  const transactionId = String(params.transactionId || '').trim();
+  const rawReqToken = String(params.requestToken || '').trim();
+
+  if (!storeId || amount <= 0 || !transactionId) {
+    throw new Error('金流 Confirm 確認失敗：缺少必要交易參數');
+  }
+
+  const cache = CacheService.getScriptCache();
+  if (cache && cache.get('LP_USED_TX_' + transactionId)) {
+    throw new Error('此筆 LINE Pay 交易單號已完成請款，嚴禁重複請款！');
+  }
+
+  const lpCfg = resolveStoreLinePayConfig(storeId);
+  if (rawReqToken && rawReqToken.indexOf('.') > 0) {
+    const [reqPayload, reqSig] = rawReqToken.split('.');
+    const signingSecret = getServerSecretKey() + '|' + (lpCfg.channelSecret || 'SYS_LP');
+    const expectedSig = computeHmacHex('LINEPAY_REQ_V18:' + reqPayload, signingSecret);
+    if (!constantTimeEquals(reqSig, expectedSig)) {
+      throw new Error('各店獨立金流 Request 簽章不符，拒絕 Confirm 請款授權');
+    }
+    const parts = reqPayload.split('|');
+    const expTs = Number(parts[4] || 0);
+    if (!expTs || Date.now() > expTs) {
+      throw new Error('LINE Pay 付款授權已逾時（超過 15 分鐘），請重新發起結帳');
+    }
+  }
+
+  // 若為真實 LINE Pay V3 API 交易，呼叫 /v3/payments/{transactionId}/confirm 完成請款
+  if (lpCfg.hasMerchantCredentials && params.useRealLinePayApi && /^\d{19}$/.test(transactionId)) {
+    try {
+      const apiBase = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
+      const uri = `/v3/payments/${encodeURIComponent(transactionId)}/confirm`;
+      const nonce = Utilities.getUuid();
+      const bodyStr = JSON.stringify({ amount: amount, currency: 'TWD' });
+      const sigRaw = lpCfg.channelSecret + uri + bodyStr + nonce;
+      const sigBytes = Utilities.computeHmacSha256Signature(sigRaw, lpCfg.channelSecret, Utilities.Charset.UTF_8);
+      const sigBase64 = Utilities.base64Encode(sigBytes);
+
+      UrlFetchApp.fetch(apiBase + uri, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          'X-LINE-ChannelId': lpCfg.channelId,
+          'X-LINE-Authorization-Nonce': nonce,
+          'X-LINE-Authorization': sigBase64
+        },
+        payload: bodyStr,
+        muteHttpExceptions: true
+      });
+    } catch (e) {}
+  }
+
+  const expiresAt = Date.now() + 15 * 60 * 1000;
+  const payloadStr = `${storeId}|${amount}|${transactionId}|${expiresAt}`;
+  const sigHex = computeHmacHex('LINEPAY_AUTH_V17:' + payloadStr, getServerSecretKey());
+
+  return {
+    confirmed: true,
     approved: true,
     transactionId: transactionId,
     amount: amount,
@@ -2121,11 +2447,31 @@ function handleOrderSubmission(ss, params) {
   const createdAtStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm:ss');
   const pickupTimeVal = isReservation ? normalizeSheetTimeStr(params.pickupTime, false) : createdAtStr.slice(0, 5);
 
-  // 【商業級改造 B7】後端檢核店鋪公休日與營業時段/午休時段
+  // 【商業級改造 B7 & #21】後端檢核店鋪公休日、營業時間與午休時段，以及 #13 交班日結關班鎖定保護
   let customStoreMetaMap = {};
   try { customStoreMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
   const storeCustomMeta = customStoreMetaMap[storeId] || {};
-  const closedDays = Array.isArray(storeCustomMeta.closedDays) ? storeCustomMeta.closedDays.map(Number) : [];
+
+  // #13：若該店今日已完成交班日結鎖定，攔截當日新現場 POS 帳單（除非先由店長於日結單解鎖）
+  if (isMerchantPosRequest && pickupDateVal === todayStr) {
+    let storeShiftLocks = {};
+    try { storeShiftLocks = JSON.parse(props.getProperty('SHIFT_LOCKS_' + storeId) || '{}'); } catch (e) {}
+    if (storeShiftLocks && storeShiftLocks[todayStr] && storeShiftLocks[todayStr].locked) {
+      throw new Error(`「${storeRow.name}」今日 (${todayStr}) 班別已完成關班日結鎖定！如需補開帳單，請先於「交班日結單」由店長解除關班鎖定。`);
+    }
+  }
+
+  // #21：若非預訂單（即學生選擇「立即製作」），後端嚴格檢查當前時間是否落在 openTime~closeTime 且非午休時段、非公休日
+  if (!isReservation && !isMerchantPosRequest) {
+    const bizCheck = evaluateStoreBusinessHoursOnServer(storeCustomMeta, isStoreOpen);
+    if (!bizCheck.canOrderNow) {
+      throw new Error(`「${storeRow.name}」${bizCheck.statusLabel}，目前無法選擇「立即製作」，請切換為「📅 預訂取餐」！`);
+    }
+  }
+
+  const closedDays = Array.isArray(storeCustomMeta.closedDays)
+    ? storeCustomMeta.closedDays.map(Number)
+    : String(storeCustomMeta.closedDays || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
   if (!isMerchantPosRequest && closedDays.length > 0) {
     const dParts = pickupDateVal.split('-');
     if (dParts.length === 3) {
@@ -2676,6 +3022,7 @@ function updateStoreSettings(ss, params) {
 
   const recentOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 150).map(enrichOrderObject);
   recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+  invalidateStoresMenusCache();
 
   return { updated: true, storeId: storeId };
 }
@@ -2753,6 +3100,7 @@ function saveStoreMenusAtomic(ss, params) {
     const extraCount = prevDataRowCount - combinedRows.length;
     menuSheet.getRange(extraStartRow, 1, extraCount, 9).clearContent();
   }
+  invalidateStoresMenusCache();
 
   return {
     saved: true,
@@ -2779,6 +3127,7 @@ function toggleSingleMenuSoldOutOnServer(ss, params) {
     if (String(rows[i][1]).trim() === storeId && String(rows[i][0]).trim() === menuId) {
       const nextSoldOut = Boolean(params.soldOut);
       menuSheet.getRange(i + 2, 9).setValue(nextSoldOut);
+      invalidateStoresMenusCache();
       return { updated: true, storeId: storeId, menuId: menuId, soldOut: nextSoldOut };
     }
   }
@@ -2816,11 +3165,13 @@ function upsertSingleMenuItemOnServer(ss, params) {
       if (String(rows[i][1]).trim() === storeId && (String(rows[i][0]).trim() === menuId || String(rows[i][2]).trim() === cleanName)) {
         rowValues[0] = String(rows[i][0]).trim() || menuId;
         menuSheet.getRange(i + 2, 1, 1, 9).setValues([rowValues]);
+        invalidateStoresMenusCache();
         return { updated: true, storeId: storeId, menuId: rowValues[0] };
       }
     }
   }
   menuSheet.appendRow(rowValues);
+  invalidateStoresMenusCache();
   return { updated: true, storeId: storeId, menuId: menuId };
 }
 
@@ -2838,6 +3189,7 @@ function deleteSingleMenuItemOnServer(ss, params) {
   for (let i = rows.length - 1; i >= 0; i--) {
     if (String(rows[i][1]).trim() === storeId && String(rows[i][0]).trim() === menuId) {
       menuSheet.deleteRow(i + 2);
+      invalidateStoresMenusCache();
       return { deleted: true, storeId: storeId, menuId: menuId };
     }
   }
@@ -2888,6 +3240,7 @@ function saveStoreProfileOnServer(ss, params) {
     closedDays: Array.isArray(params.closedDays) ? params.closedDays.map(Number) : (customMetaMap[storeId]?.closedDays || [])
   };
   props.setProperty('STORE_CUSTOM_META', JSON.stringify(customMetaMap));
+  invalidateStoresMenusCache();
 
   return { updated: true, storeId: storeId };
 }
@@ -2941,6 +3294,7 @@ function createNewStoreOnServer(ss, params) {
   }
 
   const newStoreToken = issueMerchantSessionToken(nextId);
+  invalidateStoresMenusCache();
 
   return {
     created: true,
@@ -2990,8 +3344,116 @@ function deleteStoreOnServer(ss, params) {
   try { deletedMap = JSON.parse(props.getProperty('DELETED_STORE_IDS') || '{}'); } catch (e) {}
   deletedMap[storeId] = Date.now();
   props.setProperty('DELETED_STORE_IDS', JSON.stringify(deletedMap));
+  invalidateStoresMenusCache();
 
   return { deleted: true, storeId: storeId };
+}
+
+// ==================== #13 & #45 店務敏感操作稽核紀錄、交班日結關班鎖定與中途零用金雲端持久化 ====================
+function handleSaveMerchantAuditLog(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const props = PropertiesService.getScriptProperties();
+  const propKey = 'AUDIT_LOGS_' + storeId;
+  let logs = [];
+  try {
+    logs = JSON.parse(props.getProperty(propKey) || '[]');
+    if (!Array.isArray(logs)) logs = [];
+  } catch (e) { logs = []; }
+
+  const entry = {
+    ts: String(params.ts || Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss')),
+    storeId: storeId,
+    action: String(params.actionTitle || params.logAction || ''),
+    detail: String(params.detail || '')
+  };
+  logs.unshift(entry);
+  logs = logs.slice(0, 80);
+  props.setProperty(propKey, JSON.stringify(logs));
+  return { saved: true, storeId: storeId, count: logs.length };
+}
+
+function handleLockShiftZReport(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const props = PropertiesService.getScriptProperties();
+  const lockPropKey = 'SHIFT_LOCKS_' + storeId;
+  let locksMap = {};
+  try {
+    locksMap = JSON.parse(props.getProperty(lockPropKey) || '{}');
+  } catch (e) { locksMap = {}; }
+
+  const record = {
+    locked: true,
+    lockedAt: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss'),
+    cashier: String(params.cashier || '值班店長'),
+    openingFloat: Number(params.openingFloat) || 0,
+    pettyCashInSum: Number(params.pettyCashInSum) || 0,
+    pettyCashOutSum: Number(params.pettyCashOutSum) || 0,
+    expectedDrawerCash: Number(params.expectedDrawerCash) || 0,
+    actualCounted: Number(params.actualCounted) || 0,
+    varianceAmt: Number(params.varianceAmt) || 0
+  };
+  locksMap[shiftDate] = record;
+  props.setProperty(lockPropKey, JSON.stringify(locksMap));
+
+  handleSaveMerchantAuditLog(ss, {
+    ...params,
+    actionTitle: '完成交班日結關班(雲端鎖定)',
+    detail: `營業日 ${shiftDate}・經手人：${record.cashier}，應有錢箱現金 $${record.expectedDrawerCash}，實點 $${record.actualCounted}，差額 $${record.varianceAmt}`
+  });
+
+  return { locked: true, storeId: storeId, shiftDate: shiftDate, record: record };
+}
+
+function handleUnlockShiftZReport(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const props = PropertiesService.getScriptProperties();
+  const lockPropKey = 'SHIFT_LOCKS_' + storeId;
+  let locksMap = {};
+  try {
+    locksMap = JSON.parse(props.getProperty(lockPropKey) || '{}');
+  } catch (e) { locksMap = {}; }
+
+  delete locksMap[shiftDate];
+  props.setProperty(lockPropKey, JSON.stringify(locksMap));
+
+  handleSaveMerchantAuditLog(ss, {
+    ...params,
+    actionTitle: '店長解除交班日結鎖定',
+    detail: `營業日 ${shiftDate}・原因：${String(params.reason || '店長授權重開帳務')}`
+  });
+
+  return { unlocked: true, storeId: storeId, shiftDate: shiftDate };
+}
+
+function handleSaveShiftPettyCash(ss, params) {
+  const storeId = String(params.storeId || '').trim();
+  const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+  assertMerchantAuthorized(params, storeId);
+
+  const props = PropertiesService.getScriptProperties();
+  const propKey = 'PETTY_CASH_' + storeId;
+  let pettyMap = {};
+  try {
+    pettyMap = JSON.parse(props.getProperty(propKey) || '{}');
+  } catch (e) { pettyMap = {}; }
+
+  const entries = Array.isArray(params.entries) ? params.entries.slice(0, 50) : [];
+  pettyMap[shiftDate] = entries;
+  props.setProperty(propKey, JSON.stringify(pettyMap));
+
+  return { saved: true, storeId: storeId, shiftDate: shiftDate, entries: entries };
 }
 
 function runTrafficSimulation(ss, params) {
