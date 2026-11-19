@@ -12,7 +12,7 @@
  */
 
 const SHEET_ID = '1G0wZqT0xoPParVZIFEWRdXpiZNmFlAAhiX89c3t7OiY';
-const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V16_0';
+const DB_SCHEMA_VERSION = 'MEALFLOW_SCHEMA_V23_0';
 const BRAND_NAME = 'MealFlow';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60;
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500;
@@ -94,6 +94,7 @@ function doPost(e) {
     try {
       autoPromoteAndCleanOrdersBatch(ss);
       const writeResult = dispatchAction(ss, action, params);
+      invalidatePublicBundleCache();
       return jsonResponse({ success: true, ...writeResult });
     } finally {
       lock.releaseLock();
@@ -134,51 +135,62 @@ function dispatchAction(ss, action, params) {
     case 'handleLineCallback':
       return handleLineCallback(ss, params);
 
-    // 店務授權端點 (核發、更新與伺服器端註銷具備單一 storeId 範圍之 HMAC Session Token)
+    // 店務授權端點 (核發、更新與伺服器端註銷具備單一 storeId 與角色權限之 HMAC Session Token)
     case 'verifyMerchantPin':
       return handleVerifyMerchantPin(params);
+    case 'verifyManagerOverride':
+      return handleVerifyManagerOverride(params);
     case 'logoutMerchantSession':
       return handleLogoutMerchantSession(params);
     case 'updateMerchantPin':
     case 'updateMerchantPinHash':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return handleUpdateMerchantPin(params);
+    case 'updateStaffSecurityConfig':
+      assertManagerAuthorized(params, params.storeId || '');
+      return handleUpdateStaffSecurityConfig(params);
 
     // 受 HMAC Session Token 與店鋪權限範圍嚴格保護之店務寫入端點
     case 'updateStoreConfig':
       assertMerchantAuthorized(params, params.storeId || '');
       return updateStoreSettings(ss, params);
     case 'saveStoreProfile':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return saveStoreProfileOnServer(ss, params);
     case 'createStore':
-      assertMerchantAuthorized(params, '');
+      assertManagerAuthorized(params, '');
       return createNewStoreOnServer(ss, params);
     case 'deleteStore':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return deleteStoreOnServer(ss, params);
     case 'saveStoreMenus':
     case 'saveStoreMenu':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return saveStoreMenusAtomic(ss, params);
     case 'upsertSingleMenuItem':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return upsertSingleMenuItemOnServer(ss, params);
     case 'deleteSingleMenuItem':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return deleteSingleMenuItemOnServer(ss, params);
     case 'toggleMenuSoldOut':
       assertMerchantAuthorized(params, params.storeId || '');
       return toggleSingleMenuSoldOutOnServer(ss, params);
     case 'aiParseMenu':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return handleAiParseMenu(ss, params);
     case 'updateOrderStatus':
       assertMerchantAuthorized(params, '');
       return updateOrderStateBatch(ss, params);
+    case 'updateOrderItemCheckState':
+      assertMerchantAuthorized(params, '');
+      return handleUpdateOrderItemCheckState(ss, params);
     case 'modifyOrderItems':
       assertMerchantAuthorized(params, '');
       return handleModifyOrderItems(ss, params);
+    case 'appendOrderItems':
+      // 三-3：允許同桌顧客（憑防偽核銷碼）或店家人員為進行中內用單加點併單
+      return handleAppendOrderItems(ss, params);
     case 'addMerchantOrderNote':
       assertMerchantAuthorized(params, '');
       return handleAddMerchantOrderNote(ss, params);
@@ -189,13 +201,13 @@ function dispatchAction(ss, action, params) {
       assertMerchantAuthorized(params, '');
       return markReservationPaid(ss, params);
     case 'cancelOrder':
-      assertMerchantAuthorized(params, '');
+      // 一-2 修復：交由 cancelOrderByIdBatch 內部執行雙路徑授權（店長/覆核授權 或 學生 6 碼防偽碼自助取消預約單），絕不在此預先踢掉學生
       return cancelOrderByIdBatch(ss, params);
     case 'simulateTraffic':
-      assertMerchantAuthorized(params, '');
+      assertManagerAuthorized(params, '');
       return runTrafficSimulation(ss, params);
     case 'saveLineDevConfig':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return saveLineDevConfig(ss, params);
     case 'saveMerchantAuditLog':
       assertMerchantAuthorized(params, params.storeId || '');
@@ -204,7 +216,7 @@ function dispatchAction(ss, action, params) {
       assertMerchantAuthorized(params, params.storeId || '');
       return handleLockShiftZReport(ss, params);
     case 'unlockShiftZReport':
-      assertMerchantAuthorized(params, params.storeId || '');
+      assertManagerAuthorized(params, params.storeId || '');
       return handleUnlockShiftZReport(ss, params);
     case 'saveShiftPettyCash':
       assertMerchantAuthorized(params, params.storeId || '');
@@ -279,17 +291,48 @@ function getStoredStorePinHash(storeId) {
   return props.getProperty('MERCHANT_PIN_HMAC_STORE_' + String(storeId).trim()) || '';
 }
 
-function issueMerchantSessionToken(storeScope) {
-  // #7 & #8：廢除跨店免密通行的 'ALL' 超級權限，每張 Session Token 嚴格綁定單一授權店鋪
+function getStoredStoreStaffPinHash(storeId) {
+  if (!storeId) return '';
+  const props = PropertiesService.getScriptProperties();
+  return props.getProperty('MERCHANT_STAFF_PIN_HMAC_STORE_' + String(storeId).trim()) || '';
+}
+
+function getStoreStaffList(storeId) {
+  if (!storeId) return ['早班人員', '晚班人員'];
+  const props = PropertiesService.getScriptProperties();
+  try {
+    const arr = JSON.parse(props.getProperty('STORE_STAFF_LIST_' + String(storeId).trim()) || '[]');
+    if (Array.isArray(arr) && arr.length > 0) return arr;
+  } catch (e) {}
+  return ['早班收銀', '晚班收銀'];
+}
+
+function verifyStoreManagerPinRaw(storeId, rawPin) {
+  const pin = String(rawPin || '').trim();
+  if (!/^\d{4,8}$/.test(pin)) return false;
+  const candidateHash = hashMerchantPinWithServerSalt(pin);
+  const storeSpecificHash = getStoredStorePinHash(storeId);
+  const defaultInitialHash = getStoredMasterPinHash();
+  return storeSpecificHash
+    ? constantTimeEquals(candidateHash, storeSpecificHash)
+    : constantTimeEquals(candidateHash, defaultInitialHash);
+}
+
+function issueMerchantSessionToken(storeScope, staffRole, staffName) {
+  // #7 & #8 & 二-1：綁定單一授權店鋪 + 員工角色權限 (MANAGER / STAFF) + 具名操作者
   const cleanScope = String(storeScope || 'S01').trim() || 'S01';
+  const cleanRole = (staffRole === 'STAFF') ? 'STAFF' : 'MANAGER';
+  const cleanName = encodeURIComponent(String(staffName || (cleanRole === 'MANAGER' ? '店長' : '收銀員')).trim().slice(0, 20));
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const nonce = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
-  const payloadStr = `${expiresAt}_${nonce}_${cleanScope}`;
+  const payloadStr = `${expiresAt}_${nonce}_${cleanScope}_${cleanRole}_${cleanName}`;
   const sigHex = computeHmacHex(payloadStr, getServerSecretKey());
   return {
     sessionToken: `${payloadStr}.${sigHex}`,
     expiresAt: expiresAt,
-    authorizedStoreId: cleanScope
+    authorizedStoreId: cleanScope,
+    staffRole: cleanRole,
+    staffName: decodeURIComponent(cleanName)
   };
 }
 
@@ -310,6 +353,11 @@ function parseVerifiedMerchantSession(params) {
   const expiresAt = Number(payloadParts[0] || 0);
   const nonce = String(payloadParts[1] || '');
   const tokenScope = String(payloadParts[2] || '');
+  const tokenRole = (payloadParts[3] === 'STAFF') ? 'STAFF' : 'MANAGER';
+  let tokenStaffName = tokenRole === 'MANAGER' ? '店長' : '收銀員';
+  if (payloadParts.length >= 5) {
+    try { tokenStaffName = decodeURIComponent(payloadParts.slice(4).join('_')) || tokenStaffName; } catch (e) {}
+  }
   if (!expiresAt || Date.now() > expiresAt || !tokenScope) {
     return null;
   }
@@ -322,7 +370,69 @@ function parseVerifiedMerchantSession(params) {
     }
   }
 
-  return { expiresAt: expiresAt, nonce: nonce, storeScope: tokenScope };
+  return { expiresAt: expiresAt, nonce: nonce, storeScope: tokenScope, role: tokenRole, staffName: tokenStaffName };
+}
+
+function assertManagerAuthorized(params, requiredStoreId) {
+  const session = parseVerifiedMerchantSession(params);
+  if (!session) {
+    throw new Error('店務管理權限驗證失敗或時效憑證已過期 (Unauthorized)，請重新解鎖');
+  }
+  const targetStore = String(requiredStoreId || session.storeScope || '').trim();
+  if (requiredStoreId && session.storeScope !== targetStore) {
+    throw new Error('跨店操作越權拒絕，請先切換並驗證目標店鋪密碼');
+  }
+  if (session.role === 'MANAGER') {
+    return { session: session, approvedBy: session.staffName || '店長' };
+  }
+  // 二-1：一般收銀員 (STAFF) 執行高風險操作時，必須提供店長授權覆核碼 (managerOverridePin)
+  const overridePin = String(params.managerOverridePin || '').trim();
+  if (overridePin && verifyStoreManagerPinRaw(targetStore, overridePin)) {
+    return { session: session, approvedBy: '店長現場覆核授權' };
+  }
+  throw new Error('此為高風險管理操作（改價／退單／高折讓／解鎖日結／後台設定），需「店長權限」或輸入店長覆核授權碼 (MANAGER_REQUIRED)');
+}
+
+function handleVerifyManagerOverride(params) {
+  const session = parseVerifiedMerchantSession(params);
+  const targetStore = String(params.storeId || (session && session.storeScope) || '').trim();
+  if (!targetStore) throw new Error('缺少店鋪編號');
+  const pin = String(params.pin || params.managerOverridePin || '').trim();
+  if (!verifyStoreManagerPinRaw(targetStore, pin)) {
+    throw new Error('店長覆核授權碼錯誤');
+  }
+  return { approved: true, authorized: true, storeId: targetStore, approvedBy: '店長覆核授權' };
+}
+
+function handleUpdateStaffSecurityConfig(params) {
+  const storeId = String(params.storeId || '').trim();
+  if (!storeId) throw new Error('缺少目標店鋪編號');
+  const props = PropertiesService.getScriptProperties();
+
+  if (params.clearStaffPin) {
+    props.deleteProperty('MERCHANT_STAFF_PIN_HMAC_STORE_' + storeId);
+  } else if (params.staffPin !== undefined && String(params.staffPin).trim() !== '') {
+    const cleanStaffPin = String(params.staffPin).trim();
+    if (!/^\d{4,8}$/.test(cleanStaffPin)) {
+      throw new Error('收銀員密碼必須為 4 至 8 位數字');
+    }
+    if (verifyStoreManagerPinRaw(storeId, cleanStaffPin)) {
+      throw new Error('收銀員密碼不可與店長管理密碼相同，以確保權限分級！');
+    }
+    props.setProperty('MERCHANT_STAFF_PIN_HMAC_STORE_' + storeId, hashMerchantPinWithServerSalt(cleanStaffPin));
+  }
+
+  if (Array.isArray(params.staffList)) {
+    const cleaned = params.staffList.map(s => String(s || '').trim().slice(0, 20)).filter(Boolean).slice(0, 20);
+    props.setProperty('STORE_STAFF_LIST_' + storeId, JSON.stringify(cleaned));
+  }
+
+  return {
+    updated: true,
+    storeId: storeId,
+    hasStaffPin: Boolean(getStoredStoreStaffPinHash(storeId)),
+    staffList: getStoreStaffList(storeId)
+  };
 }
 
 function handleLogoutMerchantSession(params) {
@@ -349,9 +459,12 @@ function isMerchantRequestValid(params, requiredStoreId) {
 }
 
 function assertMerchantAuthorized(params, requiredStoreId) {
-  if (!isMerchantRequestValid(params, requiredStoreId)) {
+  const session = parseVerifiedMerchantSession(params);
+  const targetStore = String(requiredStoreId || '').trim();
+  if (!session || (targetStore && session.storeScope !== targetStore)) {
     throw new Error('店務管理權限驗證失敗、跨店越權或時效憑證已過期/已登出註銷 (Unauthorized)，請輸入該店專屬授權碼解鎖');
   }
+  return session;
 }
 
 function handleVerifyMerchantPin(params) {
@@ -373,30 +486,38 @@ function handleVerifyMerchantPin(params) {
 
   const candidateHash = hashMerchantPinWithServerSalt(rawPin);
   const storeSpecificHash = getStoredStorePinHash(requestedStoreId);
+  const storeStaffHash = getStoredStoreStaffPinHash(requestedStoreId);
   const defaultInitialHash = getStoredMasterPinHash();
+  const chosenStaffName = String(params.staffName || '').trim().slice(0, 20);
 
-  // #8 核心修補：若該店已設定專屬密碼 (storeSpecificHash 存在)，嚴格只比對該店專屬密碼！
-  // 徹底廢除「設了新密碼 1111 後，預設 8888 仍能解鎖」的後門漏洞！
-  let isPinMatched = false;
+  // #8 & 二-1：比對店長專屬密碼 (MANAGER) 或該店收銀員密碼 (STAFF)；已設專屬密碼時嚴格封鎖預設 8888！
+  let matchedRole = '';
   if (storeSpecificHash) {
-    isPinMatched = constantTimeEquals(candidateHash, storeSpecificHash);
+    if (constantTimeEquals(candidateHash, storeSpecificHash)) matchedRole = 'MANAGER';
   } else {
-    isPinMatched = constantTimeEquals(candidateHash, defaultInitialHash);
+    if (constantTimeEquals(candidateHash, defaultInitialHash)) matchedRole = 'MANAGER';
+  }
+  if (!matchedRole && storeStaffHash && constantTimeEquals(candidateHash, storeStaffHash)) {
+    matchedRole = 'STAFF';
   }
 
-  if (isPinMatched) {
+  if (matchedRole) {
     if (cache) {
       cache.remove(rateKey);
       cache.remove(lockTierKey);
     }
-    // #7：只核發綁定該單一店鋪 (requestedStoreId) 的 Session Token，切換店鋪必須重新驗證
-    const tokenObj = issueMerchantSessionToken(requestedStoreId);
+    const finalStaffName = chosenStaffName || (matchedRole === 'MANAGER' ? '當班店長' : '當班收銀員');
+    const tokenObj = issueMerchantSessionToken(requestedStoreId, matchedRole, finalStaffName);
     return {
       verified: true,
       sessionToken: tokenObj.sessionToken,
       expiresAt: tokenObj.expiresAt,
       authorizedStoreId: tokenObj.authorizedStoreId,
-      isUsingInitialDefaultPin: !storeSpecificHash
+      staffRole: tokenObj.staffRole,
+      staffName: tokenObj.staffName,
+      hasStaffPin: Boolean(storeStaffHash),
+      staffList: getStoreStaffList(requestedStoreId),
+      isUsingInitialDefaultPin: !storeSpecificHash && matchedRole === 'MANAGER'
     };
   }
 
@@ -661,7 +782,7 @@ function ensureDatabaseInitialized(ss, forceCheck) {
       ['S04', '雙溪校區', '蒲家廚房', '中式特餐・便當', 20, 0, 4, true, 'discount', '💰 離峰分流折抵：現折 $10 元', 10, 150, 4.8, 1, 4],
       ['S05', '城中校區', '城中-咖哩食堂', '熟成咖哩・炸物', 15, 0, 5, true, 'none', '無優惠', 0, 195, 4.8, 1, 5],
       ['S06', '城中校區', '城中-吳葉食堂', '精緻台式簡餐', 20, 0, 6, true, 'gift', '🎁 離峰分流招待：免費招牌冰紅茶', 0, 145, 4.9, 1, 6],
-      ['S07', '城中校區', '大熊涼麵 X 吃好食堂', '手工涼麵・味噌湯', 25, 0, 2, true, 'points', '⚡ 離峰分流回饋：雙倍點數', 0, 160, 4.7, 1, 2]
+      ['S07', '城中校區', '大熊涼麵 X 吃好食堂', '手工涼麵・味噌湯', 25, 0, 2, true, 'discount', '💰 離峰分流折抵：現折 $10 元', 10, 160, 4.7, 1, 2]
     ];
     storeSheet.getRange(2, 1, defaultStores.length, defaultStores[0].length).setValues(defaultStores);
   } else {
@@ -742,7 +863,27 @@ function ensureDatabaseInitialized(ss, forceCheck) {
     bindSheet.appendRow(['bindCode', 'lineUserId', 'displayName', 'updatedAt']);
   }
 
+  // 一-5：獨立持久化 AuditLogs 與 ShiftReports 工作表，擺脫 PropertiesService 9KB 上限與 80 筆截斷
+  ensureSheetByNameWithHeaders(ss, 'AuditLogs', ['logId', 'ts', 'dateStr', 'storeId', 'staffName', 'staffRole', 'approvedBy', 'action', 'detail']);
+  ensureSheetByNameWithHeaders(ss, 'ShiftReports', ['shiftKey', 'storeId', 'dateStr', 'shiftSlot', 'status', 'cashierName', 'openingFloat', 'expectedCash', 'actualCountedCash', 'variance', 'pettyCashJson', 'summaryJson', 'updatedAt']);
+
   props.setProperty('DB_INIT_VER', DB_SCHEMA_VERSION);
+}
+
+function invalidatePublicBundleCache() {
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache) cache.remove('PUBLIC_BUNDLE_SNAP_V23');
+  } catch (e) {}
+}
+
+function ensureSheetByNameWithHeaders(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.appendRow(headers);
+  }
+  return sh;
 }
 
 function sheetToObjects(sheet) {
@@ -796,6 +937,7 @@ function invalidateStoresMenusCache() {
   if (cache) {
     try {
       cache.remove('CACHE_STORES_MENUS_V18');
+      cache.remove('PUBLIC_BUNDLE_SNAP_V23');
     } catch (e) {}
   }
 }
@@ -1028,7 +1170,7 @@ function calcAiUtilityScore(store) {
   let promoBonus = 0;
   if (store.promoMode === 'discount') promoBonus = 95;
   else if (store.promoMode === 'gift' || store.promoMode === 'freebie') promoBonus = 90;
-  else if (store.promoMode === 'points') promoBonus = 75;
+  else if (store.promoMode === 'second_discount') promoBonus = 80;
   const ratingScore = ((Number(store.rating) || 4.7) / 5.0) * 100;
   const raw = waitScore * 0.55 + promoBonus * 0.25 + ratingScore * 0.20;
   return Math.max(35, Math.min(99, Math.round(raw)));
@@ -1301,34 +1443,29 @@ function recomputeAllStoreQueuesInMemory(ss, recentOrdersEnriched, persistToShee
   return computedMap;
 }
 
-function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr) {
+function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr, channelPrefix) {
+  // 一-4 核心修正：POS 現場單 (A001+) 與線上學生單 (B001+) 採用完全分離之號碼命名空間，徹底杜絕離線補單撞號被迫改號！
+  const prefix = (channelPrefix === 'A' || channelPrefix === 'B') ? channelPrefix : 'B';
   const targetDate = normalizeSheetDateStr(pickupDateStr);
-  const storeNumMatch = String(storeId || 'S01').match(/(\d+)/);
-  const storeDigit = storeNumMatch ? parseInt(storeNumMatch[1], 10) : 1;
-  const baseNumber = storeDigit * 1000;
-
-  let maxSeq = baseNumber;
   const props = PropertiesService.getScriptProperties();
-  const propKey = `SEQ_${storeId}_${targetDate}`;
-  const savedSeq = parseInt(props.getProperty(propKey) || '0', 10);
-  if (savedSeq > maxSeq) maxSeq = savedSeq;
+  const propKey = `SEQ_${storeId}_${targetDate}_${prefix}`;
+  let maxSeq = parseInt(props.getProperty(propKey) || '0', 10) || 0;
 
-  const tailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), ORDERS_TAIL_WINDOW_SIZE).map(enrichOrderObject);
+  const tailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 600).map(enrichOrderObject);
+  const prefixRe = new RegExp('^' + prefix + '(\\d{3,4})$', 'i');
   tailOrders.forEach(o => {
     if (String(o.storeId) === String(storeId) && normalizeSheetDateStr(o.pickupDate) === targetDate) {
-      const m = String(o.pickupNumber || '').match(/(\d{3,5})/);
+      const m = String(o.pickupNumber || '').trim().match(prefixRe);
       if (m) {
         const val = parseInt(m[1], 10);
-        if (val >= baseNumber && val < baseNumber + 999 && val > maxSeq) {
-          maxSeq = val;
-        }
+        if (val > maxSeq && val < 9999) maxSeq = val;
       }
     }
   });
 
   const nextSeq = maxSeq + 1;
   props.setProperty(propKey, String(nextSeq));
-  return String(nextSeq);
+  return prefix + String(nextSeq).padStart(3, '0');
 }
 
 // ==================== 5. 【資安修補 #15】雙重驗證跨裝置訂單查詢與防枚舉多重限流 ====================
@@ -1340,8 +1477,8 @@ function lookupOrdersAcrossDevices(ss, params) {
 
   if (!rawQ) return { orders: [] };
 
-  // 支援 "2003 678" 或 "2003-678" 複合格式先拆解，避免透過變換取餐號繞過手機末碼限流
-  const comboMatch = rawQ.match(/^(\d{4,5})[\s\-_,/]+(\d{3})$/);
+  // 支援 "A003 678" / "B005-678" / "2003 678" 複合格式先拆解
+  const comboMatch = rawQ.match(/^([A-Z]?\d{3,5})[\s\-_,/]+(\d{3})$/);
   if (comboMatch) {
     rawQ = comboMatch[1];
     rawPhoneLast3 = comboMatch[2];
@@ -1371,7 +1508,7 @@ function lookupOrdersAcrossDevices(ss, params) {
 
   const isFullOrderId = rawQ.indexOf('ORD-') === 0 && rawQ.length >= 10;
   const isSixCharHmacCode = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/.test(rawQ);
-  const isFourDigitPickup = /^\d{4,5}$/.test(rawQ);
+  const isFourDigitPickup = /^([AB]\d{3,4}|\d{4,5})$/.test(rawQ);
 
   // 未授權之公開查詢：嚴格要求「6 碼 HMAC 防偽碼」或「取餐號 + 手機末 3 碼雙重吻合」（若用 ORD 單號亦須搭配手機末 3 碼或防偽碼）
   if (!hasMerchantAuth && !isSixCharHmacCode) {
@@ -1823,6 +1960,9 @@ function parseMenuRowOptionsAndSoldOut(menuRowObj) {
   let legacySoldOut = false;
   let dailyLimit = 0;
   let nameEn = '';
+  let station = 'AUTO';
+  let tileColor = '';
+  let sortOrder = 999;
   if (menuRowObj.optionsJson) {
     try {
       const rawObj = JSON.parse(menuRowObj.optionsJson);
@@ -1830,9 +1970,15 @@ function parseMenuRowOptionsAndSoldOut(menuRowObj) {
         legacySoldOut = Boolean(rawObj.__soldOut);
         dailyLimit = Math.max(0, parseInt(rawObj.__dailyLimit || 0, 10) || 0);
         nameEn = String(rawObj.__nameEn || '').trim();
+        station = ['MAIN', 'SIDE', 'DRINK'].indexOf(String(rawObj.__station || '').toUpperCase()) >= 0 ? String(rawObj.__station).toUpperCase() : 'AUTO';
+        tileColor = String(rawObj.__tileColor || '').trim();
+        sortOrder = rawObj.__sortOrder !== undefined && rawObj.__sortOrder !== '' ? (parseInt(rawObj.__sortOrder, 10) || 999) : 999;
         delete rawObj.__soldOut;
         delete rawObj.__dailyLimit;
         delete rawObj.__nameEn;
+        delete rawObj.__station;
+        delete rawObj.__tileColor;
+        delete rawObj.__sortOrder;
         parsedOptions = rawObj;
       }
     } catch (e) {}
@@ -1841,7 +1987,7 @@ function parseMenuRowOptionsAndSoldOut(menuRowObj) {
     ? (menuRowObj.soldOut === true || String(menuRowObj.soldOut).toLowerCase() === 'true')
     : legacySoldOut;
 
-  return { parsedOptions, isSoldOut: explicitSoldOut, dailyLimit: dailyLimit, nameEn: nameEn };
+  return { parsedOptions, isSoldOut: explicitSoldOut, dailyLimit: dailyLimit, nameEn: nameEn, station: station, tileColor: tileColor, sortOrder: sortOrder };
 }
 
 function isCorruptedOrMockOrderOnServer(o) {
@@ -1880,6 +2026,28 @@ function buildStoreQueueProgressMap(ordersList) {
 }
 
 function getInitBundle(ss, params, persistQueueUpdate = false) {
+  const session = parseVerifiedMerchantSession(params);
+  const requestedIdsCheck = Array.isArray(params && params.myOrderIds)
+    ? params.myOrderIds.map(id => String(id || '').trim()).filter(Boolean)
+    : [];
+
+  // 四-1 效能優化：純公開點餐瀏覽（無私人訂單與非店家端）共享 5 秒 CacheService 快照，大幅減少尖峰重複掃描 2,500 列試算表
+  if (!session && requestedIdsCheck.length === 0 && !persistQueueUpdate) {
+    try {
+      const pubCache = CacheService.getScriptCache();
+      const cachedPubRaw = pubCache ? pubCache.get('PUBLIC_BUNDLE_SNAP_V23') : null;
+      if (cachedPubRaw) {
+        const parsedSnap = JSON.parse(cachedPubRaw);
+        if (parsedSnap && Array.isArray(parsedSnap.stores)) {
+          const nowTs = Date.now();
+          parsedSnap.serverTimeTs = nowTs;
+          if (parsedSnap.bundle) parsedSnap.bundle.serverTimeTs = nowTs;
+          return parsedSnap;
+        }
+      }
+    } catch (e) {}
+  }
+
   const props = PropertiesService.getScriptProperties();
   let simOffsets = {};
   let openStateMap = {};
@@ -1904,7 +2072,6 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   const dailyMenuSoldMap = buildDailyMenuSoldMap(rawTailOrders, todayStrForLimits);
 
   // 【最小權限原則】若為已授權之店家後台，僅回傳該單一授權店鋪訂單；若為未登入之學生端，回傳該學生傳入的 myOrderIds 訂單
-  const session = parseVerifiedMerchantSession(params);
   const clientDeviceId = String((params && params.clientDeviceId) || '').trim();
   let clientOrders = [];
 
@@ -1951,7 +2118,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     const storeMenus = menus
       .filter(m => String(m.storeId) === storeIdStr)
       .map(m => {
-        const { parsedOptions, isSoldOut, dailyLimit, nameEn } = parseMenuRowOptionsAndSoldOut(m);
+        const { parsedOptions, isSoldOut, dailyLimit, nameEn, station, tileColor, sortOrder } = parseMenuRowOptionsAndSoldOut(m);
         let rawTag = String(m.tag || '').trim();
         let rawCat = String(m.category || '招牌主餐').trim();
         let rawImg = String(m.image || '').trim();
@@ -1974,7 +2141,9 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
           Number(dailyMenuSoldMap[`${storeIdStr}::NAME::${mName}`] || 0)
         );
         const remainingToday = dailyLimit > 0 ? Math.max(0, dailyLimit - soldToday) : null;
-        const effectiveSoldOut = Boolean(isSoldOut || (dailyLimit > 0 && remainingToday <= 0));
+        // 一-3：每日限量售罄完全依當日未取消銷量動態推導，絕不永久寫死試算表 soldOut；跨日自動歸零恢復上架，退單即時補回
+        const dailyLimitSoldOut = Boolean(dailyLimit > 0 && remainingToday <= 0);
+        const effectiveSoldOut = Boolean(isSoldOut || dailyLimitSoldOut);
         return {
           id: mId,
           storeId: String(m.storeId),
@@ -1983,14 +2152,20 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
           price: Number(m.price) || 0,
           tag: rawTag,
           category: rawCat || '招牌主餐',
+          station: station || 'AUTO',
+          tileColor: tileColor || '',
+          sortOrder: sortOrder,
           soldOut: effectiveSoldOut,
+          manualSoldOut: Boolean(isSoldOut),
+          dailyLimitSoldOut: dailyLimitSoldOut,
           dailyLimit: dailyLimit,
           soldToday: soldToday,
           remainingToday: remainingToday,
           image: rawImg,
           options: parsedOptions
         };
-      });
+      })
+      .sort((a, b) => (Number(a.sortOrder) || 999) - (Number(b.sortOrder) || 999));
 
     const isOpen = openStateMap[storeIdStr] !== undefined ? Boolean(openStateMap[storeIdStr]) : true;
     const maxCap = Math.max(5, Number(s.maxCapacityPer15Min) || 20);
@@ -2037,6 +2212,14 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       breakEndTime: String(customMeta.breakEndTime || s.breakEndTime || ''),
       closedDays: Array.isArray(customMeta.closedDays) ? customMeta.closedDays : (Array.isArray(s.closedDays) ? s.closedDays : []),
       reserveLeadMinutes: Math.max(10, Math.min(90, Number(customMeta.reserveLeadMinutes) || 25)),
+      promoMinSubtotal: customMeta.promoMinSubtotal !== undefined ? Math.max(0, Number(customMeta.promoMinSubtotal) || 0) : AI_DISCOUNT_MIN_SUBTOTAL,
+      promoScope: customMeta.promoScope === 'ALL_DAY' ? 'ALL_DAY' : 'OFF_PEAK',
+      giftMenuItemId: String(customMeta.giftMenuItemId || '').trim(),
+      secondItemDiscount: Math.max(0, Number(customMeta.secondItemDiscount) || 0),
+      coupons: Array.isArray(customMeta.coupons) ? customMeta.coupons : [],
+      allowDineInPostPay: Boolean(customMeta.allowDineInPostPay),
+      hasStaffPin: Boolean(getStoredStoreStaffPinHash(storeIdStr)),
+      staffList: getStoreStaffList(storeIdStr),
       isOpen: isOpen,
       canOrderNow: bizStatus.canOrderNow,
       businessStatusReason: bizStatus.reasonCode,
@@ -2066,27 +2249,82 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
   const serverTime = Utilities.formatDate(nowObj, 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
   const serverTimeTs = nowObj.getTime();
 
-  // #13 & #45 & #12：若為已授權店家後台，一併回傳雲端持久化的店務稽核紀錄、交班日結鎖定狀態、開班點鈔紀錄與中途零用金收支紀錄
+  // 一-5 & #13：優先從專屬 AuditLogs / ShiftReports 工作表讀取（無 9KB 容量與 80 筆截斷限制），並相容合併舊版 PropertiesService 歷史資料
   let storeAuditLogs = [];
   let lockedShiftsMap = {};
   let openShiftsMap = {};
   let pettyCashMap = {};
   if (session && session.storeScope) {
+    const scopeId = session.storeScope;
     try {
-      storeAuditLogs = JSON.parse(props.getProperty('AUDIT_LOGS_' + session.storeScope) || '[]');
-    } catch (e) { storeAuditLogs = []; }
+      const legacyLogs = JSON.parse(props.getProperty('AUDIT_LOGS_' + scopeId) || '[]');
+      if (Array.isArray(legacyLogs)) storeAuditLogs = legacyLogs.slice();
+    } catch (e) {}
     try {
-      lockedShiftsMap = JSON.parse(props.getProperty('SHIFT_LOCKS_' + session.storeScope) || '{}');
-    } catch (e) { lockedShiftsMap = {}; }
+      const auditSheet = ss.getSheetByName('AuditLogs');
+      if (auditSheet && auditSheet.getLastRow() > 1) {
+        const aRows = readSheetTailObjects(auditSheet, 300).reverse();
+        const sheetLogs = aRows
+          .filter(r => String(r.storeId || '') === scopeId)
+          .map(r => ({
+            ts: String(r.ts || ''),
+            storeId: scopeId,
+            staffName: String(r.staffName || ''),
+            staffRole: String(r.staffRole || ''),
+            approvedBy: String(r.approvedBy || ''),
+            action: String(r.action || ''),
+            detail: String(r.detail || '')
+          }));
+        if (sheetLogs.length > 0) storeAuditLogs = sheetLogs;
+      }
+    } catch (e) {}
+
+    try { lockedShiftsMap = JSON.parse(props.getProperty('SHIFT_LOCKS_' + scopeId) || '{}'); } catch (e) {}
+    try { openShiftsMap = JSON.parse(props.getProperty('SHIFT_OPENS_' + scopeId) || '{}'); } catch (e) {}
+    try { pettyCashMap = JSON.parse(props.getProperty('PETTY_CASH_' + scopeId) || '{}'); } catch (e) {}
+
     try {
-      openShiftsMap = JSON.parse(props.getProperty('SHIFT_OPENS_' + session.storeScope) || '{}');
-    } catch (e) { openShiftsMap = {}; }
-    try {
-      pettyCashMap = JSON.parse(props.getProperty('PETTY_CASH_' + session.storeScope) || '{}');
-    } catch (e) { pettyCashMap = {}; }
+      const shiftSheet = ss.getSheetByName('ShiftReports');
+      if (shiftSheet && shiftSheet.getLastRow() > 1) {
+        const sRows = readSheetTailObjects(shiftSheet, 250);
+        sRows.filter(r => String(r.storeId || '') === scopeId).forEach(r => {
+          const dStr = normalizeSheetDateStr(r.dateStr || '');
+          const slot = String(r.shiftSlot || 'FULL').trim().toUpperCase();
+          const compositeKey = `${dStr}_${slot}`;
+          let summaryObj = {};
+          let pettyArr = [];
+          try { summaryObj = JSON.parse(r.summaryJson || '{}'); } catch (e) {}
+          try { pettyArr = JSON.parse(r.pettyCashJson || '[]'); } catch (e) {}
+          if (Array.isArray(pettyArr)) pettyCashMap[compositeKey] = pettyArr;
+          if (r.status === 'OPEN' || Number(r.openingFloat) > 0) {
+            openShiftsMap[compositeKey] = {
+              openedAt: String(summaryObj.openedAt || r.updatedAt || ''),
+              cashier: String(r.cashierName || ''),
+              openingFloat: Number(r.openingFloat) || 0,
+              shiftSlot: slot
+            };
+          }
+          if (r.status === 'LOCKED') {
+            lockedShiftsMap[compositeKey] = {
+              locked: true,
+              lockedAt: String(r.updatedAt || ''),
+              cashier: String(r.cashierName || ''),
+              shiftSlot: slot,
+              openingFloat: Number(r.openingFloat) || 0,
+              expectedDrawerCash: Number(r.expectedCash) || 0,
+              actualCounted: Number(r.actualCountedCash) || 0,
+              varianceAmt: Number(r.variance) || 0,
+              ...summaryObj
+            };
+          } else if (r.status === 'UNLOCKED') {
+            delete lockedShiftsMap[compositeKey];
+          }
+        });
+      }
+    } catch (e) {}
   }
 
-  return {
+  const finalPayload = {
     stores: enrichedStores,
     slotQuotaMap: slotQuotaMap,
     storeQueueProgressMap: storeQueueProgressMap,
@@ -2097,6 +2335,8 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     lockedShiftsMap: lockedShiftsMap,
     openShiftsMap: openShiftsMap,
     pettyCashMap: pettyCashMap,
+    merchantSessionRole: session ? session.role : '',
+    merchantSessionStaffName: session ? session.staffName : '',
     serverTime: serverTime,
     serverTimeTs: serverTimeTs,
     bundle: {
@@ -2110,6 +2350,8 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       lockedShiftsMap: lockedShiftsMap,
       openShiftsMap: openShiftsMap,
       pettyCashMap: pettyCashMap,
+      merchantSessionRole: session ? session.role : '',
+      merchantSessionStaffName: session ? session.staffName : '',
       lineDevInfo: {
         botBasicId: props.getProperty('LINE_BOT_BASIC_ID') || '',
         liffId: props.getProperty('LINE_LIFF_ID') || '',
@@ -2119,6 +2361,17 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       serverTimeTs: serverTimeTs
     }
   };
+
+  if (!session && requestedIdsCheck.length === 0) {
+    try {
+      const pubCache = CacheService.getScriptCache();
+      const rawJson = JSON.stringify(finalPayload);
+      if (pubCache && rawJson.length < 95000) {
+        pubCache.put('PUBLIC_BUNDLE_SNAP_V23', rawJson, 5);
+      }
+    } catch (e) {}
+  }
+  return finalPayload;
 }
 
 function enrichOrderObject(o) {
@@ -2160,6 +2413,14 @@ function enrichOrderObject(o) {
   merged.readyAtTs = Number(merged.readyAtTs || 0);
   merged.originalOfflinePickupNumber = String(merged.originalOfflinePickupNumber || '').trim();
   merged.partialRefundTotal = Math.max(0, Number(merged.partialRefundTotal) || 0);
+  merged.extraChargeTotal = Math.max(0, Number(merged.extraChargeTotal) || 0);
+  merged.pendingAddOnAmount = Math.max(0, Number(merged.pendingAddOnAmount) || 0);
+  merged.tableNumber = String(merged.tableNumber || '').trim();
+  merged.carrierCode = String(merged.carrierCode || '').trim();
+  merged.couponCode = String(merged.couponCode || '').trim();
+  merged.couponDiscount = Math.max(0, Number(merged.couponDiscount) || 0);
+  merged.isDineInPostPay = Boolean(merged.isDineInPostPay);
+  merged.itemCheckedMap = (merged.itemCheckedMap && typeof merged.itemCheckedMap === 'object') ? merged.itemCheckedMap : {};
 
   // #20：現金單逾時未取自動作廢保護（已叫號超過 60 分鐘且仍為未付款現金單）
   if (
@@ -2172,11 +2433,13 @@ function enrichOrderObject(o) {
     merged.paymentStatus = '已退單作廢';
   }
 
-  merged.verificationCode = generateOrderVerificationCodeOnServer(
-    merged.orderId,
-    merged.pickupNumber,
-    merged.finalTotal
-  );
+  merged.verificationCode = (meta && meta.sealedVerificationCode)
+    ? String(meta.sealedVerificationCode)
+    : generateOrderVerificationCodeOnServer(
+        merged.orderId,
+        merged.pickupNumber,
+        merged.finalTotal
+      );
 
   return merged;
 }
@@ -2257,7 +2520,6 @@ function handleRequestLinePayCheckout(ss, params) {
 
   // 防重複發起付款鎖 (Anti-Duplicate Request Lock)
   const cache = CacheService.getScriptCache();
-  const dupReqKey = `LP_INFLIGHT_${storeId}_${params.clientDeviceId || 'DEV'}_${amount}`;
   if (cache && params.orderId && cache.get('LP_PAID_ORD_' + orderId)) {
     throw new Error('此訂單已完成付款授權，請勿重複扣款！');
   }
@@ -2267,34 +2529,42 @@ function handleRequestLinePayCheckout(ss, params) {
   const txRand = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
   let transactionId = `LP-${todayCompact}-${storeId}-${txRand}`;
   let paymentUrlWeb = '';
-  let gatewayMode = lpCfg.hasMerchantCredentials ? (lpCfg.isSandbox ? 'LINE_PAY_V3_SANDBOX' : 'LINE_PAY_V3_PROD') : 'MEALFLOW_HMAC_GATEWAY';
+  let gatewayMode = lpCfg.hasMerchantCredentials
+    ? (lpCfg.isSandbox ? 'LINE_PAY_V3_SANDBOX' : 'LINE_PAY_V3_PROD')
+    : 'SANDBOX_DEMO_UNCONFIGURED';
 
-  // #6：若該店已設定專屬 LINE Pay Channel ID 與 Secret Key，支援直接以 V3 HMAC-SHA256 簽章呼叫官方 Request API
-  if (lpCfg.hasMerchantCredentials && params.useRealLinePayApi) {
-    try {
-      const apiBase = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
-      const uri = '/v3/payments/request';
-      const nonce = Utilities.getUuid();
-      const bodyObj = {
+  // 一-1 核心修復：若前端發起真實 LINE Pay 結帳且該店尚未設定金鑰，直接拒絕並引導改用現場付現，絕不放行假收銀台！
+  if (params.useRealLinePayApi && !lpCfg.hasMerchantCredentials) {
+    throw new Error('本店尚未設定真實 LINE Pay 商家金鑰，請改用「現場取餐付現」或洽店長設定。');
+  }
+  if (lpCfg.hasMerchantCredentials) {
+    const apiBase = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
+    const uri = '/v3/payments/request';
+    const nonce = Utilities.getUuid();
+    const confirmUrl = String(params.confirmUrl || 'https://yangtechnology.github.io/scu.meal/order/?lpCallback=1').trim();
+    const cancelUrl = String(params.cancelUrl || 'https://yangtechnology.github.io/scu.meal/order/?lpCancel=1').trim();
+    const bodyObj = {
+      amount: amount,
+      currency: 'TWD',
+      orderId: orderId,
+      packages: [{
+        id: storeId,
         amount: amount,
-        currency: 'TWD',
-        orderId: orderId,
-        packages: [{
-          id: storeId,
-          amount: amount,
-          name: BRAND_NAME + ' - ' + storeId,
-          products: [{ name: '學餐餐點合計', quantity: 1, price: amount }]
-        }],
-        redirectUrls: {
-          confirmUrl: String(params.confirmUrl || 'https://yangbrian01.github.io/scu.meal/order/'),
-          cancelUrl: String(params.cancelUrl || 'https://yangbrian01.github.io/scu.meal/order/')
-        }
-      };
-      const bodyStr = JSON.stringify(bodyObj);
-      const sigRaw = lpCfg.channelSecret + uri + bodyStr + nonce;
-      const sigBytes = Utilities.computeHmacSha256Signature(sigRaw, lpCfg.channelSecret, Utilities.Charset.UTF_8);
-      const sigBase64 = Utilities.base64Encode(sigBytes);
+        name: BRAND_NAME + ' - ' + storeId,
+        products: [{ name: String(params.productSummary || '學餐餐點合計').slice(0, 80), quantity: 1, price: amount }]
+      }],
+      redirectUrls: {
+        confirmUrl: confirmUrl,
+        cancelUrl: cancelUrl
+      }
+    };
+    const bodyStr = JSON.stringify(bodyObj);
+    const sigRaw = lpCfg.channelSecret + uri + bodyStr + nonce;
+    const sigBytes = Utilities.computeHmacSha256Signature(sigRaw, lpCfg.channelSecret, Utilities.Charset.UTF_8);
+    const sigBase64 = Utilities.base64Encode(sigBytes);
 
+    let lpData = {};
+    try {
       const lpRes = UrlFetchApp.fetch(apiBase + uri, {
         method: 'post',
         contentType: 'application/json',
@@ -2306,40 +2576,41 @@ function handleRequestLinePayCheckout(ss, params) {
         payload: bodyStr,
         muteHttpExceptions: true
       });
-      const lpData = JSON.parse(lpRes.getContentText() || '{}');
-      if (lpData && lpData.returnCode === '0000' && lpData.info) {
-        transactionId = String(lpData.info.transactionId || transactionId);
-        paymentUrlWeb = (lpData.info.paymentUrl && lpData.info.paymentUrl.web) || '';
-      }
-    } catch (e) {}
+      lpData = JSON.parse(lpRes.getContentText() || '{}');
+    } catch (netErr) {
+      throw new Error('無法連線至 LINE Pay 官方閘道發起付款請求：' + (netErr && netErr.message ? netErr.message : String(netErr)));
+    }
+    if (!lpData || lpData.returnCode !== '0000' || !lpData.info || !lpData.info.transactionId || !lpData.info.paymentUrl || !lpData.info.paymentUrl.web) {
+      throw new Error(`LINE Pay Request 閘道拒絕（${lpData.returnCode || 'ERR'}）：${lpData.returnMessage || '請檢查本店 Channel ID / Secret 與回調網址設定'}`);
+    }
+    transactionId = String(lpData.info.transactionId);
+    paymentUrlWeb = String(lpData.info.paymentUrl.web);
   }
 
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 金流授權請求 15 分鐘逾時保護
+  const expiresAt = Date.now() + 15 * 60 * 1000;
   const signingSecret = getServerSecretKey() + '|' + (lpCfg.channelSecret || 'SYS_LP');
   const reqTokenPayload = `${storeId}|${amount}|${transactionId}|${orderId}|${expiresAt}`;
   const reqTokenSig = computeHmacHex('LINEPAY_REQ_V18:' + reqTokenPayload, signingSecret);
 
   if (cache) {
-    cache.put(dupReqKey, transactionId, 15);
     cache.put('LP_PENDING_TX_' + transactionId, JSON.stringify({
       storeId: storeId,
       amount: amount,
       orderId: orderId,
       expiresAt: expiresAt,
-      merchantChannelId: lpCfg.channelId || '預設特店通道',
+      requiresRealConfirm: Boolean(lpCfg.hasMerchantCredentials),
       status: 'REQUESTED'
     }), 900);
   }
 
-  // 相容一步式與兩步式 Request -> Confirm 簽章核實
-  const payloadStr = `${storeId}|${amount}|${transactionId}|${expiresAt}`;
-  const sigHex = computeHmacHex('LINEPAY_AUTH_V17:' + payloadStr, getServerSecretKey());
-
+  // 一-1：真實 LINE Pay 商家模式於 Request 階段【絕不提前核發 paymentAuthToken】，必須等顧客完成官方頁授權並通過 Confirm API 驗證 returnCode === '0000' 才核發！
   return {
-    approved: true,
-    step: 'REQUESTED',
+    approved: false,
+    step: lpCfg.hasMerchantCredentials ? 'REDIRECT_REQUIRED' : 'DEMO_SANDBOX_READY',
+    requiresRedirect: Boolean(lpCfg.hasMerchantCredentials && paymentUrlWeb),
+    requiresStoreCredentials: !lpCfg.hasMerchantCredentials,
     gatewayMode: gatewayMode,
-    merchantChannelId: lpCfg.channelId ? (lpCfg.channelId.slice(0, 4) + '****' + lpCfg.channelId.slice(-2)) : '平台代收測試通道',
+    merchantChannelId: lpCfg.channelId ? (lpCfg.channelId.slice(0, 4) + '****' + lpCfg.channelId.slice(-2)) : '未設定商家金鑰（教學展示沙盒）',
     transactionId: transactionId,
     orderId: orderId,
     amount: amount,
@@ -2347,7 +2618,7 @@ function handleRequestLinePayCheckout(ss, params) {
     expiresAt: expiresAt,
     paymentUrlWeb: paymentUrlWeb,
     requestToken: `${reqTokenPayload}.${reqTokenSig}`,
-    paymentAuthToken: `${payloadStr}.${sigHex}`
+    paymentAuthToken: ''
   };
 }
 
@@ -2362,8 +2633,18 @@ function handleConfirmLinePayCheckout(ss, params) {
   }
 
   const cache = CacheService.getScriptCache();
-  if (cache && cache.get('LP_USED_TX_' + transactionId)) {
-    throw new Error('此筆 LINE Pay 交易單號已完成請款，嚴禁重複請款！');
+  // 斷線重整冪等對帳：若同一筆交易已完成官方請款但顧客斷線尚未送出訂單，允許憑相同 transactionId 取回尚未消耗的授權憑證
+  if (cache) {
+    const existingAuthRaw = cache.get('LP_CONFIRMED_AUTH_' + transactionId);
+    if (existingAuthRaw && !cache.get('LP_USED_TX_' + transactionId)) {
+      const existingAuth = JSON.parse(existingAuthRaw);
+      if (existingAuth && existingAuth.storeId === storeId && Number(existingAuth.amount) === amount) {
+        return existingAuth;
+      }
+    }
+    if (cache.get('LP_USED_TX_' + transactionId)) {
+      throw new Error('此筆 LINE Pay 交易單號已完成請款並建立訂單，嚴禁重複扣款！');
+    }
   }
 
   const lpCfg = resolveStoreLinePayConfig(storeId);
@@ -2379,20 +2660,31 @@ function handleConfirmLinePayCheckout(ss, params) {
     if (!expTs || Date.now() > expTs) {
       throw new Error('LINE Pay 付款授權已逾時（超過 15 分鐘），請重新發起結帳');
     }
+  } else if (lpCfg.hasMerchantCredentials) {
+    // 即使透過 URL 回調回來缺少 requestToken，也須檢查 cache 裡是否有對應的待請款紀錄 (防止偽造 transactionId)
+    const pendingRaw = cache ? cache.get('LP_PENDING_TX_' + transactionId) : null;
+    if (!pendingRaw) {
+      throw new Error('查無對應的待請款交易紀錄或授權已逾時，請重新發起 LINE Pay 結帳');
+    }
+    const pendingObj = JSON.parse(pendingRaw);
+    if (pendingObj.storeId !== storeId || Number(pendingObj.amount) !== amount) {
+      throw new Error('交易回調金額或店鋪不符，拒絕請款');
+    }
   }
 
-  // 若為真實 LINE Pay V3 API 交易，呼叫 /v3/payments/{transactionId}/confirm 完成請款
-  if (lpCfg.hasMerchantCredentials && params.useRealLinePayApi && /^\d{19}$/.test(transactionId)) {
-    try {
-      const apiBase = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
-      const uri = `/v3/payments/${encodeURIComponent(transactionId)}/confirm`;
-      const nonce = Utilities.getUuid();
-      const bodyStr = JSON.stringify({ amount: amount, currency: 'TWD' });
-      const sigRaw = lpCfg.channelSecret + uri + bodyStr + nonce;
-      const sigBytes = Utilities.computeHmacSha256Signature(sigRaw, lpCfg.channelSecret, Utilities.Charset.UTF_8);
-      const sigBase64 = Utilities.base64Encode(sigBytes);
+  // 一-1 核心修復：嚴格驗證真實 LINE Pay Confirm API 回傳 returnCode === '0000'，徹底移除空 catch 放行漏洞！
+  if (lpCfg.hasMerchantCredentials) {
+    const apiBase = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
+    const uri = `/v3/payments/${encodeURIComponent(transactionId)}/confirm`;
+    const nonce = Utilities.getUuid();
+    const bodyStr = JSON.stringify({ amount: amount, currency: 'TWD' });
+    const sigRaw = lpCfg.channelSecret + uri + bodyStr + nonce;
+    const sigBytes = Utilities.computeHmacSha256Signature(sigRaw, lpCfg.channelSecret, Utilities.Charset.UTF_8);
+    const sigBase64 = Utilities.base64Encode(sigBytes);
 
-      UrlFetchApp.fetch(apiBase + uri, {
+    let confData = {};
+    try {
+      const confRes = UrlFetchApp.fetch(apiBase + uri, {
         method: 'post',
         contentType: 'application/json',
         headers: {
@@ -2403,22 +2695,35 @@ function handleConfirmLinePayCheckout(ss, params) {
         payload: bodyStr,
         muteHttpExceptions: true
       });
-    } catch (e) {}
+      confData = JSON.parse(confRes.getContentText() || '{}');
+    } catch (netErr) {
+      throw new Error('LINE Pay Confirm 請款網路異常，尚未確認入帳，請勿重覆扣款並聯絡櫃檯對帳：' + (netErr && netErr.message ? netErr.message : String(netErr)));
+    }
+    if (!confData || (confData.returnCode !== '0000' && confData.returnCode !== '1172')) {
+      throw new Error(`LINE Pay 官方請款驗證失敗（代碼 ${confData.returnCode || 'UNKNOWN'}）：${confData.returnMessage || '顧客尚未於 LINE Pay 頁面完成授權付款'}`);
+    }
+  } else if (!params.allowUnconfiguredDemo) {
+    throw new Error('本店尚未於後台設定 LINE Pay 商家 Channel ID / Secret，請改選現場付現或通知店長完成金流設定');
   }
 
   const expiresAt = Date.now() + 15 * 60 * 1000;
   const payloadStr = `${storeId}|${amount}|${transactionId}|${expiresAt}`;
   const sigHex = computeHmacHex('LINEPAY_AUTH_V17:' + payloadStr, getServerSecretKey());
-
-  return {
+  const confirmedResult = {
     confirmed: true,
     approved: true,
+    returnCode: '0000',
+    verifiedWithOfficialApi: Boolean(lpCfg.hasMerchantCredentials),
     transactionId: transactionId,
     amount: amount,
     storeId: storeId,
     expiresAt: expiresAt,
     paymentAuthToken: `${payloadStr}.${sigHex}`
   };
+  if (cache) {
+    cache.put('LP_CONFIRMED_AUTH_' + transactionId, JSON.stringify(confirmedResult), 900);
+  }
+  return confirmedResult;
 }
 
 function verifyLinePayAuthTokenOnServer(paymentAuthToken, expectedStoreId, expectedAmount) {
@@ -2691,28 +2996,61 @@ function handleOrderSubmission(ss, params) {
 
     Object.keys(dbOptions).forEach(optGroupName => {
       const grp = dbOptions[optGroupName];
-      const isRadio = !grp.type || grp.type === 'radio';
+      const grpType = grp && grp.type ? String(grp.type) : 'radio';
+      const isRadio = grpType === 'radio';
+      const isQtyMode = grpType === 'qty';
       const choices = Array.isArray(grp.choices) ? grp.choices : (Array.isArray(grp) ? grp : []);
       if (choices.length === 0) return;
 
       const minSelect = Math.max(0, parseInt(grp.minSelect || (isRadio ? 1 : 0), 10) || 0);
       const maxSelect = Math.max(0, parseInt(grp.maxSelect || 0, 10) || 0);
+      const maxPerChoice = Math.max(1, parseInt(grp.maxPerChoice || 5, 10) || 5);
 
       const choicePriceMap = {};
       const choiceSoldOutMap = {};
+      const choiceSubOptionsMap = {};
       choices.forEach(c => {
-        const cName = String(Array.isArray(c) ? c[0] : c).trim();
-        // 【計價防呆】嚴格禁止負數加料價，防止負數加價折抵主餐漏洞
-        const cExtra = Array.isArray(c) ? Math.max(0, Number(c[1]) || 0) : 0;
-        const cSoldOut = Array.isArray(c) ? Boolean(c[2]) : false;
+        const cName = String(Array.isArray(c) ? c[0] : (c && (c.label || c.name) ? (c.label || c.name) : c)).trim();
+        const cExtra = Array.isArray(c) ? Math.max(0, Number(c[1]) || 0) : (c && (c.priceDelta !== undefined || c.price !== undefined) ? Math.max(0, Number(c.priceDelta !== undefined ? c.priceDelta : c.price) || 0) : 0);
+        const cSoldOut = Array.isArray(c) ? Boolean(c[2]) : Boolean(c && c.soldOut);
+        const cSubOpts = (Array.isArray(c) && c[3] && typeof c[3] === 'object') ? c[3] : (c && c.subOptions && typeof c.subOptions === 'object' ? c.subOptions : null);
         choicePriceMap[cName] = cExtra;
         choiceSoldOutMap[cName] = cSoldOut;
+        if (cSubOpts) choiceSubOptionsMap[cName] = cSubOpts;
       });
 
       const rawSelected = clientSelections[optGroupName];
-      if (isRadio) {
+      if (isQtyMode) {
+        // 三-1：支援多數量加購計費（例如「加香濃起司×2, 加溏心蛋×3」）
+        const parsedTokens = Array.isArray(rawSelected)
+          ? rawSelected
+          : String(rawSelected || '').split(',').map(s => s.trim()).filter(Boolean);
+        let totalQtyChosen = 0;
+        const validParts = [];
+        parsedTokens.forEach(tok => {
+          const qMatch = String(tok).match(/^(.+?)(?:[×xX*]\s*(\d+))?$/);
+          if (!qMatch) return;
+          const cName = qMatch[1].trim();
+          const cQty = Math.max(1, Math.min(maxPerChoice, parseInt(qMatch[2] || '1', 10) || 1));
+          if (choicePriceMap[cName] === undefined) {
+            throw new Error(`品項「${dbMenu.name}」的數量加購選項「${cName}」無效，請重新點選`);
+          }
+          if (choiceSoldOutMap[cName] && !isMerchantPosRequest) {
+            throw new Error(`品項「${dbMenu.name}」的加購選項「${cName}」今日已售罄`);
+          }
+          totalQtyChosen += cQty;
+          unitExtra += choicePriceMap[cName] * cQty;
+          validParts.push(cQty > 1 ? `${cName}×${cQty}` : cName);
+        });
+        if (!isMerchantPosRequest && minSelect > 0 && totalQtyChosen < minSelect) {
+          throw new Error(`品項「${dbMenu.name}」的「${optGroupName}」至少需選擇 ${minSelect} 份`);
+        }
+        if (!isMerchantPosRequest && maxSelect > 0 && totalQtyChosen > maxSelect) {
+          throw new Error(`品項「${dbMenu.name}」的「${optGroupName}」最多只能選擇 ${maxSelect} 份`);
+        }
+        if (validParts.length > 0) verifiedSelections[optGroupName] = validParts.join(', ');
+      } else if (isRadio) {
         let chosenStr = Array.isArray(rawSelected) ? String(rawSelected[0] || '').trim() : String(rawSelected || '').trim();
-        // 若前端有傳值但不在白名單內，直接報錯拒絕，絕不靜默降級成免費選項
         if (chosenStr && choicePriceMap[chosenStr] === undefined) {
           throw new Error(`品項「${dbMenu.name}」的必選規格「${optGroupName}: ${chosenStr}」無效或已變更，請重新選擇`);
         }
@@ -2721,14 +3059,46 @@ function handleOrderSubmission(ss, params) {
         }
         if (!chosenStr) {
           if (isMerchantPosRequest) {
-            const firstAvail = choices.find(c => !(Array.isArray(c) && c[2])) || choices[0];
-            chosenStr = String(Array.isArray(firstAvail) ? firstAvail[0] : firstAvail).trim();
+            const firstAvail = choices.find(c => !(Array.isArray(c) ? c[2] : Boolean(c && c.soldOut))) || choices[0];
+            chosenStr = String(Array.isArray(firstAvail) ? firstAvail[0] : (firstAvail && (firstAvail.label || firstAvail.name) ? (firstAvail.label || firstAvail.name) : firstAvail)).trim();
           } else {
             throw new Error(`請為「${dbMenu.name}」選擇必選規格「${optGroupName}」`);
           }
         }
         verifiedSelections[optGroupName] = chosenStr;
         unitExtra += choicePriceMap[chosenStr];
+
+        // 三-1：若所選套餐項目帶有巢狀次級規格 (subOptions，支援 Array [{name, choices}] 或 Object {name: {choices}})，於後端嚴格驗算
+        const subOptsRaw = choiceSubOptionsMap[chosenStr];
+        if (subOptsRaw && typeof subOptsRaw === 'object') {
+          const subGroupList = Array.isArray(subOptsRaw)
+            ? subOptsRaw.map((sg, idx) => ({ name: String(sg.name || sg.title || `子規格${idx + 1}`), choices: Array.isArray(sg.choices) ? sg.choices : [] }))
+            : Object.keys(subOptsRaw).map(k => ({ name: k, choices: Array.isArray(subOptsRaw[k]?.choices) ? subOptsRaw[k].choices : [] }));
+          subGroupList.forEach(subGrp => {
+            const subGrpName = subGrp.name;
+            const subChoices = subGrp.choices;
+            if (subChoices.length === 0) return;
+            const subKeyDot = `${chosenStr}・${subGrpName}`;
+            const subKeyArrow = `${optGroupName}▸${subGrpName}`;
+            const subSelRaw = String(clientSelections[subKeyDot] || clientSelections[subKeyArrow] || clientSelections[subGrpName] || '').trim();
+            const subPriceMap = {};
+            subChoices.forEach(sc => {
+              const sn = String(Array.isArray(sc) ? sc[0] : (sc && (sc.label || sc.name) ? (sc.label || sc.name) : sc)).trim();
+              const sp = Array.isArray(sc) ? Math.max(0, Number(sc[1]) || 0) : (sc && (sc.priceDelta !== undefined || sc.price !== undefined) ? Math.max(0, Number(sc.priceDelta !== undefined ? sc.priceDelta : sc.price) || 0) : 0);
+              subPriceMap[sn] = sp;
+            });
+            let finalSubVal = subSelRaw;
+            if (!finalSubVal) {
+              const firstSub = subChoices[0];
+              finalSubVal = String(Array.isArray(firstSub) ? firstSub[0] : (firstSub && (firstSub.label || firstSub.name) ? (firstSub.label || firstSub.name) : firstSub)).trim();
+            }
+            if (subPriceMap[finalSubVal] === undefined) {
+              throw new Error(`品項「${dbMenu.name}」的套餐次級選項「${subGrpName}: ${finalSubVal}」無效`);
+            }
+            verifiedSelections[subKeyDot] = finalSubVal;
+            unitExtra += subPriceMap[finalSubVal];
+          });
+        }
       } else {
         const selectedArr = Array.isArray(rawSelected)
           ? rawSelected.map(s => String(s).trim()).filter(Boolean)
@@ -2744,7 +3114,6 @@ function handleOrderSubmission(ss, params) {
           validChosen.push(sName);
           unitExtra += choicePriceMap[sName];
         });
-        // #29 檢核多選群組最小/最大選擇數量限制
         if (!isMerchantPosRequest && minSelect > 0 && validChosen.length < minSelect) {
           throw new Error(`品項「${dbMenu.name}」的「${optGroupName}」至少需選擇 ${minSelect} 項`);
         }
@@ -2788,24 +3157,33 @@ function handleOrderSubmission(ss, params) {
   const isFullLoad = Math.round((storeActiveCount / maxCap) * 100) >= 85;
   const promoMode = String(storeRow.promoMode || 'none');
   const promoText = String(storeRow.promoText || '');
+  const promoScope = storeCustomMeta.promoScope === 'ALL_DAY' ? 'ALL_DAY' : 'OFF_PEAK';
+  const promoMinSubtotal = storeCustomMeta.promoMinSubtotal !== undefined ? Math.max(0, Number(storeCustomMeta.promoMinSubtotal) || 0) : AI_DISCOUNT_MIN_SUBTOTAL;
   const isPeakReservation = isReservation && isPeakHourSlotOnServer(pickupTimeVal);
-  const promoActive = isStoreOpen && !isFullLoad && !isPeakReservation && promoMode !== 'none';
+  // 三-2：支援「全天候常態促銷 (ALL_DAY)」與「離峰分流促銷 (OFF_PEAK)」彈性設定
+  const promoActive = isStoreOpen && promoMode !== 'none' && (promoScope === 'ALL_DAY' || (!isFullLoad && !isPeakReservation));
 
-  // #30 離峰贈品強制套用低消門檻 (AI_DISCOUNT_MIN_SUBTOTAL)、尊重顧客「不要贈品」開關，並檢查該店贈品對應品項是否已售罄
+  // #30 & 三-2：優先使用店家顯式綁定的贈品品項 ID (giftMenuItemId) 檢查庫存與售罄，僅在未綁定時回退舊制關鍵字檢查
   const customerWantsGift = params.wantGift !== false;
   let giftSoldOut = false;
   if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText) {
-    const giftKeywords = ['溫泉蛋', '溏心蛋', '滷蛋', '紅茶', '綠茶', '奶茶', '冬瓜茶', '豆漿', '味噌湯', '玉米濃湯', '酸辣湯', '豆腐', '小菜'];
-    const matchedKw = giftKeywords.find(kw => promoText.indexOf(kw) >= 0);
-    if (matchedKw) {
-      const matchedMenu = allMenus.find(m => String(m.name || '').indexOf(matchedKw) >= 0);
-      if (matchedMenu) {
-        const parsedG = parseMenuRowOptionsAndSoldOut(matchedMenu);
-        if (parsedG.isSoldOut) giftSoldOut = true;
+    const explicitGiftId = String(storeCustomMeta.giftMenuItemId || '').trim();
+    if (explicitGiftId && menuById[explicitGiftId]) {
+      const gm = menuById[explicitGiftId];
+      if (gm.soldOut || (gm.dailyLimit > 0 && gm.soldToday >= gm.dailyLimit)) giftSoldOut = true;
+    } else {
+      const giftKeywords = ['溫泉蛋', '溏心蛋', '滷蛋', '紅茶', '綠茶', '奶茶', '冬瓜茶', '豆漿', '味噌湯', '玉米濃湯', '酸辣湯', '豆腐', '小菜'];
+      const matchedKw = giftKeywords.find(kw => promoText.indexOf(kw) >= 0);
+      if (matchedKw) {
+        const matchedMenu = allMenus.find(m => String(m.name || '').indexOf(matchedKw) >= 0);
+        if (matchedMenu) {
+          const parsedG = parseMenuRowOptionsAndSoldOut(matchedMenu);
+          if (parsedG.isSoldOut) giftSoldOut = true;
+        }
       }
     }
   }
-  if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL && customerWantsGift && !giftSoldOut) {
+  if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText && authoritativeSubtotal >= promoMinSubtotal && customerWantsGift && !giftSoldOut) {
     verifiedItems.push({
       id: 'GIFT-AI',
       baseName: `${promoText} (贈品)`,
@@ -2828,25 +3206,62 @@ function handleOrderSubmission(ss, params) {
   const cutleryFee = needCutlery ? storeCutleryPrice : 0;
 
   let authoritativeDiscount = 0;
-  if (promoActive && promoMode === 'discount' && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL) {
+  const totalNonGiftQty = verifiedItems.reduce((s, it) => s + (it.isGift ? 0 : (Number(it.qty) || 1)), 0);
+  if (promoActive && promoMode === 'discount' && authoritativeSubtotal >= promoMinSubtotal) {
     authoritativeDiscount = Math.min(authoritativeSubtotal, Math.max(0, Number(storeRow.promoDiscount) || 0));
+  } else if (promoActive && promoMode === 'second_discount' && totalNonGiftQty >= 2 && authoritativeSubtotal >= promoMinSubtotal) {
+    const pairCount = Math.floor(totalNonGiftQty / 2);
+    const perPairOff = Math.max(0, Number(storeCustomMeta.secondItemDiscount || storeRow.promoDiscount) || 10);
+    authoritativeDiscount = Math.min(authoritativeSubtotal, pairCount * perPairOff);
+  }
+
+  // 三-2：優惠碼 / 折扣碼 (Coupon Code) 伺服器端白名單驗證與折抵
+  let appliedCouponCode = '';
+  let couponDiscount = 0;
+  const reqCouponCode = String(params.couponCode || '').trim().toUpperCase();
+  if (reqCouponCode) {
+    const storeCoupons = Array.isArray(storeCustomMeta.coupons) ? storeCustomMeta.coupons : [];
+    const matchedCoupon = storeCoupons.find(c => c && c.active !== false && String(c.code || '').trim().toUpperCase() === reqCouponCode);
+    if (!matchedCoupon) {
+      throw new Error(`折扣碼「${reqCouponCode}」無效或已停用，請重新確認`);
+    }
+    const cMin = Math.max(0, Number(matchedCoupon.minSubtotal) || 0);
+    if (authoritativeSubtotal < cMin) {
+      throw new Error(`折扣碼「${reqCouponCode}」需消費滿 NT$${cMin} 方可使用`);
+    }
+    const remainAfterPromo = Math.max(0, authoritativeSubtotal - authoritativeDiscount);
+    if (matchedCoupon.type === 'PERCENT') {
+      const pctOff = Math.max(1, Math.min(90, Number(matchedCoupon.value) || 10));
+      couponDiscount = Math.min(remainAfterPromo, Math.round(remainAfterPromo * (pctOff / 100)));
+    } else {
+      couponDiscount = Math.min(remainAfterPromo, Math.max(0, Number(matchedCoupon.value) || 0));
+    }
+    authoritativeDiscount += couponDiscount;
+    appliedCouponCode = reqCouponCode;
   }
 
   let manualDiscount = 0;
   let manualDiscountReason = '';
   if (isMerchantPosRequest && Number(params.manualDiscount) > 0) {
+    // 二-1：一般收銀員 (STAFF) 執行 >= $10 手動折讓或全單招待，強制需要店長覆核授權碼
+    const reqManualDisc = Math.max(0, Number(params.manualDiscount) || 0);
+    if (reqManualDisc >= 10) {
+      assertManagerAuthorized(params, storeId);
+    }
     manualDiscount = Math.min(
       Math.max(0, authoritativeSubtotal - authoritativeDiscount),
-      Math.max(0, Number(params.manualDiscount) || 0)
+      reqManualDisc
     );
     manualDiscountReason = String(params.manualDiscountReason || '櫃檯手動折讓').trim();
   }
 
   const authoritativeFinalTotal = Math.max(0, authoritativeSubtotal + cutleryFee - authoritativeDiscount - manualDiscount);
 
-  // 【#10 嚴格防止付款狀態偽造】
-  // 線上學生端若傳入 paymentMethod === 'LINE Pay'，必須通過後端 verifyLinePayAuthTokenOnServer 驗證 HMAC 金流憑證與金額！
-  // 嚴禁僅憑 paymentMethod === 'LINE Pay' 字串就無條件設為 '已付款'！
+  // 三-3：支援內用桌號 (tableNumber) 與內用「先吃後付 (餐後櫃檯結帳)」模式
+  const dineType = String(params.dineType || '外帶自取').trim();
+  const tableNumber = String(params.tableNumber || '').trim().slice(0, 16);
+  const isDineInPostPay = Boolean(!isMerchantPosRequest && dineType === '內用自取' && storeCustomMeta.allowDineInPostPay && params.paymentMethod === '內用餐後結帳');
+
   const isLargeCashReserve = isReservation && authoritativeFinalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && isCashPayment;
   let paymentStatus = '取餐付現';
   let verifiedTransactionId = '';
@@ -2854,6 +3269,8 @@ function handleOrderSubmission(ss, params) {
   if (isMerchantPosRequest) {
     paymentStatus = '已付款';
     verifiedTransactionId = String(params.transactionId || ('POS-' + now.getTime()));
+  } else if (isDineInPostPay) {
+    paymentStatus = '內用餐後結帳';
   } else if (paymentMethod === 'LINE Pay') {
     const lpVerify = verifyLinePayAuthTokenOnServer(params.paymentAuthToken, storeId, authoritativeFinalTotal);
     if (!lpVerify || !lpVerify.verified) {
@@ -2865,28 +3282,30 @@ function handleOrderSubmission(ss, params) {
     paymentStatus = '待櫃檯繳費';
   }
 
-  // 【取餐號碼權威防撞號機制 B6】統一由伺服器原子序號產生，僅在離線補送且該號碼尚未被佔用時才保留原離線單號
+  // 一-4：POS 現場單 (A001+) 與線上學生單 (B001+) 通道完全分流，離線 POS 單號 Axxx 絕不與線上單 Bxxx 撞號！
+  const channelPrefix = isMerchantPosRequest ? 'A' : 'B';
   let pickupNumber = '';
-  const requestedPosNum = String(params.pickupNumber || '').trim();
+  const requestedPosNum = String(params.pickupNumber || '').trim().toUpperCase();
   const isOfflineResync = Boolean(params.isOfflineSync || params.isOfflinePending);
-  if (isMerchantPosRequest && isOfflineResync && /^\d{3,5}$/.test(requestedPosNum)) {
+  if (isMerchantPosRequest && isOfflineResync && /^[A]?\d{3,5}$/.test(requestedPosNum)) {
+    const normalizedOfflineNum = requestedPosNum.startsWith('A') ? requestedPosNum : ('A' + requestedPosNum.slice(-3).padStart(3, '0'));
     const isTaken = recentOrders.some(o =>
       o && String(o.storeId) === storeId &&
       normalizeSheetDateStr(o.pickupDate) === pickupDateVal &&
-      String(o.pickupNumber) === requestedPosNum
+      String(o.pickupNumber || '').toUpperCase() === normalizedOfflineNum
     );
     if (!isTaken) {
-      pickupNumber = requestedPosNum;
-      const propKey = `SEQ_${storeId}_${pickupDateVal}`;
+      pickupNumber = normalizedOfflineNum;
+      const propKey = `SEQ_${storeId}_${pickupDateVal}_A`;
       const curSaved = parseInt(props.getProperty(propKey) || '0', 10);
-      const numVal = parseInt(requestedPosNum, 10);
+      const numVal = parseInt(normalizedOfflineNum.replace(/\D/g, ''), 10) || 0;
       if (numVal > curSaved) props.setProperty(propKey, String(numVal));
     }
   }
   let originalOfflinePickupNumber = '';
   if (!pickupNumber) {
-    pickupNumber = generateBackendSequentialPickupNumber(ss, storeId, pickupDateVal);
-    if (isMerchantPosRequest && isOfflineResync && /^\d{3,5}$/.test(requestedPosNum) && requestedPosNum !== pickupNumber) {
+    pickupNumber = generateBackendSequentialPickupNumber(ss, storeId, pickupDateVal, channelPrefix);
+    if (isMerchantPosRequest && isOfflineResync && requestedPosNum && requestedPosNum !== pickupNumber) {
       originalOfflinePickupNumber = requestedPosNum;
     }
   }
@@ -2907,21 +3326,24 @@ function handleOrderSubmission(ss, params) {
     storeLeadMins
   );
 
-  const dineType = String(params.dineType || '外帶自取').trim();
   const customerNote = String(params.customerNote || '').trim();
   const customerPhone = String(params.customerPhone || '').trim();
   const taxId = String(params.taxId || '').trim().replace(/\D/g, '').slice(0, 8);
+  const carrierCode = String(params.carrierCode || '').trim().toUpperCase().slice(0, 16);
   const paidAtDate = paymentStatus === '已付款' ? getTodayTaipeiStr() : '';
   const studentNameSummary = [
     dineType,
+    tableNumber ? `🪑 桌號:${tableNumber}` : '',
     needCutlery ? `🥢 需免洗餐具${cutleryFee > 0 ? `(+$${cutleryFee})` : ''}` : '',
     taxId ? `🧾 統編:${taxId}` : '',
+    carrierCode ? `📱 載具:${carrierCode}` : '',
     customerNote ? `📝 備註：${customerNote}` : ''
   ].filter(Boolean).join(' ・ ');
 
-  const promoAppliedText = manualDiscount > 0
-    ? manualDiscountReason
-    : (promoActive ? promoText : String(params.promoApplied || '一般點餐'));
+  const promoAppliedText = [
+    manualDiscount > 0 ? manualDiscountReason : (promoActive ? promoText : ''),
+    appliedCouponCode ? `折扣碼:${appliedCouponCode}(-$${couponDiscount})` : ''
+  ].filter(Boolean).join(' + ') || String(params.promoApplied || '一般點餐');
 
   const pickupTimeSlot = isReservation
     ? `📅 預訂 ${pickupDateVal} ${pickupTimeVal}`
@@ -2929,6 +3351,12 @@ function handleOrderSubmission(ss, params) {
 
   const extraMeta = {
     dineType: dineType,
+    tableNumber: tableNumber,
+    carrierCode: carrierCode,
+    couponCode: appliedCouponCode,
+    couponDiscount: couponDiscount,
+    isDineInPostPay: isDineInPostPay,
+    itemCheckedMap: {},
     needCutlery: needCutlery,
     cutleryFee: cutleryFee,
     taxId: taxId,
@@ -2990,23 +3418,10 @@ function handleOrderSubmission(ss, params) {
 
   orderSheet.appendRow(newRow);
 
-  // #14 每日限量庫存達標自動標記售罄 (Auto Sold-Out on Daily Limit Hit)
+  // 一-3 核心修正：每日限量達標時【絕不硬寫 Menus.soldOut = true】，改由 getInitBundle 動態計算今日剩餘量，
+  // 確保退單立即自動補回庫存、隔日營業自動歸零重新上架！
   if (autoSoldOutMenuIds.length > 0) {
-    try {
-      const mSheet = ss.getSheetByName('Menus');
-      const mLastRow = mSheet ? mSheet.getLastRow() : 0;
-      if (mLastRow > 1) {
-        const mRows = mSheet.getRange(2, 1, mLastRow - 1, 9).getValues();
-        let anySoldOutChanged = false;
-        for (let r = 0; r < mRows.length; r++) {
-          if (String(mRows[r][1]).trim() === storeId && autoSoldOutMenuIds.indexOf(String(mRows[r][0]).trim()) >= 0) {
-            mSheet.getRange(r + 2, 9).setValue(true);
-            anySoldOutChanged = true;
-          }
-        }
-        if (anySoldOutChanged) invalidateStoresMenusCache();
-      }
-    } catch (e) {}
+    invalidateStoresMenusCache();
   }
 
   const savedOrderObj = rowArrayToOrderObject(newRow);
@@ -3047,8 +3462,14 @@ function updateOrderStateBatch(ss, params) {
 
   if (params.paymentStatus) {
     meta.paymentStatus = String(params.paymentStatus).trim();
-    if (meta.paymentStatus === '已付款' && !meta.paidAtDate) {
-      meta.paidAtDate = getTodayTaipeiStr();
+    if (meta.paymentStatus === '已付款') {
+      if (!meta.paidAtDate) meta.paidAtDate = getTodayTaipeiStr();
+      if (Number(meta.pendingAddOnAmount) > 0) {
+        meta.extraChargeTotal = Math.max(0, Number(meta.extraChargeTotal) || 0) + Number(meta.pendingAddOnAmount);
+        meta.extraChargeMethod = String(params.paymentMethod || rowVals[12] || '現金').trim();
+        meta.extraChargeAtDate = getTodayTaipeiStr();
+        meta.pendingAddOnAmount = 0;
+      }
     }
   }
   if (params.paidAtDate) {
@@ -3133,7 +3554,7 @@ function updateOrderStateBatch(ss, params) {
   };
 }
 
-// #12 未完成訂單「改單 / 單品作廢」後端原子寫入與金額重算
+// #12 & 一-5 未完成訂單「改單 / 單品作廢 / 加價補差額」後端原子寫入與金額重算
 function handleModifyOrderItems(ss, params) {
   const orderSheet = ss.getSheetByName('Orders');
   const orderId = String(params.orderId || '').trim();
@@ -3142,7 +3563,7 @@ function handleModifyOrderItems(ss, params) {
 
   const rowVals = located.rowValues;
   const orderStoreId = String(rowVals[2] || '').trim();
-  assertMerchantAuthorized(params, orderStoreId);
+  const sess = assertMerchantAuthorized(params, orderStoreId);
 
   const curStatus = String(rowVals[13] || '').trim();
   if (curStatus === '已完成' || curStatus.indexOf('已取消') >= 0) {
@@ -3156,6 +3577,10 @@ function handleModifyOrderItems(ss, params) {
 
   let meta = {};
   try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
+  // 改單前封存原 6 碼防偽核銷碼，避免改單變動金額後導致顧客紙本小票 / QR Code 核銷碼失效
+  if (!meta.sealedVerificationCode) {
+    meta.sealedVerificationCode = generateOrderVerificationCodeOnServer(rowVals[0], rowVals[1], Number(rowVals[9]) || 0);
+  }
 
   const cleanItems = incomingItems.map(it => {
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
@@ -3182,17 +3607,35 @@ function handleModifyOrderItems(ss, params) {
 
   const modifyReason = String(params.reason || '櫃檯改單/單品作廢').trim();
   const wasPaid = String(meta.paymentStatus || '') === '已付款';
+  let diffLabel = '';
   if (wasPaid && newFinalTotal < oldFinalTotal) {
     const partialDiff = oldFinalTotal - newFinalTotal;
     meta.partialRefundTotal = Math.max(0, Number(meta.partialRefundTotal) || 0) + partialDiff;
     meta.refundedAtDate = getTodayTaipeiStr();
+    diffLabel = `・部分退現 $${partialDiff}`;
+  } else if (wasPaid && newFinalTotal > oldFinalTotal) {
+    // 一-5：改單向上加價時明確紀錄補收差額與補款方式（現金 / LINE Pay），交班日結實收帳務零誤差
+    const extraDiff = newFinalTotal - oldFinalTotal;
+    const extraMethod = String(params.extraChargeMethod || '現金').trim();
+    meta.extraChargeTotal = Math.max(0, Number(meta.extraChargeTotal) || 0) + extraDiff;
+    meta.extraChargeMethod = extraMethod;
+    meta.extraChargeAtDate = getTodayTaipeiStr();
+    if (!Array.isArray(meta.extraChargeHistory)) meta.extraChargeHistory = [];
+    meta.extraChargeHistory.push({
+      ts: Date.now(),
+      amount: extraDiff,
+      method: extraMethod,
+      cashier: sess.staffName || '櫃檯人員',
+      dateStr: getTodayTaipeiStr()
+    });
+    diffLabel = `・補收差額 $${extraDiff}(${extraMethod})`;
   }
   if (!Array.isArray(meta.statusTimeline)) meta.statusTimeline = [];
   meta.statusTimeline.push({
     ts: Date.now(),
     timeStr: Utilities.formatDate(new Date(), 'Asia/Taipei', 'HH:mm:ss'),
     status: curStatus,
-    label: `改單/單品作廢 (${modifyReason}・金額 $${oldFinalTotal} ➔ $${newFinalTotal})`
+    label: `改單 (${modifyReason}・金額 $${oldFinalTotal} ➔ $${newFinalTotal}${diffLabel})`
   });
   meta.statusTimeline = meta.statusTimeline.slice(-25);
   meta.lastModifiedReason = modifyReason;
@@ -3202,8 +3645,192 @@ function handleModifyOrderItems(ss, params) {
   const updatedOrderObj = rowArrayToOrderObject(rowVals);
   const recentOrders = readSheetTailObjects(orderSheet, 150).map(enrichOrderObject);
   recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+  invalidateStoresMenusCache();
 
   return { updated: true, order: updatedOrderObj };
+}
+
+// 二-3：KDS 廚房單品逐項劃單狀態持久化（多平板即時同步）
+function handleUpdateOrderItemCheckState(ss, params) {
+  const orderSheet = ss.getSheetByName('Orders');
+  const orderId = String(params.orderId || '').trim();
+  const located = locateOrderRowById(orderSheet, orderId);
+  if (!located) throw new Error('找不到該筆訂單: ' + orderId);
+
+  const rowVals = located.rowValues;
+  const orderStoreId = String(rowVals[2] || '').trim();
+  assertMerchantAuthorized(params, orderStoreId);
+
+  let meta = {};
+  try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
+  if (!meta.itemCheckedMap || typeof meta.itemCheckedMap !== 'object') {
+    meta.itemCheckedMap = {};
+  }
+
+  if (params.itemCheckedMap && typeof params.itemCheckedMap === 'object') {
+    meta.itemCheckedMap = { ...meta.itemCheckedMap, ...params.itemCheckedMap };
+  } else if (params.itemKey !== undefined) {
+    const key = String(params.itemKey).trim();
+    if (key) meta.itemCheckedMap[key] = Boolean(params.checked);
+  }
+
+  rowVals[16] = JSON.stringify(meta);
+  orderSheet.getRange(located.sheetRowIndex, 1, 1, 17).setValues([rowVals]);
+  return { updated: true, order: rowArrayToOrderObject(rowVals) };
+}
+
+// 三-3：同桌內用加點併單（顧客憑核銷碼或櫃檯人員均可觸發，由後端強制查表驗算新加點品項單價）
+function handleAppendOrderItems(ss, params) {
+  const orderSheet = ss.getSheetByName('Orders');
+  const orderId = String(params.orderId || '').trim();
+  const located = locateOrderRowById(orderSheet, orderId);
+  if (!located) throw new Error('找不到欲加點的原訂單: ' + orderId);
+
+  const rowVals = located.rowValues;
+  const orderStoreId = String(rowVals[2] || '').trim();
+  const curOrderObj = rowArrayToOrderObject(rowVals);
+  const curStatus = String(curOrderObj.status || '');
+  if (curStatus === '已完成' || curStatus.indexOf('已取消') >= 0) {
+    throw new Error('原訂單已完成或取消，無法併單加點，請重新下單');
+  }
+
+  const isMerchantAuth = isMerchantRequestValid(params, orderStoreId);
+  if (!isMerchantAuth) {
+    const providedCode = String(params.verificationCode || '').trim().toUpperCase();
+    const expectedCode = String(curOrderObj.verificationCode || '').trim().toUpperCase();
+    if (!providedCode || providedCode !== expectedCode) {
+      throw new Error('核銷碼驗證失敗，無法併入此筆桌單');
+    }
+  }
+
+  const appendItemsRaw = Array.isArray(params.items) ? params.items : [];
+  if (appendItemsRaw.length === 0) throw new Error('請至少選擇 1 項加點餐點');
+
+  const cachedSM = getCachedStoresAndMenus(ss);
+  const storeMenus = (cachedSM.menus || []).filter(m => String(m.storeId) === orderStoreId);
+  const menuById = {};
+  const menuByName = {};
+  storeMenus.forEach(m => {
+    const parsed = parseMenuRowOptionsAndSoldOut(m);
+    const entry = {
+      id: String(m.id),
+      name: String(m.name).trim(),
+      price: Number(m.price) || 0,
+      soldOut: parsed.isSoldOut,
+      options: parsed.parsedOptions || {}
+    };
+    menuById[entry.id] = entry;
+    menuByName[entry.name] = entry;
+  });
+
+  let existingItems = [];
+  try { existingItems = JSON.parse(rowVals[6] || '[]'); } catch (e) { existingItems = []; }
+  if (!Array.isArray(existingItems)) existingItems = [];
+
+  let meta = {};
+  try { meta = JSON.parse(rowVals[16] || '{}'); } catch (e) {}
+  // 加點併單前封存原 6 碼防偽核銷碼，確保原桌單 QR 憑證持續有效
+  if (!meta.sealedVerificationCode) {
+    meta.sealedVerificationCode = generateOrderVerificationCodeOnServer(rowVals[0], rowVals[1], Number(rowVals[9]) || 0);
+  }
+
+  let addedSubtotal = 0;
+  const nowStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'HH:mm:ss');
+  const verifiedAddOns = appendItemsRaw.map(it => {
+    const qty = Math.max(1, Math.min(30, parseInt(it.qty, 10) || 1));
+    const lookup = (it.menuId && menuById[String(it.menuId)]) || menuByName[String(it.name || '').trim()];
+    if (!lookup) throw new Error(`加點品項「${it.name || ''}」不存在於菜單中`);
+    if (lookup.soldOut) throw new Error(`加點品項「${lookup.name}」目前已售罄`);
+
+    let extraDelta = 0;
+    const rawMods = Array.isArray(it.modifiers) ? it.modifiers : [];
+    const safeMods = [];
+    const optDefs = lookup.options || {};
+    const validChoiceMap = {};
+    Object.keys(optDefs).forEach(gKey => {
+      const grp = optDefs[gKey];
+      if (!grp || !Array.isArray(grp.choices)) return;
+      grp.choices.forEach(ch => {
+        const cLbl = Array.isArray(ch) ? String(ch[0] || '').trim() : String((ch && (ch.label || ch.name)) || ch || '').trim();
+        const cDelta = Array.isArray(ch) ? Math.max(0, Number(ch[1]) || 0) : Math.max(0, Number((ch && (ch.priceDelta !== undefined ? ch.priceDelta : ch.price)) || 0) || 0);
+        if (cLbl) validChoiceMap[cLbl] = cDelta;
+        const subArr = Array.isArray(ch) ? (Array.isArray(ch[3]) ? ch[3] : []) : (ch && Array.isArray(ch.subOptions) ? ch.subOptions : []);
+        subArr.forEach(sub => {
+          if (sub && Array.isArray(sub.choices)) {
+            sub.choices.forEach(sch => {
+              const sLbl = Array.isArray(sch) ? String(sch[0] || '').trim() : String((sch && (sch.label || sch.name)) || sch || '').trim();
+              const sDelta = Array.isArray(sch) ? Math.max(0, Number(sch[1]) || 0) : Math.max(0, Number((sch && (sch.priceDelta !== undefined ? sch.priceDelta : sch.price)) || 0) || 0);
+              if (sLbl) validChoiceMap[sLbl] = sDelta;
+            });
+          }
+        });
+      });
+    });
+    rawMods.forEach(mod => {
+      const modStr = String(mod || '').trim();
+      if (!modStr) return;
+      const qtyMatch = modStr.match(/^(.+?)\s*[×x]\s*(\d+)$/i);
+      const baseLbl = qtyMatch ? qtyMatch[1].trim() : modStr;
+      const mult = qtyMatch ? Math.max(1, Math.min(10, parseInt(qtyMatch[2], 10) || 1)) : 1;
+      if (validChoiceMap[baseLbl] !== undefined) {
+        extraDelta += validChoiceMap[baseLbl] * mult;
+        safeMods.push(mult > 1 ? `${baseLbl} ×${mult}` : baseLbl);
+      }
+    });
+
+    const unitPrice = lookup.price + extraDelta;
+    addedSubtotal += unitPrice * qty;
+    return {
+      menuId: lookup.id,
+      name: lookup.name,
+      qty: qty,
+      price: unitPrice,
+      basePrice: lookup.price,
+      lineSubtotal: unitPrice * qty,
+      modifiers: safeMods,
+      itemNote: String(it.itemNote || '').trim().slice(0, 80),
+      isAddOn: true,
+      addedAt: nowStr
+    };
+  });
+
+  const combinedItems = existingItems.concat(verifiedAddOns);
+  const oldSubtotal = Math.max(0, Number(rowVals[7]) || 0);
+  const oldFinalTotal = Math.max(0, Number(rowVals[9]) || 0);
+  const newSubtotal = oldSubtotal + addedSubtotal;
+  const newFinalTotal = oldFinalTotal + addedSubtotal;
+
+  rowVals[6] = JSON.stringify(combinedItems);
+  rowVals[7] = newSubtotal;
+  rowVals[9] = newFinalTotal;
+  // 若原本已經叫號可取餐，併入加點後自動回到「製作中」提醒廚房出新菜
+  if (String(rowVals[13] || '') === '可取餐') {
+    rowVals[13] = '製作中';
+  }
+  if (String(meta.paymentStatus || '') === '已付款') {
+    meta.paymentStatus = '尚有加點待補款';
+    meta.pendingAddOnAmount = Math.max(0, Number(meta.pendingAddOnAmount) || 0) + addedSubtotal;
+  }
+  if (params.tableNumber && !meta.tableNumber) {
+    meta.tableNumber = String(params.tableNumber).trim().slice(0, 20);
+  }
+  if (!Array.isArray(meta.statusTimeline)) meta.statusTimeline = [];
+  meta.statusTimeline.push({
+    ts: Date.now(),
+    timeStr: nowStr,
+    status: String(rowVals[13] || '製作中'),
+    label: `同桌加點併單 (+${verifiedAddOns.length} 品項，+$${addedSubtotal}，累計 $${newFinalTotal})`
+  });
+  meta.statusTimeline = meta.statusTimeline.slice(-25);
+  rowVals[16] = JSON.stringify(meta);
+
+  orderSheet.getRange(located.sheetRowIndex, 1, 1, 17).setValues([rowVals]);
+  const updatedOrderObj = rowArrayToOrderObject(rowVals);
+  const recentOrders = readSheetTailObjects(orderSheet, 150).map(enrichOrderObject);
+  recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+  invalidateStoresMenusCache();
+
+  return { updated: true, addedSubtotal: addedSubtotal, order: sanitizeOrderForClientOutput(updatedOrderObj, isMerchantAuth, true) };
 }
 
 // #37 店家櫃檯傳送即時留言通知給顧客（顯示於顧客取餐憑證頁並觸發推播）
@@ -3254,33 +3881,96 @@ function handleAddMerchantOrderNote(ss, params) {
   return { updated: true, order: updatedOrderObj };
 }
 
-// #12 班別開班點鈔登記雲端持久化
+// #12 & 一-5 多班別開班點鈔登記雲端持久化（寫入專屬 ShiftReports 工作表）
+function normalizeShiftSlotCode(rawSlot) {
+  const s = String(rawSlot || 'FULL').trim().toUpperCase();
+  if (s === 'MORNING' || s === 'AM' || s === '早班') return 'MORNING';
+  if (s === 'EVENING' || s === 'PM' || s === '晚班') return 'EVENING';
+  return 'FULL';
+}
+
+function upsertShiftReportRowOnServer(ss, storeId, shiftDate, shiftSlot, patch) {
+  const shiftSheet = ensureSheetByNameWithHeaders(
+    ss,
+    'ShiftReports',
+    ['shiftKey', 'storeId', 'dateStr', 'shiftSlot', 'status', 'cashierName', 'openingFloat', 'expectedCash', 'actualCountedCash', 'variance', 'pettyCashJson', 'summaryJson', 'updatedAt']
+  );
+  const slot = normalizeShiftSlotCode(shiftSlot);
+  const shiftKey = `${storeId}__${shiftDate}__${slot}`;
+  const nowStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
+  const lastRow = shiftSheet.getLastRow();
+  let foundRowIdx = -1;
+  let curRow = [shiftKey, storeId, shiftDate, slot, 'OPEN', '', 0, 0, 0, 0, '[]', '{}', nowStr];
+
+  if (lastRow > 1) {
+    const vals = shiftSheet.getRange(2, 1, lastRow - 1, 13).getValues();
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (String(vals[i][0] || '').trim() === shiftKey) {
+        foundRowIdx = i + 2;
+        curRow = vals[i].slice(0, 13);
+        break;
+      }
+    }
+  }
+
+  let summaryObj = {};
+  try { summaryObj = JSON.parse(curRow[11] || '{}'); } catch (e) { summaryObj = {}; }
+  if (patch.summaryPatch && typeof patch.summaryPatch === 'object') {
+    summaryObj = { ...summaryObj, ...patch.summaryPatch };
+  }
+
+  const nextRow = [
+    shiftKey,
+    storeId,
+    shiftDate,
+    slot,
+    patch.status !== undefined ? String(patch.status) : String(curRow[4] || 'OPEN'),
+    patch.cashierName !== undefined ? String(patch.cashierName) : String(curRow[5] || ''),
+    patch.openingFloat !== undefined ? Math.max(0, Number(patch.openingFloat) || 0) : (Number(curRow[6]) || 0),
+    patch.expectedCash !== undefined ? Number(patch.expectedCash) || 0 : (Number(curRow[7]) || 0),
+    patch.actualCountedCash !== undefined ? Number(patch.actualCountedCash) || 0 : (Number(curRow[8]) || 0),
+    patch.variance !== undefined ? Number(patch.variance) || 0 : (Number(curRow[9]) || 0),
+    patch.pettyCashJson !== undefined ? String(patch.pettyCashJson) : String(curRow[10] || '[]'),
+    JSON.stringify(summaryObj),
+    nowStr
+  ];
+
+  if (foundRowIdx > 0) {
+    shiftSheet.getRange(foundRowIdx, 1, 1, 13).setValues([nextRow]);
+  } else {
+    shiftSheet.appendRow(nextRow);
+  }
+  return { shiftKey, slot, nowStr, summaryObj };
+}
+
 function handleOpenShiftRecord(ss, params) {
   const storeId = String(params.storeId || '').trim();
   const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  const shiftSlot = normalizeShiftSlotCode(params.shiftSlot);
   if (!storeId) throw new Error('缺少店家編號 (storeId)');
-  assertMerchantAuthorized(params, storeId);
+  const sess = assertMerchantAuthorized(params, storeId);
 
-  const props = PropertiesService.getScriptProperties();
-  const propKey = 'SHIFT_OPENS_' + storeId;
-  let openMap = {};
-  try { openMap = JSON.parse(props.getProperty(propKey) || '{}'); } catch (e) { openMap = {}; }
-
+  const nowStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
   const record = {
-    openedAt: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss'),
-    cashier: String(params.cashier || '早班人員'),
-    openingFloat: Math.max(0, Number(params.openingFloat) || 0)
+    openedAt: nowStr,
+    cashier: String(params.cashier || sess.staffName || '值班人員'),
+    openingFloat: Math.max(0, Number(params.openingFloat) || 0),
+    shiftSlot: shiftSlot
   };
-  openMap[shiftDate] = record;
-  props.setProperty(propKey, JSON.stringify(openMap));
+  upsertShiftReportRowOnServer(ss, storeId, shiftDate, shiftSlot, {
+    status: 'OPEN',
+    cashierName: record.cashier,
+    openingFloat: record.openingFloat,
+    summaryPatch: { openedAt: nowStr, shiftSlot: shiftSlot }
+  });
 
   handleSaveMerchantAuditLog(ss, {
     ...params,
     actionTitle: '完成開班點鈔登記',
-    detail: `營業日 ${shiftDate}・值班人員：${record.cashier}，開班錢箱找零準備金 NT$${record.openingFloat}`
+    detail: `營業日 ${shiftDate} [${shiftSlot}]・值班人員：${record.cashier}，開班錢箱找零準備金 NT$${record.openingFloat}`
   });
 
-  return { opened: true, storeId: storeId, shiftDate: shiftDate, record: record };
+  return { opened: true, storeId: storeId, shiftDate: shiftDate, shiftSlot: shiftSlot, compositeKey: `${shiftDate}_${shiftSlot}`, record: record };
 }
 
 function markReservationPaid(ss, params) {
@@ -3301,13 +3991,14 @@ function cancelOrderByIdBatch(ss, params) {
   const curOrderObj = rowArrayToOrderObject(rowVals);
   const curStatus = String(curOrderObj.status || '');
   const isMerchantAuth = isMerchantRequestValid(params, orderStoreId);
+  let approverLabel = '';
 
   if (!isMerchantAuth) {
-    // 允許學生憑本人防偽核銷碼 (verificationCode) 在尚未進入廚房製作前自助取消預約單/未付款單
+    // 一-2：允許學生憑本人 6 碼防偽核銷碼 (verificationCode) 在尚未進入廚房製作前自助取消預約單/未付款單
     const providedCode = String(params.verificationCode || '').trim().toUpperCase();
     const expectedCode = String(curOrderObj.verificationCode || '').trim().toUpperCase();
     if (!providedCode || providedCode !== expectedCode) {
-      assertMerchantAuthorized(params, orderStoreId);
+      throw new Error('核銷碼驗證失敗，請確認 6 碼取餐核銷碼後再試');
     }
     const canSelfCancel = (
       curStatus === '已接單待排程' ||
@@ -3317,6 +4008,10 @@ function cancelOrderByIdBatch(ss, params) {
     if (!canSelfCancel) {
       throw new Error('訂單已進入廚房備餐或完成階段，無法由線上自助取消，請洽詢店家櫃檯處理。');
     }
+  } else {
+    // 二-1：店家櫃檯執行退單 / 退款屬高風險帳務操作，若目前登入者為一般收銀員 (STAFF)，須店長 PIN 現場覆核授權
+    const mgrAuth = assertManagerAuthorized(params, orderStoreId, '櫃檯退單與退款');
+    approverLabel = mgrAuth.approvedBy || mgrAuth.staffName || '';
   }
 
   const reason = String(params.reason || (isMerchantAuth ? '櫃檯取消' : '顧客自助取消預約')).trim();
@@ -3387,6 +4082,20 @@ function cancelOrderByIdBatch(ss, params) {
   const cancelledOrderObj = rowArrayToOrderObject(rowVals);
   const recentOrders = readSheetTailObjects(orderSheet, 150).map(enrichOrderObject);
   recomputeAllStoreQueuesInMemory(ss, recentOrders, true);
+  // 一-3：退單完成後立即清除菜單與公開快取，讓當日限量餘額即時釋放回補！
+  invalidateStoresMenusCache();
+
+  if (isMerchantAuth) {
+    try {
+      handleSaveMerchantAuditLog(ss, {
+        ...params,
+        storeId: orderStoreId,
+        approvedBy: approverLabel,
+        actionTitle: '櫃檯退單作廢',
+        detail: `單號 #${cancelledOrderObj.pickupNumber} (${orderId})・原因：${reason}・退款狀態：${meta.paymentStatus}`
+      });
+    } catch (e) {}
+  }
 
   dispatchOrderNotificationOnServer(
     ss,
@@ -3406,7 +4115,23 @@ function cancelOrderByIdBatch(ss, params) {
 function updateStoreSettings(ss, params) {
   const storeId = String(params.storeId || '').trim();
   if (!storeId) throw new Error('缺少店家編號 (storeId)');
-  assertMerchantAuthorized(params, storeId);
+  const isSensitiveConfigChange = (
+    params.cutleryPrice !== undefined ||
+    params.promoMode !== undefined ||
+    params.promoDiscount !== undefined ||
+    params.promoMinSubtotal !== undefined ||
+    params.promoScope !== undefined ||
+    params.secondItemDiscount !== undefined ||
+    params.coupons !== undefined ||
+    params.allowDineInPostPay !== undefined ||
+    params.maxCapacityPer15Min !== undefined ||
+    params.basePrepMinutes !== undefined
+  );
+  if (isSensitiveConfigChange) {
+    assertManagerAuthorized(params, storeId, '修改店家優惠、費率與營運設定');
+  } else {
+    assertMerchantAuthorized(params, storeId);
+  }
 
   const props = PropertiesService.getScriptProperties();
 
@@ -3424,13 +4149,50 @@ function updateStoreSettings(ss, params) {
     props.setProperty('SIM_QUEUE_OFFSETS', JSON.stringify(simOffsets));
   }
 
-  if (params.reserveLeadMinutes !== undefined) {
+  if (
+    params.reserveLeadMinutes !== undefined ||
+    params.promoMinSubtotal !== undefined ||
+    params.promoScope !== undefined ||
+    params.giftMenuItemId !== undefined ||
+    params.secondItemDiscount !== undefined ||
+    params.coupons !== undefined ||
+    params.allowDineInPostPay !== undefined
+  ) {
     let customMetaMap = {};
     try { customMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
-    customMetaMap[storeId] = {
-      ...(customMetaMap[storeId] || {}),
-      reserveLeadMinutes: Math.max(10, Math.min(90, Number(params.reserveLeadMinutes) || 25))
-    };
+    const curMeta = customMetaMap[storeId] || {};
+    const nextMeta = { ...curMeta };
+    if (params.reserveLeadMinutes !== undefined) {
+      nextMeta.reserveLeadMinutes = Math.max(10, Math.min(90, Number(params.reserveLeadMinutes) || 25));
+    }
+    if (params.promoMinSubtotal !== undefined) {
+      nextMeta.promoMinSubtotal = Math.max(0, Number(params.promoMinSubtotal) || 0);
+    }
+    if (params.promoScope !== undefined) {
+      nextMeta.promoScope = String(params.promoScope) === 'ALL_DAY' ? 'ALL_DAY' : 'OFF_PEAK';
+    }
+    if (params.giftMenuItemId !== undefined) {
+      nextMeta.giftMenuItemId = String(params.giftMenuItemId || '').trim();
+    }
+    if (params.secondItemDiscount !== undefined) {
+      nextMeta.secondItemDiscount = Math.max(0, Number(params.secondItemDiscount) || 0);
+    }
+    if (Array.isArray(params.coupons)) {
+      nextMeta.coupons = params.coupons
+        .filter(c => c && String(c.code || '').trim())
+        .slice(0, 30)
+        .map(c => ({
+          code: String(c.code || '').trim().toUpperCase().slice(0, 24),
+          type: String(c.type || 'AMOUNT').toUpperCase() === 'PERCENT' ? 'PERCENT' : 'AMOUNT',
+          value: Math.max(1, Number(c.value) || 0),
+          minSubtotal: Math.max(0, Number(c.minSubtotal) || 0),
+          active: c.active !== false
+        }));
+    }
+    if (params.allowDineInPostPay !== undefined) {
+      nextMeta.allowDineInPostPay = Boolean(params.allowDineInPostPay);
+    }
+    customMetaMap[storeId] = nextMeta;
     props.setProperty('STORE_CUSTOM_META', JSON.stringify(customMetaMap));
   }
 
@@ -3523,6 +4285,15 @@ function saveStoreMenusAtomic(ss, params) {
       const nameEnVal = String(m.nameEn || '').trim().slice(0, 80);
       if (nameEnVal) cleanOpts['__nameEn'] = nameEnVal;
       else delete cleanOpts['__nameEn'];
+      const stationVal = String(m.station || 'AUTO').trim().toUpperCase();
+      if (stationVal && stationVal !== 'AUTO') cleanOpts['__station'] = stationVal;
+      else delete cleanOpts['__station'];
+      const tileColorVal = String(m.tileColor || '').trim().slice(0, 20);
+      if (tileColorVal) cleanOpts['__tileColor'] = tileColorVal;
+      else delete cleanOpts['__tileColor'];
+      const sortOrderVal = m.sortOrder !== undefined && m.sortOrder !== '' ? Number(m.sortOrder) : NaN;
+      if (Number.isFinite(sortOrderVal)) cleanOpts['__sortOrder'] = sortOrderVal;
+      else delete cleanOpts['__sortOrder'];
 
       return [
         itemId,
@@ -3599,6 +4370,15 @@ function upsertSingleMenuItemOnServer(ss, params) {
   const nameEnVal = String(item.nameEn || '').trim().slice(0, 80);
   if (nameEnVal) cleanOpts['__nameEn'] = nameEnVal;
   else delete cleanOpts['__nameEn'];
+  const stationVal = String(item.station || 'AUTO').trim().toUpperCase();
+  if (stationVal && stationVal !== 'AUTO') cleanOpts['__station'] = stationVal;
+  else delete cleanOpts['__station'];
+  const tileColorVal = String(item.tileColor || '').trim().slice(0, 20);
+  if (tileColorVal) cleanOpts['__tileColor'] = tileColorVal;
+  else delete cleanOpts['__tileColor'];
+  const sortOrderVal = item.sortOrder !== undefined && item.sortOrder !== '' ? Number(item.sortOrder) : NaN;
+  if (Number.isFinite(sortOrderVal)) cleanOpts['__sortOrder'] = sortOrderVal;
+  else delete cleanOpts['__sortOrder'];
 
   const rowValues = [
     menuId,
@@ -3807,49 +4587,44 @@ function deleteStoreOnServer(ss, params) {
   return { deleted: true, storeId: storeId };
 }
 
-// ==================== #13 & #45 店務敏感操作稽核紀錄、交班日結關班鎖定與中途零用金雲端持久化 ====================
+// ==================== 一-5 & #13 & #45 店務敏感操作稽核紀錄、多班別交班日結關班鎖定與零用金（獨立 Sheet 持久化） ====================
 function handleSaveMerchantAuditLog(ss, params) {
   const storeId = String(params.storeId || '').trim();
   if (!storeId) throw new Error('缺少店家編號 (storeId)');
-  assertMerchantAuthorized(params, storeId);
+  const sess = assertMerchantAuthorized(params, storeId);
 
-  const props = PropertiesService.getScriptProperties();
-  const propKey = 'AUDIT_LOGS_' + storeId;
-  let logs = [];
-  try {
-    logs = JSON.parse(props.getProperty(propKey) || '[]');
-    if (!Array.isArray(logs)) logs = [];
-  } catch (e) { logs = []; }
+  const auditSheet = ensureSheetByNameWithHeaders(
+    ss,
+    'AuditLogs',
+    ['logId', 'ts', 'dateStr', 'storeId', 'staffName', 'staffRole', 'approvedBy', 'action', 'detail']
+  );
 
-  const entry = {
-    ts: String(params.ts || Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss')),
-    storeId: storeId,
-    action: String(params.actionTitle || params.logAction || ''),
-    detail: String(params.detail || '')
-  };
-  logs.unshift(entry);
-  logs = logs.slice(0, 80);
-  props.setProperty(propKey, JSON.stringify(logs));
-  return { saved: true, storeId: storeId, count: logs.length };
+  const nowTs = String(params.ts || Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss'));
+  const dateStr = nowTs.slice(0, 10);
+  const logId = 'LOG-' + Date.now() + '-' + Math.floor(Math.random() * 900 + 100);
+  const staffName = String(params.staffName || sess.staffName || '值班人員').trim().slice(0, 40);
+  const staffRole = String(params.staffRole || sess.role || 'MANAGER').trim().toUpperCase();
+  const approvedBy = String(params.approvedBy || '').trim().slice(0, 40);
+  const actionTitle = String(params.actionTitle || params.logAction || '').trim().slice(0, 120);
+  const detailText = String(params.detail || '').trim().slice(0, 600);
+
+  auditSheet.appendRow([logId, nowTs, dateStr, storeId, staffName, staffRole, approvedBy, actionTitle, detailText]);
+  return { saved: true, storeId: storeId, logId: logId };
 }
 
 function handleLockShiftZReport(ss, params) {
   const storeId = String(params.storeId || '').trim();
   const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  const shiftSlot = normalizeShiftSlotCode(params.shiftSlot);
   if (!storeId) throw new Error('缺少店家編號 (storeId)');
-  assertMerchantAuthorized(params, storeId);
+  const sess = assertMerchantAuthorized(params, storeId);
 
-  const props = PropertiesService.getScriptProperties();
-  const lockPropKey = 'SHIFT_LOCKS_' + storeId;
-  let locksMap = {};
-  try {
-    locksMap = JSON.parse(props.getProperty(lockPropKey) || '{}');
-  } catch (e) { locksMap = {}; }
-
+  const nowStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
   const record = {
     locked: true,
-    lockedAt: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss'),
-    cashier: String(params.cashier || '值班店長'),
+    lockedAt: nowStr,
+    shiftSlot: shiftSlot,
+    cashier: String(params.cashier || sess.staffName || '值班店長'),
     openingFloat: Number(params.openingFloat) || 0,
     pettyCashInSum: Number(params.pettyCashInSum) || 0,
     pettyCashOutSum: Number(params.pettyCashOutSum) || 0,
@@ -3857,61 +4632,75 @@ function handleLockShiftZReport(ss, params) {
     actualCounted: Number(params.actualCounted) || 0,
     varianceAmt: Number(params.varianceAmt) || 0
   };
-  locksMap[shiftDate] = record;
-  props.setProperty(lockPropKey, JSON.stringify(locksMap));
+  upsertShiftReportRowOnServer(ss, storeId, shiftDate, shiftSlot, {
+    status: 'LOCKED',
+    cashierName: record.cashier,
+    openingFloat: record.openingFloat,
+    expectedCash: record.expectedDrawerCash,
+    actualCountedCash: record.actualCounted,
+    variance: record.varianceAmt,
+    summaryPatch: record
+  });
 
   handleSaveMerchantAuditLog(ss, {
     ...params,
     actionTitle: '完成交班日結關班(雲端鎖定)',
-    detail: `營業日 ${shiftDate}・經手人：${record.cashier}，應有錢箱現金 $${record.expectedDrawerCash}，實點 $${record.actualCounted}，差額 $${record.varianceAmt}`
+    detail: `營業日 ${shiftDate} [${shiftSlot}]・經手人：${record.cashier}，應有錢箱現金 $${record.expectedDrawerCash}，實點 $${record.actualCounted}，差額 $${record.varianceAmt}`
   });
 
-  return { locked: true, storeId: storeId, shiftDate: shiftDate, record: record };
+  return { locked: true, storeId: storeId, shiftDate: shiftDate, shiftSlot: shiftSlot, compositeKey: `${shiftDate}_${shiftSlot}`, record: record };
 }
 
 function handleUnlockShiftZReport(ss, params) {
   const storeId = String(params.storeId || '').trim();
   const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  const shiftSlot = normalizeShiftSlotCode(params.shiftSlot);
   if (!storeId) throw new Error('缺少店家編號 (storeId)');
-  assertMerchantAuthorized(params, storeId);
+  const mgrAuth = assertManagerAuthorized(params, storeId, '解除交班日結鎖定');
 
-  const props = PropertiesService.getScriptProperties();
-  const lockPropKey = 'SHIFT_LOCKS_' + storeId;
-  let locksMap = {};
+  upsertShiftReportRowOnServer(ss, storeId, shiftDate, shiftSlot, {
+    status: 'UNLOCKED',
+    summaryPatch: {
+      locked: false,
+      unlockedAt: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss'),
+      unlockedBy: mgrAuth.approvedBy || mgrAuth.staffName || '店長',
+      unlockReason: String(params.reason || '店長授權重開帳務')
+    }
+  });
+
+  // 相容清除舊版 PropertiesService 鎖定殘留
   try {
-    locksMap = JSON.parse(props.getProperty(lockPropKey) || '{}');
-  } catch (e) { locksMap = {}; }
-
-  delete locksMap[shiftDate];
-  props.setProperty(lockPropKey, JSON.stringify(locksMap));
+    const props = PropertiesService.getScriptProperties();
+    const lockPropKey = 'SHIFT_LOCKS_' + storeId;
+    const locksMap = JSON.parse(props.getProperty(lockPropKey) || '{}');
+    delete locksMap[shiftDate];
+    delete locksMap[`${shiftDate}_${shiftSlot}`];
+    props.setProperty(lockPropKey, JSON.stringify(locksMap));
+  } catch (e) {}
 
   handleSaveMerchantAuditLog(ss, {
     ...params,
+    approvedBy: mgrAuth.approvedBy || mgrAuth.staffName || '',
     actionTitle: '店長解除交班日結鎖定',
-    detail: `營業日 ${shiftDate}・原因：${String(params.reason || '店長授權重開帳務')}`
+    detail: `營業日 ${shiftDate} [${shiftSlot}]・原因：${String(params.reason || '店長授權重開帳務')}`
   });
 
-  return { unlocked: true, storeId: storeId, shiftDate: shiftDate };
+  return { unlocked: true, storeId: storeId, shiftDate: shiftDate, shiftSlot: shiftSlot, compositeKey: `${shiftDate}_${shiftSlot}` };
 }
 
 function handleSaveShiftPettyCash(ss, params) {
   const storeId = String(params.storeId || '').trim();
   const shiftDate = normalizeSheetDateStr(params.shiftDate || getTodayTaipeiStr());
+  const shiftSlot = normalizeShiftSlotCode(params.shiftSlot);
   if (!storeId) throw new Error('缺少店家編號 (storeId)');
   assertMerchantAuthorized(params, storeId);
 
-  const props = PropertiesService.getScriptProperties();
-  const propKey = 'PETTY_CASH_' + storeId;
-  let pettyMap = {};
-  try {
-    pettyMap = JSON.parse(props.getProperty(propKey) || '{}');
-  } catch (e) { pettyMap = {}; }
+  const entries = Array.isArray(params.entries) ? params.entries.slice(0, 100) : [];
+  upsertShiftReportRowOnServer(ss, storeId, shiftDate, shiftSlot, {
+    pettyCashJson: JSON.stringify(entries)
+  });
 
-  const entries = Array.isArray(params.entries) ? params.entries.slice(0, 50) : [];
-  pettyMap[shiftDate] = entries;
-  props.setProperty(propKey, JSON.stringify(pettyMap));
-
-  return { saved: true, storeId: storeId, shiftDate: shiftDate, entries: entries };
+  return { saved: true, storeId: storeId, shiftDate: shiftDate, shiftSlot: shiftSlot, compositeKey: `${shiftDate}_${shiftSlot}`, entries: entries };
 }
 
 function runTrafficSimulation(ss, params) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mealflow-pwa-v22';
+const CACHE_NAME = 'mealflow-pwa-v23';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -6,8 +6,10 @@ const APP_SHELL_ASSETS = [
   './order/index.html',
   './store/',
   './store/index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=23.0',
+  './i18n.js?v=23.0',
+  './app.js?v=23.0',
+  './merchant.js?v=23.0',
   './jsQR.min.js',
   './logo-icon.jpg',
   './logo-text.png',
@@ -32,19 +34,19 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// ==================== #1 背景自治輪詢與系統級推播引擎 (iPhone / Android 鎖屏與背景通知保障) ====================
+// ==================== #1 & 四-1 背景節流輪詢與系統級推播引擎 (不劫持音訊、不發動輪詢風暴) ====================
+const SW_WATCH_INTERVAL_MS = 15000;
 const swWatchState = {
   gasUrl: '',
   clientDeviceId: '',
   watchedOrderIds: [],
-  knownOrderStateMap: {}, // orderId -> { status, notifyCount, pickupNumber, storeName, verificationCode }
+  knownOrderStateMap: {},
   storeMode: false,
   merchantAuthToken: '',
   merchantStoreId: '',
   knownStoreOrderIds: {},
   isLoopRunning: false,
-  lastLoopActiveTs: 0,
-  pollTimerId: null
+  lastLoopActiveTs: 0
 };
 
 async function showSwOrderNotification(title, body, tag, targetUrl, orderId) {
@@ -130,20 +132,16 @@ async function pollCloudOrdersFromServiceWorker() {
       ? payload.orders
       : ((payload && Array.isArray(payload.recentOrders)) ? payload.recentOrders : []);
 
-    // 若學生端追蹤中的訂單未出現在 initBundle (例如舊版後端部署)，逐筆透過 getOrder 查詢最新狀態
     if (hasStudentOrders) {
       const returnedIds = new Set(cloudOrders.map((o) => String(o && o.orderId)));
-      for (const wid of swWatchState.watchedOrderIds.slice(0, 5)) {
+      for (const wid of swWatchState.watchedOrderIds.slice(0, 3)) {
         if (!returnedIds.has(String(wid))) {
           const singleOrd = await checkSingleWatchedOrderFromSw(wid);
-          if (singleOrd) {
-            cloudOrders.push(singleOrd);
-          }
+          if (singleOrd) cloudOrders.push(singleOrd);
         }
       }
     }
 
-    // 1. 檢查學生端追蹤訂單是否轉為「可取餐」或再次叫號 (notifyCount 增加)
     if (hasStudentOrders && cloudOrders.length > 0) {
       for (const wid of swWatchState.watchedOrderIds) {
         const ord = cloudOrders.find((o) => o && String(o.orderId) === String(wid));
@@ -152,7 +150,6 @@ async function pollCloudOrdersFromServiceWorker() {
         const curStatus = String(ord.status || '');
         const curNotifyCount = Math.max(0, Number(ord.notifyCount) || (curStatus === '可取餐' ? 1 : 0));
         const prev = swWatchState.knownOrderStateMap[wid];
-
         const transitionedToReady = curStatus === '可取餐' && (!prev || prev.status !== '可取餐' || curNotifyCount > (prev.notifyCount || 0));
 
         swWatchState.knownOrderStateMap[wid] = {
@@ -180,7 +177,6 @@ async function pollCloudOrdersFromServiceWorker() {
       }
     }
 
-    // 2. 檢查店家端是否有新進「製作中」訂單
     if (hasStoreWatch && cloudOrders.length > 0) {
       for (const ord of cloudOrders) {
         if (!ord || !ord.orderId) continue;
@@ -211,25 +207,24 @@ function startSwAutonomousWatchChunk(event) {
                   Boolean(swWatchState.storeMode && swWatchState.merchantAuthToken);
   if (!hasWork || !swWatchState.gasUrl) return;
 
-  // 若已在執行中，僅刷新時間戳記
   const now = Date.now();
-  if (swWatchState.isLoopRunning && (now - swWatchState.lastLoopActiveTs) < 8000) {
+  if (swWatchState.isLoopRunning && (now - swWatchState.lastLoopActiveTs) < SW_WATCH_INTERVAL_MS * 1.5) {
     return;
   }
 
   swWatchState.isLoopRunning = true;
   swWatchState.lastLoopActiveTs = now;
 
-  // 每次透過 waitUntil 維持 Service Worker 背景執行緒甦醒進行連續巡檢 (支援鎖屏與背景切出長達數十分鐘)
+  // 四-1：節流至 15 秒一次，單段最多 20 次（5 分鐘），大幅降低 GAS 並發壓力
   const watchPromise = (async () => {
     try {
-      for (let step = 0; step < 60; step++) {
+      for (let step = 0; step < 20; step++) {
         const stillHasWork = (Array.isArray(swWatchState.watchedOrderIds) && swWatchState.watchedOrderIds.length > 0) ||
                              Boolean(swWatchState.storeMode && swWatchState.merchantAuthToken);
         if (!stillHasWork) break;
         swWatchState.lastLoopActiveTs = Date.now();
         await pollCloudOrdersFromServiceWorker();
-        await new Promise((r) => setTimeout(r, 4500));
+        await new Promise((r) => setTimeout(r, SW_WATCH_INTERVAL_MS));
       }
     } finally {
       swWatchState.isLoopRunning = false;
@@ -269,7 +264,6 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// 接收前端同步之追蹤清單、背景心跳與即時系統通知請求
 self.addEventListener('message', (event) => {
   const data = event.data;
   if (!data || typeof data !== 'object') return;
@@ -365,7 +359,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 採用 Network-First 搭配離線快取備援，確保有網路時永遠載入最新程式碼，斷網時可離線開啟 POS / 點餐頁
+  // 四-2：Network-First + 版本號容錯快取比對 (ignoreSearch: true)，杜絕 ?v=23.0 與預快取鍵值對不上的離線白屏問題
   event.respondWith(
     fetch(req)
       .then((networkRes) => {
@@ -375,6 +369,10 @@ self.addEventListener('fetch', (event) => {
         }
         return networkRes;
       })
-      .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
+      .catch(() =>
+        caches.match(req)
+          .then((exact) => exact || caches.match(req, { ignoreSearch: true }))
+          .then((cached) => cached || caches.match('./index.html'))
+      )
   );
 });

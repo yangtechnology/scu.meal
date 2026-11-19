@@ -2684,3 +2684,215 @@ select.select-input {
     margin: 0 !important;
   }
 }
+
+/* ==================== v23.0 專業點餐與收銀互動樣式（三-1 / 三-4 / 二-3 / 二-4） ==================== */
+.sticky-menu-cat-bar {
+  position: sticky;
+  top: 64px;
+  z-index: 45;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.sticky-menu-cat-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+.sticky-menu-cat-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.card-inline-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFF7ED;
+  border: 1.5px solid #FDBA74;
+  border-radius: 999px;
+  padding: 2px 5px;
+}
+
+.stepper-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  font-weight: 900;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stepper-btn.minus {
+  background: #FFFFFF;
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.stepper-btn.plus {
+  background: var(--brand);
+  color: #FFFFFF;
+}
+
+.stepper-qty {
+  min-width: 18px;
+  text-align: center;
+  font-weight: 950;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.nested-sub-options-box {
+  margin: -4px 0 10px 14px;
+  padding: 10px 12px;
+  background: #F8FAFC;
+  border-left: 3px solid var(--brand);
+  border-radius: 0 10px 10px 0;
+}
+
+.nested-sub-group {
+  margin-bottom: 8px;
+}
+
+.nested-sub-group:last-child {
+  margin-bottom: 0;
+}
+
+.nested-sub-title {
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+.nested-sub-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nested-sub-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #FFFFFF;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.nested-sub-pill input {
+  display: none;
+}
+
+.nested-sub-pill.active {
+  border-color: var(--brand);
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
+.pos-mult-bar {
+  display: inline-flex;
+  align-items: center;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.pos-mult-btn {
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.pos-mult-btn.active {
+  background: #EA580C;
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.35);
+}
+
+.store-terminal-nameplate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #F8FAFC;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.terminal-role-pill {
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.terminal-role-pill.mgr {
+  background: #FEF3C7;
+  color: #B45309;
+}
+
+.terminal-role-pill.staff {
+  background: #DBEAFE;
+  color: #1D4ED8;
+}
+
+.kds-check-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.14s ease;
+  user-select: none;
+}
+
+.kds-check-item-row:hover {
+  background: #EFF6FF;
+}
+
+.kds-check-item-row.checked {
+  background: #ECFDF5;
+  color: #64748B;
+  text-decoration: line-through;
+}
+
+.kds-check-box {
+  font-size: 0.92rem;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
