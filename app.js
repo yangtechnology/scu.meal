@@ -60,7 +60,7 @@ function getDumplingSetOptions() {
 
 const DEFAULT_STORES = [
   {
-    id: 'S01', campus: '雙溪校區', name: '趙班長海苔飯捲', category: '人氣韓式・飯捲',
+    id: 'S01', campus: '雙溪校區', name: '趙班長海苔飯捲', category: '人氣韓式・飯捲', visibleToStudents: true,
     isOpen: true, maxCapacityPer15Min: 18, baseQueueOffset: 0, basePrepMinutes: 4, avgPrepMinutes: 4, cutleryPrice: 1,
     promoMode: 'none', promoText: '無優惠', promoDiscount: 0, predictedDailyOrders: 240, rating: 4.9,
     menus: [
@@ -72,7 +72,7 @@ const DEFAULT_STORES = [
     ]
   },
   {
-    id: 'S02', campus: '雙溪校區', name: '雙溪-丼物園', category: '日式蓋飯・烏龍麵',
+    id: 'S02', campus: '雙溪校區', name: '雙溪-丼物園', category: '日式蓋飯・烏龍麵', visibleToStudents: false,
     isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, basePrepMinutes: 5, avgPrepMinutes: 5, cutleryPrice: 1,
     promoMode: 'gift', promoText: '🎁 離峰分流招待：免費溫泉蛋乙顆', promoDiscount: 0, predictedDailyOrders: 165, rating: 4.7,
     menus: [
@@ -84,7 +84,7 @@ const DEFAULT_STORES = [
     ]
   },
   {
-    id: 'S03', campus: '雙溪校區', name: '雙溪-四海遊龍', category: '鍋貼水餃・麵食',
+    id: 'S03', campus: '雙溪校區', name: '雙溪-四海遊龍', category: '鍋貼水餃・麵食', visibleToStudents: false,
     isOpen: true, maxCapacityPer15Min: 25, baseQueueOffset: 0, basePrepMinutes: 6, avgPrepMinutes: 6, cutleryPrice: 1,
     promoMode: 'none', promoText: '無優惠', promoDiscount: 0, predictedDailyOrders: 210, rating: 4.6,
     menus: [
@@ -96,7 +96,7 @@ const DEFAULT_STORES = [
     ]
   },
   {
-    id: 'S04', campus: '雙溪校區', name: '蒲家廚房', category: '中式特餐・便當',
+    id: 'S04', campus: '雙溪校區', name: '蒲家廚房', category: '中式特餐・便當', visibleToStudents: false,
     isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, basePrepMinutes: 4, avgPrepMinutes: 4, cutleryPrice: 1,
     promoMode: 'discount', promoText: '💰 離峰分流折抵：現折 $10 元', promoDiscount: 10, predictedDailyOrders: 150, rating: 4.8,
     menus: [
@@ -106,7 +106,7 @@ const DEFAULT_STORES = [
     ]
   },
   {
-    id: 'S05', campus: '城中校區', name: '城中-咖哩食堂', category: '熟成咖哩・炸物',
+    id: 'S05', campus: '城中校區', name: '城中-咖哩食堂', category: '熟成咖哩・炸物', visibleToStudents: false,
     isOpen: true, maxCapacityPer15Min: 15, baseQueueOffset: 0, basePrepMinutes: 5, avgPrepMinutes: 5, cutleryPrice: 1,
     promoMode: 'none', promoText: '無優惠', promoDiscount: 0, predictedDailyOrders: 195, rating: 4.8,
     menus: [
@@ -116,7 +116,7 @@ const DEFAULT_STORES = [
     ]
   },
   {
-    id: 'S06', campus: '城中校區', name: '城中-吳葉食堂', category: '精緻台式簡餐',
+    id: 'S06', campus: '城中校區', name: '城中-吳葉食堂', category: '精緻台式簡餐', visibleToStudents: false,
     isOpen: true, maxCapacityPer15Min: 20, baseQueueOffset: 0, basePrepMinutes: 6, avgPrepMinutes: 6, cutleryPrice: 1,
     promoMode: 'gift', promoText: '🎁 離峰分流招待：免費招牌冰紅茶', promoDiscount: 0, predictedDailyOrders: 145, rating: 4.9,
     menus: [
@@ -126,7 +126,7 @@ const DEFAULT_STORES = [
     ]
   },
   {
-    id: 'S07', campus: '城中校區', name: '大熊涼麵 X 吃好食堂', category: '手工涼麵・味噌湯',
+    id: 'S07', campus: '城中校區', name: '大熊涼麵 X 吃好食堂', category: '手工涼麵・味噌湯', visibleToStudents: false,
     isOpen: true, maxCapacityPer15Min: 25, baseQueueOffset: 0, basePrepMinutes: 2, avgPrepMinutes: 2, cutleryPrice: 1,
     promoMode: 'discount', promoText: '💰 離峰分流折抵：現折 $5 元', promoDiscount: 5, predictedDailyOrders: 160, rating: 4.7,
     menus: [
@@ -135,6 +135,29 @@ const DEFAULT_STORES = [
     ]
   }
 ];
+
+// A1 / 三-4：台灣財政部 8 碼營利事業統一編號官方邏輯檢查碼驗證
+function validateTaiwanTaxId(rawTaxId) {
+  const s = String(rawTaxId || '').trim();
+  if (!/^\d{8}$/.test(s)) return false;
+  if (/^0{8}$/.test(s)) return false;
+  const weights = [1, 2, 1, 2, 1, 2, 4, 1];
+  let sum = 0;
+  for (let i = 0; i < 8; i++) {
+    const p = parseInt(s[i], 10) * weights[i];
+    sum += Math.floor(p / 10) + (p % 10);
+  }
+  if (sum % 5 === 0) return true;
+  if (s[6] === '7' && ((sum + 1) % 5 === 0)) return true;
+  return false;
+}
+
+// A7：取得目前開放於學生端顯示的餐廳清單（預設僅 S01 開放，餘於後台設定中自由勾選）
+function getVisibleStudentStores() {
+  const all = Array.isArray(state.stores) ? state.stores : [];
+  const visible = all.filter(s => s && s.visibleToStudents !== false);
+  return visible.length > 0 ? visible : all.slice(0, 1);
+}
 
 // ==================== #18 標準 Asia/Taipei 日期與伺服器時間偏移校正計算器 (Safari 安全 Intl.DateTimeFormat) ====================
 function getCalibratedNowMs() {
@@ -1032,14 +1055,13 @@ function saveStudentCartDraft() {
       cartByStoreMap: state.cartByStoreMap,
       checkoutDineType: state.checkoutDineType || '外帶自取',
       checkoutNeedCutlery: Boolean(state.checkoutNeedCutlery),
-      checkoutTimeMode: state.checkoutTimeMode || 'NOW',
+      // A2：永遠不將 RESERVE 跨工作階段持久化，確保每次進入點餐都預設為「立即製作 (NOW)」
+      checkoutTimeMode: 'NOW',
       checkoutReserveDate: cleanResDate,
       checkoutReserveTime: state.checkoutReserveTime || '12:15',
       checkoutPayMethod: state.checkoutPayMethod || 'LINE Pay',
       checkoutNote: state.checkoutNote || '',
       checkoutTaxId: state.checkoutTaxId || '',
-      checkoutTableNumber: state.checkoutTableNumber || '',
-      checkoutCarrierCode: state.checkoutCarrierCode || '',
       savedAt: Date.now()
     };
     localStorage.setItem('mealflow_cart_draft_v14', JSON.stringify(draft));
@@ -1184,7 +1206,7 @@ function savePosHeldOrders(list) {
   } catch (e) {}
 }
 
-// ==================== 後端簽發時效性 HMAC Session Token (含嚴格單一店家範圍檢查 #7, #8, #16) ====================
+// ==================== 後端簽發時效性 HMAC Session Token (含嚴格單一店家範圍檢查與開發者全店模式 #7, #8, #16, A8) ====================
 function isMerchantSessionValidNow() {
   const token = state.merchantAuthToken || sessionStorage.getItem('mealflow_merchant_session_v13') || '';
   const exp = Number(state.merchantSessionExpiresAt || sessionStorage.getItem('mealflow_merchant_exp_v13') || 0);
@@ -1192,8 +1214,13 @@ function isMerchantSessionValidNow() {
   if (!token || !token.includes('.') || token.startsWith('OFFLINE_') || exp <= Date.now()) {
     return false;
   }
-  // #7 & #8：嚴格檢查當前選擇的店鋪必須與該 Session Token 授權的單一店鋪完全相符，禁止跨店免密碼切換！
+  const role = String(state.merchantStaffRole || sessionStorage.getItem('mealflow_merchant_staff_role') || '').toUpperCase();
   const authorizedScope = state.merchantAuthorizedStoreScope || sessionStorage.getItem('mealflow_merchant_scope_v13') || '';
+  // A8：系統開發者角色 (DEVELOPER) 持有後端簽發之 ALL 範圍憑證，可無縫切換全校各店維護
+  if (role === 'DEVELOPER' && authorizedScope === 'ALL') {
+    return true;
+  }
+  // #7 & #8：非開發者嚴格檢查當前選擇的店鋪必須與該 Session Token 授權的單一店鋪完全相符，禁止跨店免密碼切換！
   if (!authorizedScope || authorizedScope === 'ALL' || authorizedScope !== state.merchantStoreId) {
     return false;
   }
@@ -1211,10 +1238,15 @@ function getMerchantAuthPayload() {
   };
 }
 
-// 二-1：角色權限分級檢查與店長 PIN 現場覆核彈窗
+// 二-1 & A8：角色權限分級檢查（MANAGER 與 DEVELOPER 均具備最高管理權限）與店長 PIN 現場覆核彈窗
 function isCurrentMerchantManager() {
   const role = String(state.merchantStaffRole || sessionStorage.getItem('mealflow_merchant_staff_role') || 'MANAGER').toUpperCase();
-  return role === 'MANAGER';
+  return role === 'MANAGER' || role === 'DEVELOPER';
+}
+
+function isCurrentMerchantDeveloper() {
+  const role = String(state.merchantStaffRole || sessionStorage.getItem('mealflow_merchant_staff_role') || '').toUpperCase();
+  return role === 'DEVELOPER';
 }
 
 async function requestManagerPinOverride(actionLabel = '高風險店務操作', storeId = '') {
@@ -1269,7 +1301,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=24.0`;
+    script.src = `${base}merchant.js?v=25.0`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1354,6 +1386,9 @@ var state = {
   selectedStoreId: (loadStudentCartDraft()?.selectedStoreId) || null,
   studentMenuCategory: '全部',
   studentMenuSearch: '',
+  studentMenuSearchOpen: false,
+  memberProfile: null,
+  memberFavoriteDishes: [],
   cartByStoreMap: (function () {
     const d = loadStudentCartDraft();
     const map = (d && d.cartByStoreMap && typeof d.cartByStoreMap === 'object') ? { ...d.cartByStoreMap } : {};
@@ -1373,15 +1408,14 @@ var state = {
   checkoutDineType: loadStudentCartDraft()?.checkoutDineType || '外帶自取',
   checkoutNeedCutlery: Boolean(loadStudentCartDraft()?.checkoutNeedCutlery),
   checkoutWantGift: true,
-  checkoutTimeMode: loadStudentCartDraft()?.checkoutTimeMode || 'NOW',
+  // A2：預設永遠為「立即製作 (NOW)」，絕不從舊草稿還原成預訂點餐
+  checkoutTimeMode: 'NOW',
   checkoutReserveDate: loadStudentCartDraft()?.checkoutReserveDate || getTodayDateStr(),
   checkoutReserveTime: loadStudentCartDraft()?.checkoutReserveTime || '12:15',
   checkoutPhone: localStorage.getItem('mealflow_saved_customer_phone_v12') || '',
   checkoutPayMethod: loadStudentCartDraft()?.checkoutPayMethod || 'LINE Pay',
   checkoutNote: loadStudentCartDraft()?.checkoutNote || '',
   checkoutTaxId: loadStudentCartDraft()?.checkoutTaxId || '',
-  checkoutTableNumber: loadStudentCartDraft()?.checkoutTableNumber || '',
-  checkoutCarrierCode: loadStudentCartDraft()?.checkoutCarrierCode || '',
   checkoutCouponCode: '',
   checkoutAppliedCoupon: null,
   checkoutAppendToOrderId: '',
@@ -1400,15 +1434,13 @@ var state = {
   kdsSoundEnabled: true,
   kdsAutoPrintNewOrder: Boolean(localStorage.getItem('mealflow_auto_print_new') === '1'),
 
-  // 店家櫃檯 POS 狀態
+  // 店家櫃檯 POS 狀態 (v25.0 快餐一鍵結帳、百分比折讓、服務費、無載具無桌號)
   posSelectedCategory: '全部',
   posQtyMultiplier: 1, // 二-4：點餐前預選份數乘數 (×1 / ×2 / ×3 / ×5)
   posCart: [],
   posHeldOrders: loadPosHeldOrders(),
   posShowExtraPanel: false,
   posDineType: '內用自取',
-  posTableNumber: '',
-  posCarrierCode: '',
   posNeedCutlery: false,
   posTimeMode: 'NOW',
   posReserveDate: getTodayDateStr(),
@@ -1417,16 +1449,24 @@ var state = {
   posCustomerNote: '',
   posTaxId: '',
   posManualDiscount: 0,
+  posDiscountPercent: 0,
+  posServiceFeeRate: 0,
   posManualDiscountReason: '',
   posPayment: '現場現金',
   posCashReceived: '',
   posSplitCashAmount: '',
+  posAutoShowReceiptModal: localStorage.getItem('mealflow_pos_auto_receipt') === '1',
+  posLastChangeBanner: null,
+  posLinePayOneTimeKey: '',
+  posLinePayManualConfirmed: false,
+  posLinePayManualRef: '',
 
-  // 班別交班日結狀態 (一-5 支援多班別 MORNING / EVENING / FULL)
-  activeShiftSlot: localStorage.getItem('mealflow_active_shift_slot') || 'FULL',
+  // 班別交班日結狀態 (一-5 & 二-3 支援 CURRENT_OPEN / MORNING / EVENING / FULL)
+  activeShiftSlot: localStorage.getItem('mealflow_active_shift_slot') || 'CURRENT_OPEN',
   shiftOpeningFloat: parseInt(localStorage.getItem('mealflow_shift_float') || '2000', 10) || 2000,
   shiftActualCountedCash: '',
   shiftCashierName: localStorage.getItem('mealflow_shift_cashier') || '',
+  shiftZReportCloudData: null,
 
   // 訂單管理 (KDS) 分天檢視、分站過濾、智慧排序、改單與收款攔截狀態
   kdsSelectedDate: getTodayDateStr(),
@@ -1435,6 +1475,7 @@ var state = {
   kdsSortMode: 'FIFO',     // #31 KDS 排序模式：'FIFO' (最緊急/先下單優先) | 'NEWEST'
   kdsSearchQuery: '',
   kdsVerifyCodeInput: '',
+  kdsExpandedMoreOrderId: '',
   scannerStream: null,
   scannerRafId: null,
   payingOrderId: null,
@@ -1448,8 +1489,11 @@ var state = {
   modifyingOrderItemsDraft: [],
   recentlyAutoFiredOrderIds: new Set(),
 
-  // 營運分析時間維度：'DAY' | 'WEEK' | 'MONTH'
+  // 營運分析時間維度與全區間後端統計 (二-5)
   analyticsPeriod: 'DAY',
+  analyticsStartDate: getTodayDateStr(),
+  analyticsEndDate: getTodayDateStr(),
+  analyticsCloudData: null,
   analyticsSelectedFilter: null,
 
   // 店家菜單管理與視覺掃描狀態
@@ -2035,11 +2079,17 @@ function normalizeMenuItem(m, fallbackStoreId) {
   const rawStation = String(m.station || opts.__station || 'AUTO').trim().toUpperCase();
   const rawTileColor = String(m.tileColor || opts.__tileColor || '').trim();
   const rawSortOrder = m.sortOrder !== undefined && m.sortOrder !== '' ? Number(m.sortOrder) : (opts.__sortOrder !== undefined ? Number(opts.__sortOrder) : 999);
+  const rawDesc = String(m.description || opts.__description || '').trim();
+  const rawDietary = Array.isArray(m.dietaryTags)
+    ? m.dietaryTags
+    : (Array.isArray(opts.__dietaryTags) ? opts.__dietaryTags : []);
   delete opts.__station;
   delete opts.__tileColor;
   delete opts.__sortOrder;
   delete opts.__dailyLimit;
   delete opts.__nameEn;
+  delete opts.__description;
+  delete opts.__dietaryTags;
 
   return {
     id: itemId,
@@ -2047,6 +2097,8 @@ function normalizeMenuItem(m, fallbackStoreId) {
     category: catStr || '招牌主餐',
     name: nameStr,
     nameEn: String(m.nameEn || '').trim(),
+    description: rawDesc,
+    dietaryTags: rawDietary.map(x => String(x || '').trim().toUpperCase()).filter(Boolean),
     price: priceNum,
     tag: tagStr,
     station: rawStation || 'AUTO',
@@ -2088,7 +2140,8 @@ function getStoreIconDisplay(store) {
 function updateDynamicCampusSwitcherButtons() {
   const switcher = document.getElementById('headerCampusSwitcher');
   if (!switcher) return;
-  const campuses = Array.from(new Set(state.stores.map(s => String(s.campus || '').trim()).filter(Boolean)));
+  const visibleStores = getVisibleStudentStores();
+  const campuses = Array.from(new Set(visibleStores.map(s => String(s.campus || '').trim()).filter(Boolean)));
   if (campuses.length === 0) return;
   if (!campuses.includes(state.campus)) {
     state.campus = campuses[0];
@@ -2847,8 +2900,9 @@ async function checkLineOAuthCallbackOnLoad() {
       state.lineProfile.lineUserId = data.lineUid;
       state.lineProfile.lineDisplayName = data.displayName || 'LINE 用戶';
       saveLineProfile(state.lineProfile);
+      syncMemberProfileFromCloud(true);
       applyRouteView();
-      showToast(`🎉 LINE 綁定成功！歡迎 ${state.lineProfile.lineDisplayName}`);
+      showToast(`🎉 ${t(`LINE 綁定成功！歡迎 ${state.lineProfile.lineDisplayName}`, `LINE linked! Welcome ${state.lineProfile.lineDisplayName}`, `LINE連携完了！ようこそ ${state.lineProfile.lineDisplayName}`, `LINE 연동 완료! 환영합니다 ${state.lineProfile.lineDisplayName}`)}`);
     } else {
       showToast(`⚠️ LINE 授權換取失敗：${(data && data.message) || '請確認頻道編號與金鑰設定'}`);
     }
@@ -2890,10 +2944,82 @@ function unbindLineAccount() {
   state.lineProfile.lineDisplayName = '';
   state.lineProfile.lineUserId = '';
   state.lineProfile.email = '';
+  state.memberProfile = null;
+  state.memberFavoriteDishes = [];
   saveLineProfile(state.lineProfile);
   closeLineBindModal();
   applyRouteView();
-  showToast('已解除通知綁定');
+  showToast(t('已解除通知綁定', 'Notifications unlinked', '通知連携を解除しました', '알림 연동이 해제되었습니다'));
+}
+
+// 三-4：LINE 跨裝置會員同步（取回點數、歷史訂單、儲存手機/統編與常點餐點快速再點）
+async function syncMemberProfileFromCloud(force = false) {
+  const uid = String((state.lineProfile && state.lineProfile.lineUserId) || '').trim();
+  if (!uid || !uid.startsWith('U')) return;
+  if (state._memberSyncInFlight && !force) return;
+  state._memberSyncInFlight = true;
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'getMemberProfile', lineUserId: uid })
+    });
+    const data = await res.json();
+    if (data && data.success) {
+      state.memberProfile = data.profile || null;
+      state.memberFavoriteDishes = Array.isArray(data.favoriteDishes) ? data.favoriteDishes : [];
+      if (data.profile) {
+        if (data.profile.phone && !state.checkoutPhone) {
+          state.checkoutPhone = data.profile.phone;
+          state.savedCustomerPhone = data.profile.phone;
+          try { localStorage.setItem('mealflow_saved_customer_phone_v12', data.profile.phone); } catch (e) {}
+        }
+        if (data.profile.taxId && !state.checkoutTaxId) {
+          state.checkoutTaxId = data.profile.taxId;
+        }
+      }
+      if (Array.isArray(data.memberOrders) && data.memberOrders.length > 0) {
+        let added = 0;
+        data.memberOrders.forEach(rawO => {
+          const o = sanitizeIncomingOrder(rawO);
+          if (!o || !o.orderId) return;
+          addOrderToMyHistory(o.orderId);
+          const idx = state.orders.findIndex(x => x.orderId === o.orderId);
+          if (idx >= 0) state.orders[idx] = { ...state.orders[idx], ...o };
+          else { state.orders.push(o); added++; }
+        });
+        if (added > 0) {
+          saveCachedOrders(state.orders);
+          updateHeaderMyOrdersBadge();
+        }
+      }
+      if (state.routeMode === 'order' && state.selectedStoreId) {
+        renderInStoreMenuCards();
+      }
+    }
+  } catch (e) {} finally {
+    state._memberSyncInFlight = false;
+  }
+}
+
+async function saveMemberProfileToCloud() {
+  const uid = String((state.lineProfile && state.lineProfile.lineUserId) || '').trim();
+  if (!uid || !uid.startsWith('U')) return;
+  try {
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'saveMemberProfile',
+        lineUserId: uid,
+        displayName: state.lineProfile.lineDisplayName || '',
+        phone: state.checkoutPhone || state.savedCustomerPhone || '',
+        taxId: state.checkoutTaxId || ''
+      })
+    });
+  } catch (e) {}
 }
 
 function renderLineLogsInModal() {
@@ -3264,10 +3390,10 @@ function ensureSharedModalsMounted() {
           </div>
           <div class="modal-body" style="background:#F8FAFC;">
             <div class="ai-chip-row" style="margin-bottom:10px;">
-              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConcierge('我只剩 10 分鐘就要上課，推薦最快拿到的主餐')">⚡ 10分鐘內快取</button>
-              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConcierge('預算 100 元以內、有分流優惠的超值正餐')">💰 100元內超值</button>
-              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConcierge('運動完想吃高蛋白質的大份量肉食主餐')">🥩 高蛋白大份量</button>
-              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConcierge('想吃韓式、椒麻或辣味，且不用排隊的餐點')">🌶️ 辣味免排隊</button>
+              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConciergePreset('FAST')">⚡ 10分鐘內快取</button>
+              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConciergePreset('BUDGET')">💰 100元內超值</button>
+              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConciergePreset('PROTEIN')">🥩 高蛋白大份量</button>
+              <button type="button" class="filter-chip" style="font-size:0.78rem; padding:6px 11px;" onclick="askAiConciergePreset('SPICY')">🌶️ 辣味免排隊</button>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:10px;">
               <input type="text" id="aiUserQueryInput" class="select-input" style="flex:1; background:#FFFFFF;" placeholder="輸入想吃的口味、預算或「哪家最快？」..." onkeydown="if(event.key==='Enter') askAiConcierge()">
@@ -3624,16 +3750,10 @@ function detectRouteFromUrl() {
   const campusParam = params.get('campus');
   const tabParam = (params.get('tab') || '').toLowerCase();
 
-  // 支援 ?store=S01、#S01、/store/S01 以及 ?table=A3 內用桌邊 QR 碼綁定 (#39 & 三-3)
+  // 支援 ?store=S01、#S01、/store/S01 專屬門市直達路由（學餐僅分內用自取/外帶自取，已移除桌號概念）
   const pathStoreMatch = rawPath.match(/\/store\/(S\d{2,3})/i);
   const hashStoreMatch = (window.location.hash || '').match(/^#?(S\d{2,3})$/i);
   const urlStoreParam = (params.get('store') || (pathStoreMatch ? pathStoreMatch[1] : '') || (hashStoreMatch ? hashStoreMatch[1] : '')).toUpperCase();
-  const urlTableParam = String(params.get('table') || params.get('tbl') || '').trim().slice(0, 20);
-  if (urlTableParam) {
-    state.checkoutTableNumber = urlTableParam;
-    state.checkoutDineType = '內用自取';
-    state.urlLockedTableNumber = urlTableParam;
-  }
 
   if (campusParam && state.stores.some(s => s.campus === campusParam)) {
     state.campus = campusParam;
@@ -3845,7 +3965,7 @@ function initGlobalButtonFeedbackEngine() {
     __mfLastActiveClickBtn = btn;
     __mfLastActiveClickTs = Date.now();
 
-    // 若 inline onclick 呼叫的是 async 函式，立即在執行前就轉圈＋反灰，杜絕連點重複送出
+    // 若 inline onclick 呼叫的是 async 函式，立即給該按鈕轉圈反灰並在合理時間內自動解除（三-5：徹底移除全域 window.fetch 劫持，背景輪詢絕不誤鎖無關按鈕！）
     const onclickCode = btn.getAttribute ? (btn.getAttribute('onclick') || '') : '';
     const fnMatch = onclickCode.match(/\b([A-Za-z_$][\w$]*)\s*\(/);
     if (fnMatch) {
@@ -3853,52 +3973,17 @@ function initGlobalButtonFeedbackEngine() {
       const isAsyncHandler = fnRef && fnRef.constructor && fnRef.constructor.name === 'AsyncFunction';
       if (isAsyncHandler) {
         setButtonBusy(btn, true);
-        // 若該 async 函式因欄位檢核提早 return（未發出 fetch），320ms 後若無進行中 fetch 則自動解鎖恢復
         setTimeout(() => {
-          if (btn.dataset.busy === '1' && !btn.dataset.mfFetchBound) {
+          if (btn.isConnected && btn.dataset.busy === '1') {
             setButtonBusy(btn, false);
           }
-        }, 380);
+        }, 1200);
       } else {
-        // 同步操作按鈕：給予 220ms 微防抖反灰回饋，讓使用者明顯感覺有按下且防止手抖連按兩次
         btn.classList.add('mf-btn-pressed');
         setTimeout(() => btn.classList.remove('mf-btn-pressed'), 220);
       }
     }
   }, true);
-
-  // 3. 自動綁定 window.fetch：只要某顆按鈕點擊後 450ms 內發起網路請求，就自動維持該按鈕轉圈反灰直到請求完成！
-  if (typeof window !== 'undefined' && typeof window.fetch === 'function' && !window.__mfFetchWrappedForBtn) {
-    const nativeFetch = window.fetch.bind(window);
-    window.__mfFetchWrappedForBtn = true;
-    window.fetch = function(...args) {
-      const candidateBtn = (__mfLastActiveClickBtn && (Date.now() - __mfLastActiveClickTs) < 480)
-        ? __mfLastActiveClickBtn
-        : null;
-      let boundBtn = null;
-      if (candidateBtn && candidateBtn.isConnected && !isRapidTapButton(candidateBtn)) {
-        boundBtn = candidateBtn;
-        const curCount = Number(boundBtn.dataset.mfFetchCount || 0) + 1;
-        boundBtn.dataset.mfFetchCount = String(curCount);
-        boundBtn.dataset.mfFetchBound = '1';
-        setButtonBusy(boundBtn, true);
-      }
-      const p = nativeFetch(...args);
-      if (boundBtn) {
-        const release = () => {
-          const nextCount = Math.max(0, Number(boundBtn.dataset.mfFetchCount || 1) - 1);
-          boundBtn.dataset.mfFetchCount = String(nextCount);
-          if (nextCount === 0) {
-            delete boundBtn.dataset.mfFetchBound;
-            delete boundBtn.dataset.mfFetchCount;
-            setButtonBusy(boundBtn, false);
-          }
-        };
-        p.then(release, release);
-      }
-      return p;
-    };
-  }
 }
 
 function isUserEditingFormInput() {
@@ -4352,6 +4437,11 @@ function applyCloudBundle(data, fromBroadcast = false, forceApply = false) {
         linePayChannelId: cloudStore.linePayChannelId || (localMatch ? localMatch.linePayChannelId : '') || '',
         hasLinePaySecret: cloudStore.hasLinePaySecret !== undefined ? Boolean(cloudStore.hasLinePaySecret) : Boolean(localMatch && localMatch.hasLinePaySecret),
         linePaySandbox: cloudStore.linePaySandbox !== undefined ? Boolean(cloudStore.linePaySandbox) : (localMatch && localMatch.linePaySandbox !== undefined ? Boolean(localMatch.linePaySandbox) : true),
+        visibleToStudents: cloudStore.visibleToStudents !== undefined
+          ? Boolean(cloudStore.visibleToStudents)
+          : (localMatch && localMatch.visibleToStudents !== undefined ? Boolean(localMatch.visibleToStudents) : String(cloudStore.id) === 'S01'),
+        staffAccounts: Array.isArray(cloudStore.staffAccounts) ? cloudStore.staffAccounts : (localMatch && Array.isArray(localMatch.staffAccounts) ? localMatch.staffAccounts : []),
+        linePayFeeRate: cloudStore.linePayFeeRate !== undefined ? Number(cloudStore.linePayFeeRate) : (localMatch && localMatch.linePayFeeRate !== undefined ? Number(localMatch.linePayFeeRate) : 2.2),
         menus: Array.isArray(cloudStore.menus)
           ? cloudStore.menus.map(cm => {
               const localMenu = localMatch && Array.isArray(localMatch.menus)
@@ -4579,6 +4669,7 @@ async function syncCloud(showSuccessToast = false) {
           action: 'initBundle',
           campus: state.campus,
           myOrderIds: watchedIds,
+          lineUserId: (state.lineProfile && state.lineProfile.lineUserId && String(state.lineProfile.lineUserId).startsWith('U')) ? state.lineProfile.lineUserId : '',
           clientDeviceId: state.clientDeviceId,
           forceRefresh: Boolean(showSuccessToast),
           ...authPayload
@@ -4780,6 +4871,26 @@ function applyRouteView() {
     });
   }
 
+  // A7：若學生端目前僅開放 1 間餐廳（如預設僅 S01 趙班長海苔飯捲），掃碼直接進入該店點餐，免多點一層餐廳目錄！
+  if (state.routeMode === 'order') {
+    const visibleStores = getVisibleStudentStores();
+    if (visibleStores.length === 1) {
+      const onlyStore = visibleStores[0];
+      if (state.selectedStoreId !== onlyStore.id) {
+        state.selectedStoreId = onlyStore.id;
+        state.campus = onlyStore.campus;
+        state.cartItems = (state.cartByStoreMap && Array.isArray(state.cartByStoreMap[onlyStore.id])) ? state.cartByStoreMap[onlyStore.id] : state.cartItems;
+        if (onlyStore.canOrderNow !== false) state.checkoutTimeMode = 'NOW';
+      }
+    } else if (state.selectedStoreId && !visibleStores.some(s => s.id === state.selectedStoreId)) {
+      state.selectedStoreId = null;
+    }
+    if (state.lineProfile && state.lineProfile.lineUserId && String(state.lineProfile.lineUserId).startsWith('U') && !state._memberSyncedOnce) {
+      state._memberSyncedOnce = true;
+      syncMemberProfileFromCloud(false);
+    }
+  }
+
   const floatingCart = document.getElementById('floatingCartBar');
   if (floatingCart) {
     floatingCart.style.display = (state.routeMode === 'order' && state.selectedStoreId) ? 'block' : 'none';
@@ -4787,8 +4898,10 @@ function applyRouteView() {
 
   const campusSwitcher = document.getElementById('headerCampusSwitcher');
   if (campusSwitcher) {
-    const isLockedSingleStore = Boolean(state.urlLockedStoreId && state.selectedStoreId === state.urlLockedStoreId);
-    campusSwitcher.style.display = (state.routeMode === 'order' && !state.selectedStoreId && !isLockedSingleStore) ? 'inline-flex' : 'none';
+    const visibleStores = getVisibleStudentStores();
+    const visibleCampuses = new Set(visibleStores.map(s => String(s.campus || '').trim()).filter(Boolean));
+    const isLockedSingleStore = Boolean((state.urlLockedStoreId && state.selectedStoreId === state.urlLockedStoreId) || visibleStores.length <= 1);
+    campusSwitcher.style.display = (state.routeMode === 'order' && !state.selectedStoreId && !isLockedSingleStore && visibleCampuses.size > 1) ? 'inline-flex' : 'none';
   }
 
   const roleBadge = document.getElementById('headerRoleBadge');
@@ -4973,12 +5086,12 @@ function openMyOrdersDrawer() {
   const searchBarHtml = `
     <div style="background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:14px; padding:12px; margin-bottom:14px; box-shadow:var(--shadow-sm);">
       <div style="font-size:0.8rem; font-weight:900; color:var(--text-primary); margin-bottom:6px;">
-        🔍 跨裝置安全找回訂單（輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」）
+        🔍 ${t('跨裝置安全找回訂單（輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」）', 'Find order across devices (6-char code OR Pickup # + last 3 phone digits)', '他端末から注文照会（6桁認証コードまたは受取番号＋携帯下3桁）', '다른 기기 주문 찾기 (6자리 인증코드 또는 픽업번호+전화 뒤 3자리)')}
       </div>
       <div style="display:grid; grid-template-columns:1.3fr 0.9fr auto; gap:6px;">
-        <input type="search" id="drawerOrderSearchInput" class="select-input" placeholder="6碼防偽碼 或 4碼取餐號" value="${escapeHtml(state.studentLookupQuery)}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
-        <input type="tel" id="drawerOrderPhoneInput" maxlength="10" class="select-input" placeholder="手機末3碼 (若用取餐號)" value="${escapeHtml(state.studentLookupPhoneLast3 || extractPhoneLast3(state.savedCustomerPhone))}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
-        <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px;" onclick="searchOrderAcrossDevices()">驗證找回</button>
+        <input type="search" id="drawerOrderSearchInput" class="select-input" placeholder="${t('6碼防偽碼 或 4碼取餐號', '6-char Code or Pickup #', '6桁コードまたは受取番号', '6자리 코드 또는 픽업번호')}" value="${escapeHtml(state.studentLookupQuery)}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
+        <input type="tel" id="drawerOrderPhoneInput" maxlength="10" class="select-input" placeholder="${t('手機末3碼 (若用取餐號)', 'Last 3 phone digits', '携帯下3桁', '전화 뒤 3자리')}" value="${escapeHtml(state.studentLookupPhoneLast3 || extractPhoneLast3(state.savedCustomerPhone))}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
+        <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px;" onclick="searchOrderAcrossDevices()">${t('驗證找回', 'Find', '照会', '조회')}</button>
       </div>
     </div>
   `;
@@ -4987,15 +5100,15 @@ function openMyOrdersDrawer() {
     body.innerHTML = searchBarHtml + `
       <div style="text-align:center; padding:36px 16px;">
         <div style="font-size:2.8rem; margin-bottom:8px;">🧾</div>
-        <h4 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">目前本機尚無進行中或歷史點餐紀錄</h4>
-        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">若您剛才使用其他裝置或無痕視窗點餐，請在上方輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」安全找回！</p>
-        <button type="button" class="btn-tip-action" onclick="closeMyOrdersDrawer()">前往挑選餐點</button>
+        <h4 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">${t('目前本機尚無進行中或歷史點餐紀錄', 'No orders on this device yet', 'この端末にはまだ注文履歴がありません', '이 기기에 아직 주문 내역이 없습니다')}</h4>
+        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">${t('若您剛才使用其他裝置或無痕視窗點餐，請在上方輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」安全找回！', 'Ordered on another device? Enter your 6-char verification code above to recover your ticket.', '別端末で注文した場合は上の検索欄から6桁認証コードで照会できます。', '다른 기기에서 주문한 경우 위에서 6자리 인증코드로 조회하세요.')}</p>
+        <button type="button" class="btn-tip-action" onclick="closeMyOrdersDrawer()">${t('前往挑選餐點', 'Browse Menu', 'メニューを見る', '메뉴 보러 가기')}</button>
       </div>
     `;
   } else {
     body.innerHTML = searchBarHtml + list.map(o => {
       const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
-      const itemStr = items.map(i => `${i.baseName || i.name} ×${i.qty || 1}`).join('、');
+      const itemStr = items.map(i => `${trDishName(i)} ×${i.qty || 1}`).join('、');
       const isReady = o.status === '可取餐';
       const isCooking = o.status === '製作中';
       const isScheduled = o.status === '已接單待排程' || o.status === '待付款確認';
@@ -5007,17 +5120,17 @@ function openMyOrdersDrawer() {
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:1.35rem; font-weight:950; color:${isReady ? 'var(--green)' : 'var(--brand-dark)'};">#${escapeHtml(o.pickupNumber)}</span>
-              <span style="font-weight:900; font-size:0.95rem;">${escapeHtml(o.storeName)}</span>
-              <span style="font-family:monospace; font-size:0.72rem; font-weight:900; background:#EEF2FF; color:#312E81; padding:2px 6px; border-radius:6px;">核銷碼:${escapeHtml(verDisplay)}</span>
+              <span style="font-weight:900; font-size:0.95rem;">${escapeHtml(trTerm(o.storeName))}</span>
+              <span style="font-family:monospace; font-size:0.72rem; font-weight:900; background:#EEF2FF; color:#312E81; padding:2px 6px; border-radius:6px;">${t('核銷碼', 'Code', '認証', '코드')}:${escapeHtml(verDisplay)}</span>
             </div>
             <span style="font-size:0.74rem; font-weight:900; padding:3px 10px; border-radius:999px; background:${isCancelled ? '#FEE2E2' : isReady ? '#DCFCE7' : isCooking ? '#FEF3C7' : isScheduled ? '#DBEAFE' : '#E2E8F0'}; color:${isCancelled ? '#DC2626' : isReady ? '#047857' : isCooking ? '#B45309' : isScheduled ? '#1E40AF' : '#475569'};">
-              ${isReady ? '🔔 可取餐！' : escapeHtml(o.status)}
+              ${isReady ? `🔔 ${t('可取餐！', 'Ready!', '受取可!', '픽업 가능!')}` : escapeHtml(trTerm(o.status))}
             </span>
           </div>
           <div data-dish-name="1" style="font-size:0.84rem; color:var(--text-primary); font-weight:700; margin-bottom:6px;">${escapeHtml(itemStr)}</div>
           <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.76rem; color:var(--text-secondary);">
-            <span>⏰ ${escapeHtml(o.pickupTimeSlot || o.pickupDate)} (${escapeHtml(o.paymentMethod)})</span>
-            <strong style="font-size:0.95rem; color:var(--red);">NT$ ${o.finalTotal} ・ 查看憑證 ➔</strong>
+            <span>⏰ ${escapeHtml(o.isReservation ? `${o.pickupDate} ${o.pickupTime}` : t('立即製作', 'Make Now', '今すぐ調理', '바로 조리'))} (${escapeHtml(trTerm(o.paymentMethod))})</span>
+            <strong style="font-size:0.95rem; color:var(--red);">NT$ ${o.finalTotal} ・ ${t('查看憑證 ➔', 'View Ticket ➔', 'チケット ➔', '티켓 보기 ➔')}</strong>
           </div>
         </div>
       `;
@@ -5059,19 +5172,32 @@ function renderStorePinModal(hasError = false) {
     ? Math.ceil((state.pinLockoutUntilTs - Date.now()) / 1000)
     : 0;
   const dotSlots = Math.max(4, Math.min(8, len < 4 ? 4 : len));
-  const staffCandidates = (targetStore && Array.isArray(targetStore.staffList) && targetStore.staffList.length > 0)
+  const staffAccountsNames = (targetStore && Array.isArray(targetStore.staffAccounts) && targetStore.staffAccounts.length > 0)
+    ? targetStore.staffAccounts.filter(a => a && a.active !== false).map(a => a.name).filter(Boolean)
+    : [];
+  const legacyStaffNames = (targetStore && Array.isArray(targetStore.staffList) && targetStore.staffList.length > 0)
     ? targetStore.staffList
-    : ['值班店長', '早班收銀員', '晚班收銀員'];
+    : ['值班店長', '早班收銀', '晚班收銀'];
+  const staffCandidates = Array.from(new Set([...staffAccountsNames, ...legacyStaffNames]));
+  const DEV_OPTION_VAL = '開發者';
   const curStaffName = state.pinSelectedStaffName || staffCandidates[0] || '值班店長';
+  const isDevSelected = curStaffName === DEV_OPTION_VAL;
+
+  const canSubmit = len >= 4 && len <= 8 && !state.isVerifyingPin && lockoutRemainSec === 0;
+  const submitBtnInner = state.isVerifyingPin
+    ? `<span class="mf-btn-spinner"></span> ${t('驗證中，請稍候...', 'Verifying...', '認証中...', '확인 중...')}`
+    : (isDevSelected
+        ? `🛠️ ${t('確認以開發者身分登入', 'Unlock as Developer', '開発者として解除', '개발자로 잠금 해제')} (${len})`
+        : `🔓 ${t('確認解鎖', 'Unlock', '解除', '잠금 해제')}「${escapeHtml(targetStore ? trTerm(targetStore.name) : '')}」(${len})`);
 
   body.innerHTML = `
     <div style="text-align:center;">
       <div style="margin-bottom:10px;">
-        <label class="field-label" style="text-align:left;">🏪 ${t('選擇並驗證單一店鋪櫃位（各店獨立密碼）', 'Select Store Terminal')}</label>
+        <label class="field-label" style="text-align:left;">🏪 ${t('選擇並驗證單一店鋪櫃位（各店獨立密碼）', 'Select Store Terminal', '店舗端末を選択', '매장 단말기 선택')}</label>
         ${isStoreLocked && targetStore ? `
           <div style="background:#F8FAFC; border:1.5px solid var(--border); border-radius:10px; padding:10px 12px; font-weight:900; color:var(--text-primary); display:flex; justify-content:space-between; align-items:center;">
             <span>${getStoreIconDisplay(targetStore)} ${escapeHtml(trTerm(targetStore.campus))} — ${escapeHtml(trTerm(targetStore.name))}</span>
-            ${state.boundMerchantStoreId && !state.urlLockedStoreId ? `<button type="button" onclick="unbindDeviceMerchantStore()" style="border:none; background:transparent; color:var(--text-secondary); font-size:0.72rem; text-decoration:underline; cursor:pointer;">${t('切換店鋪', 'Switch')}</button>` : `<span style="font-size:0.7rem; color:var(--indigo);">${t('專屬終端鎖定', 'Terminal Locked')}</span>`}
+            ${state.boundMerchantStoreId && !state.urlLockedStoreId ? `<button type="button" onclick="unbindDeviceMerchantStore()" style="border:none; background:transparent; color:var(--text-secondary); font-size:0.72rem; text-decoration:underline; cursor:pointer;">${t('切換店鋪', 'Switch', '切替', '전환')}</button>` : `<span style="font-size:0.7rem; color:var(--indigo);">${t('專屬終端鎖定', 'Terminal Locked', '専用端末固定', '전용 단말 고정')}</span>`}
           </div>
         ` : `
           <select class="select-input" style="font-weight:800;" onchange="state.merchantStoreId=this.value; state.pinInputBuffer=''; try{localStorage.setItem('mealflow_last_merchant_store_id', this.value);}catch(e){} renderStorePinModal(false)">
@@ -5080,19 +5206,29 @@ function renderStorePinModal(hasError = false) {
         `}
       </div>
       <div style="margin-bottom:10px; text-align:left;">
-        <label class="field-label">👤 ${t('值班人員具名打卡（支援店長 PIN / 一般收銀員 PIN 分級）', 'On-Duty Staff (Manager / Staff PIN)')}</label>
+        <label class="field-label">👤 ${t('值班人員打卡（店長 / 收銀員 / 開發者）', 'On-Duty Staff Clock-In (Manager / Staff / Developer)', '担当スタッフ打刻（店長 / スタッフ / 開発者）', '근무 직원 출근 (점장 / 직원 / 개발자)')}</label>
         <div style="display:flex; gap:6px;">
-          <select id="storePinStaffSelect" class="select-input" style="flex:1; font-weight:800;" onchange="state.pinSelectedStaffName=this.value; try{localStorage.setItem('mealflow_last_staff_name', this.value);}catch(e){}">
-            ${staffCandidates.map(stName => `<option value="${escapeHtml(stName)}" ${stName === curStaffName ? 'selected' : ''}>${escapeHtml(stName)}</option>`).join('')}
-            ${!staffCandidates.includes(curStaffName) ? `<option value="${escapeHtml(curStaffName)}" selected>${escapeHtml(curStaffName)}</option>` : ''}
+          <select id="storePinStaffSelect" class="select-input" style="flex:1; font-weight:800;" onchange="state.pinSelectedStaffName=this.value; try{localStorage.setItem('mealflow_last_staff_name', this.value);}catch(e){} renderStorePinModal(false)">
+            ${staffCandidates.map(stName => `<option value="${escapeHtml(stName)}" ${stName === curStaffName ? 'selected' : ''}>${escapeHtml(trTerm(stName))}</option>`).join('')}
+            <option value="${DEV_OPTION_VAL}" ${isDevSelected ? 'selected' : ''}>🛠️ ${t('開發者 (Developer)', 'Developer', '開発者 (Developer)', '개발자 (Developer)')}</option>
+            ${!staffCandidates.includes(curStaffName) && !isDevSelected ? `<option value="${escapeHtml(curStaffName)}" selected>${escapeHtml(trTerm(curStaffName))}</option>` : ''}
           </select>
-          <input type="text" id="storePinCustomStaffInput" maxlength="20" class="select-input" style="flex:0.85;" placeholder="${t('或自填姓名', 'Or type name')}" oninput="if(this.value.trim()){ state.pinSelectedStaffName=this.value.trim(); }">
+          <input type="text" id="storePinCustomStaffInput" maxlength="20" class="select-input" style="flex:0.85;" placeholder="${t('或自填姓名', 'Or type name', 'または氏名入力', '또는 이름 입력')}" oninput="if(this.value.trim()){ state.pinSelectedStaffName=this.value.trim(); }">
         </div>
+        ${isDevSelected ? `
+          <div style="margin-top:6px; font-size:0.74rem; color:#4338CA; background:#EEF2FF; border:1px solid #C7D2FE; padding:6px 10px; border-radius:8px; font-weight:800;">
+            🛠️ ${t('開發者模式：輸入系統開發者專屬 PIN 即可免店家密碼直接進入並自由切換所有餐廳進行維護。', 'Developer Mode: Enter Developer PIN to access and switch across all stores without store passwords.', '開発者モード：開発者PINで全店舗の保守管理にアクセス可能です。', '개발자 모드: 개발자 PIN으로 매장 비밀번호 없이 모든 매장을 관리할 수 있습니다.')}
+          </div>
+        ` : ''}
       </div>
-      <p style="font-size:0.82rem; color:${lockoutRemainSec > 0 ? 'var(--red)' : 'var(--text-secondary)'}; font-weight:700;">
+      <p style="font-size:0.82rem; color:${lockoutRemainSec > 0 ? 'var(--red)' : (state.isVerifyingPin ? 'var(--indigo)' : 'var(--text-secondary)')}; font-weight:700;">
         ${lockoutRemainSec > 0
-          ? `🛑 ${t(`連續錯誤達上限，請等候 ${lockoutRemainSec} 秒後再試`, `Too many attempts. Wait ${lockoutRemainSec}s.`)}`
-          : (state.isVerifyingPin ? t('⏳ 正在向雲端伺服器請求分級 HMAC 簽章授權...', '⏳ Verifying PIN...') : t(`請輸入店長 PIN 或收銀員 PIN (4～8 位數)`, `Enter Manager or Staff PIN (4-8 digits)`))}
+          ? `🛑 ${t(`連續錯誤達上限，請等候 ${lockoutRemainSec} 秒後再試`, `Too many attempts. Wait ${lockoutRemainSec}s.`, `連続エラー上限に達しました。${lockoutRemainSec}秒後に再試行してください。`, `연속 오류 한도 초과. ${lockoutRemainSec}초 후 다시 시도하세요.`)}`
+          : (state.isVerifyingPin
+              ? t('⏳ 正在向雲端伺服器請求分級 HMAC 簽章授權...', '⏳ Verifying PIN with cloud server...', '⏳ クラウドサーバーでPIN認証中...', '⏳ 클라우드 서버에서 PIN 인증 중...')
+              : (isDevSelected
+                  ? t('請輸入開發者專屬 PIN 碼 (4～8 位數)', 'Enter Developer PIN (4-8 digits)', '開発者PINを入力 (4〜8桁)', '개발자 전용 PIN 입력 (4~8자리)')
+                  : t('請輸入店長 PIN、個人員工 PIN 或開發者 PIN (4～8 位數)', 'Enter Manager, Staff, or Developer PIN (4-8 digits)', '店長・スタッフ・開発者PINを入力 (4〜8桁)', '점장 / 직원 / 개발자 PIN 입력 (4~8자리)')))}
       </p>
       <div class="pin-dots-row ${hasError ? 'shake-error' : ''}" style="justify-content:center; gap:8px;">
         ${Array.from({ length: dotSlots }).map((_, i) => `
@@ -5101,15 +5237,15 @@ function renderStorePinModal(hasError = false) {
       </div>
       <div class="pos-numpad-grid" style="margin-bottom:10px;">
         ${['1','2','3','4','5','6','7','8','9'].map(k => `<button type="button" class="pos-numpad-key" ${state.isVerifyingPin || lockoutRemainSec > 0 ? 'disabled' : ''} onclick="tapStorePinKey('${k}')">${k}</button>`).join('')}
-        <button type="button" class="pos-numpad-key clear" ${state.isVerifyingPin || lockoutRemainSec > 0 ? 'disabled' : ''} onclick="tapStorePinKey('C')">${t('清除', 'Clr')}</button>
+        <button type="button" class="pos-numpad-key clear" ${state.isVerifyingPin || lockoutRemainSec > 0 ? 'disabled' : ''} onclick="tapStorePinKey('C')">${t('清除', 'Clr', '消去', '지움')}</button>
         <button type="button" class="pos-numpad-key" ${state.isVerifyingPin || lockoutRemainSec > 0 ? 'disabled' : ''} onclick="tapStorePinKey('0')">0</button>
         <button type="button" class="pos-numpad-key back" ${state.isVerifyingPin || lockoutRemainSec > 0 ? 'disabled' : ''} onclick="tapStorePinKey('BACK')">⌫</button>
       </div>
-      <button type="button" class="btn-primary-full" style="background:${len >= 4 && len <= 8 && lockoutRemainSec === 0 ? 'var(--green)' : '#9CA3AF'}; box-shadow:none;" ${len < 4 || len > 8 || state.isVerifyingPin || lockoutRemainSec > 0 ? 'disabled' : ''} onclick="submitStorePinAuth()">
-        🔓 ${t('確認解鎖', 'Unlock')}「${escapeHtml(targetStore ? trTerm(targetStore.name) : '')}」(${len})
+      <button type="button" id="storePinSubmitBtn" class="btn-primary-full ${state.isVerifyingPin ? 'pin-submit-busy' : ''}" style="background:${state.isVerifyingPin ? '#475569' : (canSubmit ? (isDevSelected ? '#4F46E5' : 'var(--green)') : '#9CA3AF')}; box-shadow:none; display:inline-flex; align-items:center; justify-content:center; gap:8px;" ${!canSubmit ? 'disabled' : ''} onclick="submitStorePinAuth()">
+        ${submitBtnInner}
       </button>
       <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px;">
-        🛡️ ${t(`店長與員工分級權限・操作具名稽核・閒置 ${state.merchantAutoLockMinutes} 分鐘自動上鎖`, `Role-based PIN · Staff audit log · Auto-lock after ${state.merchantAutoLockMinutes}m`)}
+        🛡️ ${t(`一人一碼具名打卡・開發者全店維護・閒置 ${state.merchantAutoLockMinutes} 分鐘自動上鎖`, `Per-staff PIN · Developer Access · Auto-lock after ${state.merchantAutoLockMinutes}m`, `個別スタッフPIN・開発者保守・${state.merchantAutoLockMinutes}分無操作で自動施錠`, `개별 직원 PIN · 개발자 모드 · ${state.merchantAutoLockMinutes}분 미사용 시 자동 잠금`)}
       </div>
     </div>
   `;
@@ -5158,9 +5294,14 @@ async function submitStorePinAuth() {
 
     if (data && data.success && data.sessionToken) {
       const expiresAt = Number(data.expiresAt) || (Date.now() + 8 * 3600 * 1000);
-      const scope = String(data.authorizedStoreId && data.authorizedStoreId !== 'ALL' ? data.authorizedStoreId : targetStoreId);
       const staffRole = String(data.staffRole || 'MANAGER').toUpperCase();
-      const staffName = String(data.staffName || selectedStaff || (staffRole === 'MANAGER' ? '值班店長' : '收銀員')).trim();
+      const isDeveloper = staffRole === 'DEVELOPER' || Boolean(data.canSwitchAnyStore);
+      const scope = isDeveloper
+        ? 'ALL'
+        : String(data.authorizedStoreId && data.authorizedStoreId !== 'ALL' ? data.authorizedStoreId : targetStoreId);
+      const staffName = String(
+        data.staffName || selectedStaff || (isDeveloper ? '系統開發者' : (staffRole === 'MANAGER' ? '值班店長' : '收銀員'))
+      ).trim();
 
       state.isMerchantUnlocked = true;
       state.merchantAuthToken = data.sessionToken;
@@ -5190,9 +5331,11 @@ async function submitStorePinAuth() {
       applyRouteView();
       updateMerchantAudioUnlockBanner();
       syncCloud(false);
-      const storeObj = state.stores.find(s => s.id === scope);
-      const roleTag = staffRole === 'MANAGER' ? '👑 店長' : '👤 收銀員';
-      showToast(`🔓 已解鎖「${storeObj ? storeObj.name : scope}」(${roleTag}：${staffName})`);
+      const storeObj = state.stores.find(s => s.id === targetStoreId);
+      const roleTag = isDeveloper
+        ? `🛠️ ${t('開發者', 'Developer', '開発者', '개발자')}`
+        : (staffRole === 'MANAGER' ? `👑 ${t('店長', 'Manager', '店長', '점장')}` : `👤 ${t('收銀員', 'Cashier', 'スタッフ', '캐셔')}`);
+      showToast(`🔓 ${t('已解鎖', 'Unlocked', '解除しました', '잠금 해제')}「${storeObj ? trTerm(storeObj.name) : targetStoreId}」(${roleTag}：${trTerm(staffName)})`);
     } else {
       throw new Error((data && data.message) || '授權碼驗證失敗');
     }
@@ -5399,7 +5542,9 @@ async function approveOnlinePaymentModal(storeId, amount, orderId = '') {
         useRealLinePayApi: true,
         confirmUrl: confirmUrl,
         cancelUrl: cancelUrl,
-        clientDeviceId: state.clientDeviceId
+        clientDeviceId: state.clientDeviceId,
+        // 三-1：將訂單草稿一併交由伺服器預先寫入 PENDING_PAYMENT 訂單，徹底免除跨瀏覽器 localStorage 遺失風險！
+        orderDraft: state.pendingLinePayDraftContext || null
       })
     });
     const reqData = await reqRes.json();
@@ -5407,12 +5552,12 @@ async function approveOnlinePaymentModal(storeId, amount, orderId = '') {
       throw new Error((reqData && reqData.message) || 'LINE Pay Request 建立失敗');
     }
 
-    // 一-1：若伺服器回傳真實 LINE Pay 跳轉網址，先將待付款訂單草稿封存至 localStorage，再導向官方 LINE Pay 付款頁
+    // 三-1：伺服器已預先建立 PENDING_PAYMENT 訂單；本地 localStorage 僅作輔助快取，跨 App 跳轉完全不依賴它
     if (reqData.requiresRedirect && reqData.paymentUrlWeb) {
       const pendingPack = {
         storeId: storeId,
-        amount: Number(amount) || 0,
-        orderId: orderId || reqData.lpOrderId || '',
+        amount: Number(reqData.amount || amount) || 0,
+        orderId: reqData.orderId || orderId || reqData.lpOrderId || '',
         transactionId: String(reqData.transactionId),
         requestToken: String(reqData.requestToken || ''),
         orderDraft: state.pendingLinePayDraftContext || null,
@@ -5420,7 +5565,7 @@ async function approveOnlinePaymentModal(storeId, amount, orderId = '') {
       };
       try { localStorage.setItem(PENDING_LINEPAY_STORAGE_KEY, JSON.stringify(pendingPack)); } catch (e) {}
       if (stepEl) {
-        stepEl.textContent = t('✓ 已建立 LINE Pay 交易，正在導向官方付款頁面...', '✓ Redirecting to LINE Pay...');
+        stepEl.textContent = t('✓ 已建立 LINE Pay 交易，正在導向官方付款頁面...', '✓ Redirecting to LINE Pay...', '✓ LINE Pay決済ページへ移動中...', '✓ LINE Pay 결제 페이지로 이동 중...');
         stepEl.style.color = '#059669';
       }
       if (state.linePayCountdownTimer) {
@@ -5436,18 +5581,22 @@ async function approveOnlinePaymentModal(storeId, amount, orderId = '') {
     showToast(`🚫 ${translateServerError(err.message || 'LINE Pay 交易建立失敗')}`);
     if (btn) {
       btn.disabled = false;
-      btn.innerText = `💚 ${t('重新前往 LINE Pay 付款', 'Retry LINE Pay')} (NT$ ${amount})`;
+      btn.innerText = `💚 ${t('重新前往 LINE Pay 付款', 'Retry LINE Pay', 'LINE Pay再試行', 'LINE Pay 다시 시도')} (NT$ ${amount})`;
     }
   }
 }
 
-// 一-1：從 LINE Pay 官方付款頁跳回後自動執行 Confirm API (returnCode === '0000') 並補單送出至廚房
+// 一-1 & 三-1：跨瀏覽器安全回調（Safari → LINE App 內建瀏覽器零依賴 localStorage，直接透過 URL transactionId + orderId 向後端核實並轉正訂單！）
 async function checkLinePayCallbackOnLoad() {
   try {
     const params = new URLSearchParams(window.location.search);
     const isLpCallback = params.get('lpCallback') === '1';
     const isLpCancel = params.get('lpCancel') === '1';
     if (!isLpCallback && !isLpCancel) return;
+
+    const txId = String(params.get('transactionId') || '').trim();
+    const urlOrderId = String(params.get('orderId') || '').trim();
+    const urlStoreId = String(params.get('store') || '').trim();
 
     const cleanParams = new URLSearchParams(window.location.search);
     ['lpCallback', 'lpCancel', 'transactionId', 'orderId'].forEach(k => cleanParams.delete(k));
@@ -5456,19 +5605,24 @@ async function checkLinePayCallbackOnLoad() {
 
     if (isLpCancel) {
       try { localStorage.removeItem(PENDING_LINEPAY_STORAGE_KEY); } catch (e) {}
-      showToast(t('ℹ️ 您已取消 LINE Pay 付款，購物車餐點已為您保留', 'ℹ️ LINE Pay cancelled. Your cart has been preserved.'));
+      showToast(t('ℹ️ 您已取消 LINE Pay 付款，購物車餐點已為您保留', 'ℹ️ LINE Pay cancelled. Your cart has been preserved.', 'ℹ️ LINE Pay決済をキャンセルしました。カートは保持されています。', 'ℹ️ LINE Pay 결제가 취소되었습니다. 장바구니가 유지됩니다.'));
       return;
     }
 
-    const txId = String(params.get('transactionId') || '').trim();
-    const rawSaved = localStorage.getItem(PENDING_LINEPAY_STORAGE_KEY);
-    if (!txId || !rawSaved) {
-      showToast(t('⚠️ 找不到對應的待付款 LINE Pay 交易紀錄，請重新結帳', '⚠️ Pending LINE Pay checkout record not found.'));
+    let pendingPack = null;
+    try {
+      const rawSaved = localStorage.getItem(PENDING_LINEPAY_STORAGE_KEY);
+      if (rawSaved) pendingPack = JSON.parse(rawSaved);
+    } catch (e) {}
+
+    const resolvedStoreId = urlStoreId || (pendingPack && pendingPack.storeId) || '';
+    const resolvedOrderId = urlOrderId || (pendingPack && pendingPack.orderId) || '';
+    if (!txId || (!resolvedOrderId && !pendingPack)) {
+      showToast(t('⚠️ 找不到對應的待付款 LINE Pay 交易紀錄，請重新結帳', '⚠️ Pending LINE Pay checkout record not found.', '⚠️ LINE Pay取引記録が見つかりません。再度お試しください。', '⚠️ 대기 중인 LINE Pay 결제 기록을 찾을 수 없습니다.'));
       return;
     }
 
-    const pendingPack = JSON.parse(rawSaved);
-    showToast(t('⏳ 正在向 LINE Pay 官方請款核實 (Confirm)...', '⏳ Confirming LINE Pay settlement...'));
+    showToast(t('⏳ 正在向 LINE Pay 官方請款核實 (Confirm)...', '⏳ Confirming LINE Pay settlement...', '⏳ LINE Pay決済を確認中...', '⏳ LINE Pay 결제 승인 확인 중...'));
 
     const confRes = await fetch(GAS_URL, {
       method: 'POST',
@@ -5476,19 +5630,25 @@ async function checkLinePayCallbackOnLoad() {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'confirmLinePayCheckout',
-        storeId: pendingPack.storeId,
-        amount: pendingPack.amount,
+        storeId: resolvedStoreId,
+        orderId: resolvedOrderId,
+        amount: pendingPack ? pendingPack.amount : 0,
         transactionId: txId,
-        requestToken: pendingPack.requestToken || '',
+        requestToken: (pendingPack && pendingPack.requestToken) || '',
         clientDeviceId: state.clientDeviceId
       })
     });
     const confData = await confRes.json();
-    if (!confData || !confData.success || !confData.paymentAuthToken) {
+    if (!confData || !confData.success) {
       throw new Error((confData && confData.message) || 'LINE Pay 請款核實未通過，未扣款或請聯繫店家');
     }
 
-    if (pendingPack.orderDraft) {
+    // 三-1：後端已直接從雲端 PENDING_PAYMENT 訂單轉正並配發正式 B001+ 單號，完全不依賴本機 localStorage！
+    let authOrder = null;
+    if (confData.order && confData.order.orderId) {
+      authOrder = sanitizeIncomingOrder({ ...confData.order, isOfflinePending: false });
+    } else if (pendingPack && pendingPack.orderDraft && confData.paymentAuthToken) {
+      // 向下相容舊版後端回應
       const finalPayload = {
         ...pendingPack.orderDraft,
         transactionId: confData.transactionId || txId,
@@ -5508,21 +5668,25 @@ async function checkLinePayCallbackOnLoad() {
       if (!subData || !subData.success || !subData.order) {
         throw new Error((subData && subData.message) || '款項已核實但建單失敗，請出示交易號洽櫃檯補單：' + txId);
       }
+      authOrder = sanitizeIncomingOrder({ ...finalPayload, ...subData.order, isOfflinePending: false });
+    }
 
-      const authOrder = sanitizeIncomingOrder({ ...finalPayload, ...subData.order, isOfflinePending: false });
+    if (authOrder) {
       try { localStorage.removeItem(PENDING_LINEPAY_STORAGE_KEY); } catch (e) {}
       state.pendingLocalOrdersMap[authOrder.orderId] = Date.now();
-      state.orders.unshift(authOrder);
+      const exIdx = state.orders.findIndex(x => x.orderId === authOrder.orderId);
+      if (exIdx >= 0) state.orders[exIdx] = authOrder;
+      else state.orders.unshift(authOrder);
       addOrderToMyHistory(authOrder.orderId);
       saveCachedOrders(state.orders);
       state.cartItems = [];
-      if (state.cartByStoreMap && pendingPack.storeId) delete state.cartByStoreMap[pendingPack.storeId];
+      if (state.cartByStoreMap && resolvedStoreId) delete state.cartByStoreMap[resolvedStoreId];
       saveStudentCartDraft();
       navigateToOrderTicket(authOrder.orderId);
-      showToast(`🎉 LINE Pay 付款成功！單號 #${authOrder.pickupNumber}`);
+      showToast(`🎉 ${t(`LINE Pay 付款成功！單號 #${authOrder.pickupNumber}`, `LINE Pay settled! Pickup #${authOrder.pickupNumber}`, `LINE Pay決済完了！番号 #${authOrder.pickupNumber}`, `LINE Pay 결제 완료! 픽업번호 #${authOrder.pickupNumber}`)}`);
     }
   } catch (err) {
-    showToast(`🚫 LINE Pay 回調核實異常：${translateServerError(err.message || err)}`);
+    showToast(`🚫 ${t('LINE Pay 回調核實異常', 'LINE Pay confirmation error', 'LINE Pay確認エラー', 'LINE Pay 승인 오류')}：${translateServerError(err.message || err)}`);
   }
 }
 
@@ -5554,10 +5718,10 @@ function renderPortalView() {
         <img src="./logo-text.png" alt="MealFlow" style="height:38px; width:auto; object-fit:contain;">
       </div>
       <div style="display:inline-block; background:#EEF2FF; color:#4338CA; font-weight:800; font-size:0.78rem; padding:4px 12px; border-radius:999px; margin-bottom:8px;">
-        🛡️ ISO/IEC 18004 真實 QR 核銷 × 時段配額控管 × KDS 鏡頭掃碼 × 會計級交班日結單
+        🛡️ ${t('ISO/IEC 18004 真實 QR 核銷 × 時段配額控管 × KDS 鏡頭掃碼 × 會計級交班日結單', 'ISO/IEC 18004 QR Verification × Slot Quota × KDS Scanner × Accounting Z-Report', 'ISO/IEC 18004 QR認証 × 予約枠制御 × KDSスキャン × 会計日次精算', 'ISO/IEC 18004 QR 인증 × 시간대 정원 관리 × KDS 스캔 × 회계 마감 정산')}
       </div>
       <p style="font-size:0.86rem; color:var(--text-secondary); max-width:640px; margin:0 auto;">
-        整合<strong>線上掃碼點餐 (<code>/order/</code>)</strong>、<strong>標準可掃描防偽 QR 電子憑證</strong>，以及<strong>全螢幕平板 POS + KDS 鏡頭掃碼核銷 + 會計日結後台 (<code>/store/</code>)</strong>。
+        ${t('整合線上掃碼點餐 (<code>/order/</code>)、標準可掃描防偽 QR 電子憑證，以及全螢幕平板 POS + KDS 鏡頭掃碼核銷 + 會計日結後台 (<code>/store/</code>)。', 'Integrated QR Mobile Ordering (<code>/order/</code>), Verified Pickup QR Tickets, and Full-Screen Tablet POS + KDS + Z-Report Operations (<code>/store/</code>).', 'スマホQR注文 (<code>/order/</code>)、偽造防止QRチケット、タブレットPOS＋KDS＋日次精算管理 (<code>/store/</code>) を統合。', '모바일 QR 주문 (<code>/order/</code>), 위조 방지 QR 티켓, 태블릿 POS + KDS + 회계 마감 시스템 (<code>/store/</code>) 통합.')}
       </p>
     </div>
 
@@ -5567,17 +5731,17 @@ function renderPortalView() {
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
               <span style="font-size:2.2rem;">📱</span>
-              <span class="wait-pill wait-free">學生掃碼點餐入口</span>
+              <span class="wait-pill wait-free">${t('學生掃碼點餐入口', 'Student Ordering Portal', '学生QR注文入口', '학생 QR 주문 입구')}</span>
             </div>
-            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">學生掃碼點餐端</h2>
+            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">${t('學生掃碼點餐端', 'Student Mobile Ordering', '学生モバイル注文', '학생 모바일 주문')}</h2>
             <code style="display:block; font-size:0.76rem; color:var(--brand-dark); background:var(--brand-light); padding:5px 8px; border-radius:6px; margin-bottom:10px;">
               /scu.meal/order/
             </code>
             <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:14px;">
-              支援 15 分鐘時段配額預訂、動態產能候餐預估、多輪智慧選餐顧問與標準 ISO QR Code 防偽電子取餐單。
+              ${t('支援 15 分鐘時段配額預訂、動態產能候餐預估、多輪智慧選餐顧問與標準 ISO QR Code 防偽電子取餐單。', '15-min slot pre-orders, real-time wait estimates, AI meal advisor, and ISO QR verified pickup tickets.', '15分単位の予約枠、リアルタイム待ち時間予測、AIメニュー案内、ISO QR電子チケットに対応。', '15분 단위 예약 정원, 실시간 대기 시간 예측, AI 메뉴 추천, ISO QR 픽업 티켓 지원.')}
             </p>
           </div>
-          <div class="btn-tip-action" style="text-align:center; width:100%;">進入學生掃碼點餐 ➔</div>
+          <div class="btn-tip-action" style="text-align:center; width:100%;">${t('進入學生掃碼點餐 ➔', 'Start Student Ordering ➔', '学生注文ページへ ➔', '학생 주문 시작 ➔')}</div>
         </div>
       </a>
 
@@ -5586,17 +5750,17 @@ function renderPortalView() {
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
               <span style="font-size:2.2rem;">🖥️</span>
-              <span class="wait-pill" style="background:#E2E8F0; color:#0F172A;">商用全螢幕平板收銀</span>
+              <span class="wait-pill" style="background:#E2E8F0; color:#0F172A;">${t('商用全螢幕平板收銀', 'Commercial Tablet POS', '業務用タブレットPOS', '상업용 태블릿 POS')}</span>
             </div>
-            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">店家全螢幕收銀・KDS 鏡頭核銷・會計日結</h2>
+            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">${t('店家全螢幕收銀・KDS 鏡頭核銷・會計日結', 'Merchant POS・KDS Scanner・Z-Report', '店舗POS・KDSスキャン・日次精算', '매장 POS・KDS 스캔・마감 정산')}</h2>
             <code style="display:block; font-size:0.76rem; color:#0F172A; background:#F1F5F9; padding:5px 8px; border-radius:6px; margin-bottom:10px;">
               /scu.meal/store/
             </code>
             <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:14px;">
-              具備 4 碼雲端 HMAC Session 保護、KDS 鏡頭掃碼核銷、未收款結單強制防呆攔截與完整錢箱交班日結單。
+              ${t('具備雲端 HMAC Session 保護、一鍵快結收銀、KDS 鏡頭掃碼核銷、未收款防呆攔截與完整錢箱交班日結單。', 'Cloud HMAC session protection, 1-tap fast checkout, KDS QR verification, unpaid guards & accounting Z-report.', 'クラウドHMAC認証、1タップ高速会計、KDS QR検収、未収防止ガード、完全な日次精算機能を搭載。', '클라우드 HMAC 세션 보안, 원탭 고속 결제, KDS QR 인증, 미수금 방지 및 회계 마감 정산 지원.')}
             </p>
           </div>
-          <div class="btn-tip-action" style="text-align:center; width:100%; background:#0F172A; box-shadow:none;">進入店家營運中心 ➔</div>
+          <div class="btn-tip-action" style="text-align:center; width:100%; background:#0F172A; box-shadow:none;">${t('進入店家營運中心 ➔', 'Open Merchant POS ➔', '店舗管理センターへ ➔', '매장 운영 센터 열기 ➔')}</div>
         </div>
       </a>
 
@@ -5605,17 +5769,17 @@ function renderPortalView() {
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
               <span style="font-size:2.2rem;">📺</span>
-              <span class="wait-pill" style="background:#DCFCE7; color:#047857;">${t('麥當勞風格免登入大螢幕', 'McDonald-Style Zero-Login TV')}</span>
+              <span class="wait-pill" style="background:#DCFCE7; color:#047857;">${t('麥當勞風格免登入大螢幕', 'Zero-Login TV Call Board', 'ログイン不要テレビ画面', '로그인 불필요 TV 전광판')}</span>
             </div>
-            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">${t('電視即時取餐叫號大看板', 'Live TV Pickup Call Board')}</h2>
+            <h2 style="font-size:1.18rem; font-weight:900; margin-bottom:4px;">${t('電視即時取餐叫號大看板', 'Live TV Pickup Call Board', 'テレビ即時呼出ディスプレイ', '실시간 TV 픽업 호출 전광판')}</h2>
             <code style="display:block; font-size:0.76rem; color:#047857; background:#D1FAE5; padding:5px 8px; border-radius:6px; margin-bottom:10px;">
               /scu.meal/board/?store=S01
             </code>
             <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:14px;">
-              ${t('專為大尺寸電視與投屏設計，特大號製作中／請取餐雙欄、新叫號語音叮咚提醒、免登入自動防休眠。', 'Designed for TV screens & casting. Giant Preparing / Now Serving split screen with voice chimes & WakeLock.')}
+              ${t('專為大尺寸電視與投屏設計，特大號製作中／請取餐雙欄、新叫號語音叮咚提醒、免登入自動防休眠。', 'Designed for TV screens & casting. Giant Preparing / Now Serving split screen with voice chimes & WakeLock.', '大画面テレビ・キャスト専用設計。調理中／呼出中の2画面表示・音声案内・スリープ防止機能付き。', '대형 TV 및 미러링 전용. 조리 중/호출 중 2분할 화면, 음성 안내, 절전 방지 지원.')}
             </p>
           </div>
-          <div class="btn-tip-action" style="text-align:center; width:100%; background:#059669; box-shadow:none;">${t('開啟電視投屏大看板 ➔', 'Open TV Call Board ➔')}</div>
+          <div class="btn-tip-action" style="text-align:center; width:100%; background:#059669; box-shadow:none;">${t('開啟電視投屏大看板 ➔', 'Open TV Call Board ➔', 'テレビ看板を開く ➔', 'TV 호출 전광판 열기 ➔')}</div>
         </div>
       </a>
     </div>
@@ -5651,6 +5815,7 @@ function enterStoreOrdering(storeId, autoOpenMenuId = null) {
   state.selectedStoreId = storeId;
   state.studentMenuCategory = '全部';
   state.studentMenuSearch = '';
+  state.studentMenuSearchOpen = false;
   state.campus = store.campus;
   state.checkoutErrorBannerMsg = '';
 
@@ -5659,6 +5824,9 @@ function enterStoreOrdering(storeId, autoOpenMenuId = null) {
     state.checkoutTimeMode = 'NOW';
   } else if (store.canOrderNow === false) {
     state.checkoutTimeMode = 'RESERVE';
+  } else {
+    // A2：正常營業時每次進店一律預設「立即製作 (NOW)」
+    state.checkoutTimeMode = 'NOW';
   }
 
   saveStudentCartDraft();
@@ -5827,9 +5995,29 @@ function handleStudentMenuSearch(val) {
   renderInStoreMenuCards(true);
 }
 
+function openStudentMenuSearch() {
+  state.studentMenuSearchOpen = true;
+  renderInStoreMenuCards(false);
+  setTimeout(() => document.getElementById('studentMenuSearchInput')?.focus(), 40);
+}
+
+function closeStudentMenuSearch() {
+  state.studentMenuSearchOpen = false;
+  state.studentMenuSearch = '';
+  renderInStoreMenuCards(false);
+}
+
 function renderStudentOrderExperience() {
   enrichStoresAndAi();
   updateHeaderMyOrdersBadge();
+
+  // A7：若目前開放於學生端的餐廳僅有 1 家，自動直達該店菜單頁
+  const visibleStores = getVisibleStudentStores();
+  if (visibleStores.length === 1 && state.selectedStoreId !== visibleStores[0].id) {
+    state.selectedStoreId = visibleStores[0].id;
+    state.campus = visibleStores[0].campus;
+    if (visibleStores[0].canOrderNow !== false) state.checkoutTimeMode = 'NOW';
+  }
 
   const activeBannerBox = document.getElementById('activeOrderFloatingBanner');
   if (activeBannerBox) {
@@ -5881,7 +6069,7 @@ function renderStudentOrderExperience() {
 }
 
 function renderStoreDirectoryList() {
-  const campusStores = state.stores.filter(s => s.campus === state.campus);
+  const campusStores = getVisibleStudentStores().filter(s => s.campus === state.campus);
   const rec = state.aiRecommendations[state.campus];
   const tipBox = document.getElementById('aiSmartTipBox');
 
@@ -6014,18 +6202,24 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
     grouped[cat].push(item);
   });
 
+  const isSearchExpanded = Boolean(state.studentMenuSearchOpen || (state.studentMenuSearch && state.studentMenuSearch.trim()));
   const menuFilterToolbarHtml = items.length > 0 ? `
-    <div class="sticky-menu-cat-bar">
-      <div id="stickyMenuCatTabs" class="sticky-menu-cat-tabs">
-        ${allCategories.map(cat => `
-          <button type="button" data-cat="${escapeHtml(cat)}" class="pos-cat-pill ${state.studentMenuCategory === cat ? 'active' : ''}" onclick="setStudentMenuCategory(${escapeJsAttr(cat)})">
-            ${cat === '全部' ? t('🍽️ 全部', '🍽️ All', '🍽️ すべて', '🍽️ 전체') : escapeHtml(trTerm(cat))}
-          </button>
-        `).join('')}
-      </div>
-      <div style="display:flex; align-items:center; gap:6px; min-width:170px; flex:0.8; max-width:260px;">
-        <input type="search" id="studentMenuSearchInput" class="select-input" style="padding:6px 12px; font-size:0.82rem; border-radius:999px; background:#F8FAFC;" placeholder="🔍 ${t('搜尋餐點...', 'Search menu...', 'メニュー検索...', '메뉴 검색...')}" value="${escapeHtml(state.studentMenuSearch || '')}" oninput="handleStudentMenuSearch(this.value)">
-      </div>
+    <div class="sticky-menu-cat-bar" style="display:flex; align-items:center; gap:8px;">
+      ${isSearchExpanded ? `
+        <div class="menu-search-expanded-wrap">
+          <input type="search" id="studentMenuSearchInput" placeholder="🔍 ${t('搜尋餐點名稱或分類...', 'Search dishes...', 'メニュー検索...', '메뉴 검색...')}" value="${escapeHtml(state.studentMenuSearch || '')}" oninput="handleStudentMenuSearch(this.value)">
+          <button type="button" class="menu-search-close-btn" aria-label="${t('關閉搜尋', 'Close search', '検索を閉じる', '검색 닫기')}" onclick="closeStudentMenuSearch()">✕</button>
+        </div>
+      ` : `
+        <div id="stickyMenuCatTabs" class="sticky-menu-cat-tabs" style="flex:1; min-width:0;">
+          ${allCategories.map(cat => `
+            <button type="button" data-cat="${escapeHtml(cat)}" class="pos-cat-pill ${state.studentMenuCategory === cat ? 'active' : ''}" onclick="setStudentMenuCategory(${escapeJsAttr(cat)})">
+              ${cat === '全部' ? t('🍽️ 全部', '🍽️ All', '🍽️ すべて', '🍽️ 전체') : escapeHtml(trTerm(cat))}
+            </button>
+          `).join('')}
+        </div>
+        <button type="button" id="studentMenuSearchToggleBtn" class="menu-search-toggle-btn" title="${t('搜尋餐點', 'Search menu', 'メニュー検索', '메뉴 검색')}" aria-label="${t('搜尋餐點', 'Search menu', 'メニュー検索', '메뉴 검색')}" onclick="openStudentMenuSearch()">🔍</button>
+      `}
     </div>
   ` : '';
 
@@ -6102,6 +6296,12 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
                           : ''}
                         <span class="menu-in-cart-pill" style="display:${inCartQty > 0 ? 'inline-block' : 'none'}; font-size:0.7rem; font-weight:900; background:var(--brand); color:#FFFFFF; padding:2px 8px; border-radius:999px;">${t(`已選 ${inCartQty}`, `${inCartQty} in cart`, `${inCartQty}点`, `${inCartQty}개`)}</span>
                       </div>
+                      ${item.description ? `<div class="dish-desc-text" data-dish-name="1">${escapeHtml(item.description)}</div>` : ''}
+                      ${Array.isArray(item.dietaryTags) && item.dietaryTags.length > 0 ? `
+                        <div class="dietary-tags-row">
+                          ${item.dietaryTags.map(code => `<span class="dietary-tag-pill">${escapeHtml(typeof trDietaryTag === 'function' ? trDietaryTag(code) : code)}</span>`).join('')}
+                        </div>
+                      ` : ''}
                       ${subtitleText ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:3px; line-height:1.35;">${escapeHtml(subtitleText)}</div>` : ''}
                     </div>
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
@@ -6129,8 +6329,25 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
     return;
   }
 
-  const isSingleStoreLocked = Boolean(state.urlLockedStoreId && state.urlLockedStoreId === store.id);
+  const visibleStoresCount = getVisibleStudentStores().length;
+  const isSingleStoreLocked = Boolean((state.urlLockedStoreId && state.urlLockedStoreId === store.id) || visibleStoresCount <= 1);
   const isStorePausedBanner = store.isOpen === false || store.canPreOrder === false;
+  const storeFavDishes = (Array.isArray(state.memberFavoriteDishes) ? state.memberFavoriteDishes : [])
+    .filter(f => f && String(f.storeId) === String(store.id))
+    .map(f => (store.menus || []).find(m => !m.soldOut && (String(m.id) === String(f.menuId) || String(m.name) === String(f.name))))
+    .filter(Boolean)
+    .slice(0, 4);
+  const memberReorderBarHtml = (state.memberProfile && (storeFavDishes.length > 0 || Number(state.memberProfile.points) > 0)) ? `
+    <div class="member-reorder-bar">
+      <span style="font-size:0.74rem; font-weight:900; color:#15803D; white-space:nowrap;">
+        💚 ${t(`會員 ${state.memberProfile.points || 0} 點`, `Member ${state.memberProfile.points || 0} pts`, `会員 ${state.memberProfile.points || 0}pt`, `회원 ${state.memberProfile.points || 0}P`)}${storeFavDishes.length > 0 ? `・${t('常點快選', 'Quick Reorder', 'いつもの注文', '자주 시킨 메뉴')}：` : ''}
+      </span>
+      ${storeFavDishes.map(m => `
+        <button type="button" class="member-reorder-chip" data-dish-name="1" onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, false)">🔁 ${escapeHtml(trDishName(m))} $${m.price}</button>
+      `).join('')}
+    </div>
+  ` : '';
+
   box.innerHTML = `
     <div class="in-store-banner">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
@@ -6141,6 +6358,7 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
           ${isStorePausedBanner ? escapeHtml(store.businessShortPillText || t('⛔ 暫停營業', '⛔ Paused', '⛔ 営業休止', '⛔ 영업 중지')) : (store.canOrderNow === false ? escapeHtml(store.businessShortPillText || t('🌙 今日已打烊 (可預訂)', '🌙 Closed (Pre-order)', '🌙 営業終了 (予約可)', '🌙 영업 종료 (예약 가능)')) : t(`約 ${store.avgPrepMinutes} 分取餐`, `Est. ${store.avgPrepMinutes}m`, `約${store.avgPrepMinutes}分`, `약 ${store.avgPrepMinutes}분`))}
         </span>
       </div>
+      ${memberReorderBarHtml}
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="store-avatar-lg" style="font-size:2rem; background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%); border:1.5px solid #FED7AA; width:54px; height:54px; border-radius:14px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
           ${getStoreIconDisplay(store)}
@@ -6308,10 +6526,23 @@ function adjustOptQtyChoice(btnEl, delta) {
 
 function openOptionsModal(item, prefilledSelections = null) {
   document.getElementById('optModalTitle').innerText = trDishName(item);
-  document.getElementById('optModalSubtitle').innerText = `${t('基本價格', 'Base Price')} NT$ ${item.price}`;
+  document.getElementById('optModalSubtitle').innerText = `${t('基本價格', 'Base Price', '基本価格', '기본 가격')} NT$ ${item.price}`;
 
   const content = document.getElementById('optModalContent');
   content.innerHTML = '';
+
+  if (item.description || (Array.isArray(item.dietaryTags) && item.dietaryTags.length > 0)) {
+    content.insertAdjacentHTML('beforeend', `
+      <div style="background:#F8FAFC; border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
+        ${item.description ? `<div data-dish-name="1" style="font-size:0.82rem; color:var(--text-secondary); line-height:1.45;">${escapeHtml(item.description)}</div>` : ''}
+        ${Array.isArray(item.dietaryTags) && item.dietaryTags.length > 0 ? `
+          <div class="dietary-tags-row" style="margin-top:${item.description ? '6px' : '0'};">
+            ${item.dietaryTags.map(code => `<span class="dietary-tag-pill">${escapeHtml(typeof trDietaryTag === 'function' ? trDietaryTag(code) : code)}</span>`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `);
+  }
 
   Object.keys(item.options || {}).forEach((optName, gIdx) => {
     const grp = item.options[optName];
@@ -6645,6 +6876,11 @@ function openCartModal() {
   if (state.cartItems.length === 0) return;
   ensureAudioContextUnlocked(false);
   state.checkoutErrorBannerMsg = '';
+  const store = state.stores.find(s => s.id === state.selectedStoreId);
+  // A2：每次開啟購物車時，若店家營業中可立即製作，預設「立即製作 (NOW)」而非預訂
+  if (store && store.canOrderNow !== false && store.canPreOrder !== false) {
+    state.checkoutTimeMode = 'NOW';
+  }
   const todayStr = getTodayDateStr();
   if (!state.checkoutReserveDate || normalizeDateStr(state.checkoutReserveDate) < todayStr) {
     state.checkoutReserveDate = todayStr;
@@ -6798,18 +7034,15 @@ function findActiveDineInOrderForStore(storeId) {
 function startAddOnFromTicket(orderId) {
   const o = state.orders.find(ord => ord.orderId === orderId);
   if (!o) return;
-  state.checkoutAppendToOrderId = o.orderId;
-  state.checkoutDineType = '內用自取';
-  if (o.tableNumber) state.checkoutTableNumber = o.tableNumber;
+  state.checkoutDineType = o.dineType || '內用自取';
   enterStoreOrdering(o.storeId);
-  showToast(`➕ ${t(`已開啟同桌加點模式（將併入單號 #${o.pickupNumber}）`, `Add-on mode active for order #${o.pickupNumber}`)}`);
 }
 
 async function submitAppendToExistingDineInOrder(targetOrderId) {
   const existingOrd = state.orders.find(o => o.orderId === targetOrderId);
   if (!existingOrd || state.cartItems.length === 0) return;
   const btn = document.getElementById('appendToTableOrderBtn');
-  if (btn) { btn.disabled = true; btn.innerText = t('⏳ 正在將加點餐點併入桌單...', '⏳ Merging add-on items...'); }
+  if (btn) { btn.disabled = true; btn.innerText = t('⏳ 正在將加點餐點併入訂單...', '⏳ Merging add-on items...', '⏳ 追加注文を反映中...', '⏳ 추가 주문을 합치는 중...'); }
   try {
     const itemsPayload = state.cartItems.map(ci => {
       const modifiers = [];
@@ -6832,7 +7065,6 @@ async function submitAppendToExistingDineInOrder(targetOrderId) {
         action: 'appendOrderItems',
         orderId: existingOrd.orderId,
         verificationCode: existingOrd.verificationCode || '',
-        tableNumber: state.checkoutTableNumber || existingOrd.tableNumber || '',
         items: itemsPayload
       })
     });
@@ -6851,10 +7083,10 @@ async function submitAppendToExistingDineInOrder(targetOrderId) {
     saveStudentCartDraft();
     closeCartModal();
     navigateToOrderTicket(updatedOrd.orderId);
-    showToast(`🎉 ${t(`加點成功！已併入桌單 #${updatedOrd.pickupNumber}（新增 +NT$${data.addedSubtotal || 0}）`, `Added to #${updatedOrd.pickupNumber} (+NT$${data.addedSubtotal || 0})`)}`);
+    showToast(`🎉 ${t(`加點成功！已併入訂單 #${updatedOrd.pickupNumber}（新增 +NT$${data.addedSubtotal || 0}）`, `Added to #${updatedOrd.pickupNumber} (+NT$${data.addedSubtotal || 0})`, `#${updatedOrd.pickupNumber} に追加しました (+NT$${data.addedSubtotal || 0})`, `#${updatedOrd.pickupNumber}에 추가되었습니다 (+NT$${data.addedSubtotal || 0})`)}`);
   } catch (err) {
     showToast(`🚫 ${translateServerError(err.message || '加點併單失敗')}`);
-    if (btn) { btn.disabled = false; btn.innerText = t(`➕ 直接加點併入桌單 #${existingOrd.pickupNumber}`, `➕ Add to Order #${existingOrd.pickupNumber}`); }
+    if (btn) { btn.disabled = false; btn.innerText = t(`➕ 加點併入訂單 #${existingOrd.pickupNumber}`, `➕ Add to Order #${existingOrd.pickupNumber}`, `➕ #${existingOrd.pickupNumber} に追加`, `➕ 주문 #${existingOrd.pickupNumber}에 추가`); }
   }
 }
 
@@ -7042,21 +7274,6 @@ function updateCartUI() {
     }
   }
 
-  const activeDineInOrder = findActiveDineInOrderForStore(store ? store.id : '');
-  const appendTableBannerHtml = activeDineInOrder ? `
-    <div style="background:linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%); border:2px solid #6366F1; border-radius:14px; padding:12px 14px; margin-bottom:12px;">
-      <div style="font-size:0.84rem; font-weight:950; color:#312E81; margin-bottom:4px;">
-        🍽️ ${t(`偵測到您在本店有進行中的內用單 #${activeDineInOrder.pickupNumber}${activeDineInOrder.tableNumber ? ' (桌號 ' + activeDineInOrder.tableNumber + ')' : ''}`, `Active dine-in order #${activeDineInOrder.pickupNumber} detected`)}
-      </div>
-      <div style="font-size:0.75rem; color:#4338CA; font-weight:700; margin-bottom:8px;">
-        ${t('您可以直接將這批餐點「加點併入原桌單」，廚房會自動標註「加點」且免重新拿取餐號！', 'Merge these items directly into your current table order!')}
-      </div>
-      <button type="button" id="appendToTableOrderBtn" class="btn-tip-action" style="width:100%; background:#4F46E5; padding:10px; font-size:0.86rem;" onclick="submitAppendToExistingDineInOrder(${escapeJsAttr(activeDineInOrder.orderId)})">
-        ➕ ${t(`直接加點併入桌單 #${activeDineInOrder.pickupNumber} (+NT$${subtotal})`, `Add to Table Order #${activeDineInOrder.pickupNumber} (+NT$${subtotal})`)}
-      </button>
-    </div>
-  ` : '';
-
   const selectedSlotMeta = isReserve
     ? (slotsWithQuota.find(s => s.time === state.checkoutReserveTime) || null)
     : null;
@@ -7068,44 +7285,43 @@ function updateCartUI() {
     state.checkoutPayMethod = '現場櫃檯付現';
   }
 
+  const rawTaxDigits = String(state.checkoutTaxId || '').replace(/\D/g, '');
+  const taxIdValidationHint = rawTaxDigits
+    ? (validateTaiwanTaxId(rawTaxDigits)
+        ? `<div style="font-size:0.72rem; color:var(--green); font-weight:800; margin-top:3px;">✓ ${t('統一編號邏輯檢查通過', 'Valid Taiwan Tax ID', '統一番号チェックOK', '유효한 사업자등록번호입니다')}</div>`
+        : `<div style="font-size:0.72rem; color:var(--red); font-weight:800; margin-top:3px;">⚠️ ${t('需為有效 8 碼台灣統一編號', 'Must be a valid 8-digit Taiwan Tax ID', '有効な8桁の統一番号を入力してください', '유효한 8자리 사업자번호를 입력하세요')}</div>`)
+    : '';
+
   const checkoutSettingsHtml = `
-    ${appendTableBannerHtml}
     ${promoNoticeHtml}
     <div style="background:#FFFFFF; padding:16px; border-radius:14px; border:1px solid var(--border); margin-top:14px;">
-      <h4 style="font-size:0.95rem; font-weight:900; margin-bottom:12px;">📋 ${t('取餐與結帳設定', 'Pickup & Checkout Options')}</h4>
+      <h4 style="font-size:0.95rem; font-weight:900; margin-bottom:12px;">📋 ${t('取餐與結帳設定', 'Pickup & Checkout Options', '受取・会計設定', '픽업 및 결제 설정')}</h4>
 
-      <label class="field-label">🍽️ ${t('用餐方式', 'Dining Mode')}</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
-        <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取', 'Takeout')}</button>
-        <button type="button" class="filter-chip ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用', 'Dine-in')}</button>
+      <label class="field-label">🍽️ ${t('用餐方式（學餐自取）', 'Dining Mode (Food Court Self-Pickup)', '受取方法', '식사 방식 (자율 픽업)')}</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+        <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取', 'Takeout Pickup', 'テイクアウト', '포장 픽업')}</button>
+        <button type="button" class="filter-chip ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in Pickup', '店内飲食', '매장 식사')}</button>
       </div>
 
-      ${state.checkoutDineType === '內用自取' ? `
-        <div style="background:#F0FDF4; border:1.5px solid #86EFAC; border-radius:12px; padding:10px 12px; margin-bottom:12px;">
-          <label class="field-label" style="color:#065F46;">🪑 ${t('內用桌號（掃桌邊 QR 碼會自動帶入，可手動修改）', 'Table Number (Auto-filled from table QR)')}</label>
-          <input type="text" id="checkoutTableNumberInput" maxlength="20" class="select-input" placeholder="${t('例如：A3、12 桌、吧檯 2 號', 'e.g. A3, Table 12')}" value="${escapeHtml(state.checkoutTableNumber || '')}" oninput="state.checkoutTableNumber=this.value.trim().slice(0,20)">
-        </div>
-      ` : ''}
-
       <div style="background:#F8FAFC; border:1px dashed #CBD5E1; border-radius:12px; padding:10px 12px; margin-bottom:12px;">
-        <label class="field-label">🎟️ ${t('優惠券 / 折扣碼（選填）', 'Promo / Coupon Code (Optional)')}</label>
+        <label class="field-label">🎟️ ${t('優惠券 / 折扣碼（選填）', 'Promo / Coupon Code (Optional)', 'クーポン・割引コード（任意）', '쿠폰 / 할인 코드 (선택)')}</label>
         <div style="display:flex; gap:6px;">
-          <input type="text" id="checkoutCouponInput" maxlength="24" class="select-input" style="text-transform:uppercase; font-family:monospace; font-weight:800;" placeholder="${t('輸入店家優惠碼，如 SCU10', 'Enter code e.g. SCU10')}" value="${escapeHtml(state.checkoutCouponCode || '')}" oninput="state.checkoutCouponCode=this.value.trim().toUpperCase()">
-          <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px; background:#0F172A;" onclick="applyStudentCouponCode()">${t('套用', 'Apply')}</button>
+          <input type="text" id="checkoutCouponInput" maxlength="24" class="select-input" style="text-transform:uppercase; font-family:monospace; font-weight:800;" placeholder="${t('輸入店家優惠碼，如 SCU10', 'Enter code e.g. SCU10', 'コード入力 (例: SCU10)', '코드 입력 (예: SCU10)')}" value="${escapeHtml(state.checkoutCouponCode || '')}" oninput="state.checkoutCouponCode=this.value.trim().toUpperCase()">
+          <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px; background:#0F172A;" onclick="applyStudentCouponCode()">${t('套用', 'Apply', '適用', '적용')}</button>
         </div>
-        ${evalPromo.matchedCoupon ? `<div style="font-size:0.76rem; color:var(--green); font-weight:900; margin-top:5px;">✓ ${t(`已套用優惠碼「${evalPromo.matchedCoupon.code}」折抵 NT$${evalPromo.couponDiscount}`, `Applied ${evalPromo.matchedCoupon.code}: -NT$${evalPromo.couponDiscount}`)}</div>` : ''}
+        ${evalPromo.matchedCoupon ? `<div style="font-size:0.76rem; color:var(--green); font-weight:900; margin-top:5px;">✓ ${t(`已套用優惠碼「${evalPromo.matchedCoupon.code}」折抵 NT$${evalPromo.couponDiscount}`, `Applied ${evalPromo.matchedCoupon.code}: -NT$${evalPromo.couponDiscount}`, `クーポン「${evalPromo.matchedCoupon.code}」適用 -NT$${evalPromo.couponDiscount}`, `쿠폰 "${evalPromo.matchedCoupon.code}" 적용 -NT$${evalPromo.couponDiscount}`)}</div>` : ''}
         ${evalPromo.couponError ? `<div style="font-size:0.76rem; color:var(--red); font-weight:800; margin-top:5px;">⚠️ ${escapeHtml(evalPromo.couponError)}</div>` : ''}
       </div>
 
       <label class="option-label-row ${state.checkoutNeedCutlery ? 'checked' : ''}" style="margin-bottom:12px;">
         <div style="display:flex; align-items:center; gap:10px;">
           <input type="checkbox" ${state.checkoutNeedCutlery ? 'checked' : ''} onchange="setCheckoutMode('checkoutNeedCutlery', this.checked)" style="width:18px; height:18px; accent-color:var(--brand);">
-          <span style="font-weight:800; color:var(--text-primary);">🥢 ${t('需要一次性免洗餐具', 'Need Disposable Cutlery')}</span>
+          <span style="font-weight:800; color:var(--text-primary);">🥢 ${t('需要一次性免洗餐具', 'Need Disposable Cutlery', '使い捨てカトラリーが必要', '일회용 수저 필요')}</span>
         </div>
-        <span style="font-weight:900; color:var(--brand);">${storeCutleryPrice > 0 ? `+NT$ ${storeCutleryPrice}` : t('免費 ($0)', 'Free ($0)')}</span>
+        <span style="font-weight:900; color:var(--brand);">${storeCutleryPrice > 0 ? `+NT$ ${storeCutleryPrice}` : t('免費 ($0)', 'Free ($0)', '無料 ($0)', '무료 ($0)')}</span>
       </label>
 
-      <label class="field-label">⏰ ${t('取餐時間（預訂訂單受 15 分鐘產能配額保護，於取餐前 25 分鐘自動排入廚房）', 'Pickup Time')}</label>
+      <label class="field-label">⏰ ${t('取餐時間（預設立即製作；預訂受 15 分鐘產能配額保護）', 'Pickup Time (Default: Make Now; Pre-order uses 15m slot quotas)', '受取時間（標準：即時調理／予約は15分枠制御）', '픽업 시간 (기본: 바로 조리 / 예약은 15분 정원 제한)')}</label>
       ${isStorePausedCart ? `
         <div class="store-paused-blocker" style="margin-bottom:12px;">
           ⛔ ${t('本店目前為「暫停營業」狀態，暫停現場點餐與所有預訂服務，請稍後再試或改選其他營業中櫃位。', 'This store is currently PAUSED. Both immediate orders and pre-orders are unavailable.', '現在営業休止中のため、即時注文・予約ともに停止しております。', '현재 임시 영업 중지 상태이므로 즉시 주문 및 예약 모두 불가합니다.')}
@@ -7113,7 +7329,7 @@ function updateCartUI() {
       ` : ''}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
         <button type="button" class="filter-chip ${!isStorePausedCart && state.checkoutTimeMode === 'NOW' ? 'active' : ''}" ${(isStorePausedCart || (store && store.canOrderNow === false)) ? 'disabled style="opacity:0.45; cursor:not-allowed;"' : ''} onclick="setCheckoutMode('checkoutTimeMode', 'NOW')">
-          ${isStorePausedCart ? t('⛔ 暫停營業', '⛔ Paused', '⛔ 営業休止', '⛔ 영업 중지') : (store && store.canOrderNow === false ? escapeHtml(store.businessShortPillText || t('🌙 今日已打烊', '🌙 Closed Now')) : t(`⚡ 立即製作 (約 ${store ? store.avgPrepMinutes : 5} 分)`, `⚡ Make Now (~${store ? store.avgPrepMinutes : 5}m)`))}
+          ${isStorePausedCart ? t('⛔ 暫停營業', '⛔ Paused', '⛔ 営業休止', '⛔ 영업 중지') : (store && store.canOrderNow === false ? escapeHtml(store.businessShortPillText || t('🌙 今日已打烊', '🌙 Closed Now', '🌙 営業終了', '🌙 영업 종료')) : t(`⚡ 立即製作 (約 ${store ? store.avgPrepMinutes : 5} 分)`, `⚡ Make Now (~${store ? store.avgPrepMinutes : 5}m)`, `⚡ 今すぐ調理 (約${store ? store.avgPrepMinutes : 5}分)`, `⚡ 바로 조리 (약 ${store ? store.avgPrepMinutes : 5}분)`))}
         </button>
         <button type="button" class="filter-chip ${!isStorePausedCart && state.checkoutTimeMode === 'RESERVE' ? 'active' : ''}" ${isStorePausedCart ? 'disabled style="opacity:0.45; cursor:not-allowed;"' : ''} onclick="setCheckoutMode('checkoutTimeMode', 'RESERVE')">
           ${isStorePausedCart ? t('⛔ 暫停預訂', '⛔ Pre-order Closed', '⛔ 予約停止中', '⛔ 예약 불가') : `📅 ${t('預訂取餐', 'Pre-order', '時間指定予約', '예약 픽업')}`}
@@ -7124,15 +7340,15 @@ function updateCartUI() {
         <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px; padding:12px; margin-bottom:12px;">
           <div class="checkout-reserve-grid">
             <div>
-              <label class="field-label">📅 ${t('取餐日期 *', 'Pickup Date *')}</label>
+              <label class="field-label">📅 ${t('取餐日期 *', 'Pickup Date *', '受取日 *', '픽업 날짜 *')}</label>
               <input type="date" class="select-input" min="${getTodayDateStr()}" max="${getDateOffsetStr(14)}" value="${escapeHtml(state.checkoutReserveDate)}" onchange="setCheckoutMode('checkoutReserveDate', this.value)">
             </div>
             <div>
-              <label class="field-label">🕒 ${t('預訂取餐時段 *', 'Time Slot (15m Quota) *')}</label>
+              <label class="field-label">🕒 ${t('預訂取餐時段 *', 'Time Slot (15m Quota) *', '受取時間帯 (15分枠) *', '예약 시간대 (15분 정원) *')}</label>
               <select class="select-input" onchange="setCheckoutMode('checkoutReserveTime', this.value)">
                 ${slotsWithQuota.map(s => `
                   <option value="${s.time}" ${state.checkoutReserveTime === s.time ? 'selected' : ''} ${s.isFull || s.remaining < totalCount ? 'disabled' : ''}>
-                    ${s.time} ${s.isFull ? t('(已額滿)', '(Full)') : s.remaining < totalCount ? t(`(剩 ${s.remaining} 份，不足本次 ${totalCount} 份)`, `(${s.remaining} left < ${totalCount})`) : t(`(剩餘 ${s.remaining} 份產能${s.isPeak ? '・尖峰' : '・離峰'})`, `(${s.remaining} portions left)`)}
+                    ${s.time} ${s.isFull ? t('(已額滿)', '(Full)', '(満枠)', '(마감)') : s.remaining < totalCount ? t(`(剩 ${s.remaining} 份，不足本次 ${totalCount} 份)`, `(${s.remaining} left < ${totalCount})`, `(残${s.remaining}点 < ${totalCount})`, `(${s.remaining}개 남음 < ${totalCount})`) : t(`(剩餘 ${s.remaining} 份產能${s.isPeak ? '・尖峰' : '・離峰'})`, `(${s.remaining} portions left)`, `(残${s.remaining}食分)`, `(${s.remaining}개 여유)`)}
                   </option>
                 `).join('')}
               </select>
@@ -7141,16 +7357,16 @@ function updateCartUI() {
           ${selectedSlotMeta ? `
             <div class="slot-quota-info">
               <span class="slot-quota-badge ${selectedSlotMeta.remaining <= 5 ? 'busy' : 'free'}">
-                📊 ${t(`時段產能配額：已預訂 ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap} 份（尚餘 ${selectedSlotMeta.remaining} 份・本次點 ${totalCount} 份）`, `Slot Quota: ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap} portions (${selectedSlotMeta.remaining} left)`)}
+                📊 ${t(`時段產能配額：已預訂 ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap} 份（尚餘 ${selectedSlotMeta.remaining} 份・本次點 ${totalCount} 份）`, `Slot Quota: ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap} portions (${selectedSlotMeta.remaining} left)`, `時間枠配額：${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap}食（残${selectedSlotMeta.remaining}食）`, `시간대 정원: ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap}개 (${selectedSlotMeta.remaining}개 여유)`)}
               </span>
               <span style="color:var(--text-secondary);">
-                ${selectedSlotMeta.isPeak ? t('🔥 午間尖峰時段（原價供應）', '🔥 Peak Hours') : t('🟢 離峰順暢時段（適用分流優惠）', '🟢 Off-Peak')}
+                ${selectedSlotMeta.isPeak ? t('🔥 午間尖峰時段（原價供應）', '🔥 Peak Hours', '🔥 ピーク時間帯', '🔥 피크 시간대') : t('🟢 離峰順暢時段（適用分流優惠）', '🟢 Off-Peak', '🟢 オフピーク', '🟢 비혼잡 시간대')}
               </span>
             </div>
           ` : ''}
           ${isLargeOrderReserve && state.checkoutPayMethod === '現場櫃檯付現' ? `
             <div style="margin-top:8px; background:#FFFBEB; border:1px solid #F59E0B; color:#92400E; padding:8px 10px; border-radius:8px; font-size:0.76rem; font-weight:800;">
-              💡 大額團訂（滿 NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}）選擇現金付款時，訂單狀態將列為「待付款確認」，請於取餐前至櫃檯確認或改選行動支付。
+              💡 ${t(`大額團訂（滿 NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}）選擇現金付款時，訂單狀態將列為「待付款確認」，請於取餐前至櫃檯確認或改選行動支付。`, `Large cash pre-orders (NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}+) require counter confirmation before prep.`, `大口現金予約（NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}以上）は店頭確認が必要です。`, `대량 현금 예약(NT$${LARGE_ORDER_DEPOSIT_THRESHOLD} 이상)은 카운터 확인이 필요합니다.`)}
             </div>
           ` : ''}
         </div>
@@ -7158,31 +7374,32 @@ function updateCartUI() {
 
       <div style="margin-bottom:12px;">
         <label class="field-label" style="color:${(isReserve || isCashSelected) ? 'var(--red)' : 'var(--brand-dark)'};">
-          📱 ${t('聯絡手機號碼', 'Mobile Phone')} ${(isReserve || isCashSelected) ? t('*（預訂與付現必填完整手機號碼）', '* (Required for Pre-order / Cash)') : t('（選填，搭配取餐號可跨裝置找回取餐單）', '(Optional)')}
+          📱 ${t('聯絡手機號碼', 'Mobile Phone', '携帯電話番号', '휴대폰 번호')} ${(isReserve || isCashSelected) ? t('*（預訂與付現必填完整手機號碼）', '* (Required for Pre-order / Cash)', '*（予約・現金払いは必須）', '* (예약/현금 결제 시 필수)') : t('（選填，搭配取餐號可跨裝置找回取餐單）', '(Optional, for cross-device lookup)', '（任意・注文照会用）', '(선택, 주문 조회용)')}
         </label>
-        <input type="tel" id="checkoutPhoneInput" class="select-input" placeholder="${(isReserve || isCashSelected) ? '請輸入完整手機號碼，例如：0912345678' : '輸入手機號碼或末 3 碼（如 678），清除快取也能驗證找回'}" value="${escapeHtml(state.checkoutPhone)}" oninput="state.checkoutPhone=this.value">
+        <input type="tel" id="checkoutPhoneInput" class="select-input" placeholder="${(isReserve || isCashSelected) ? t('請輸入完整手機號碼，例如：0912345678', 'Enter mobile number, e.g. 0912345678', '携帯番号を入力 (例: 0912345678)', '휴대폰 번호 입력 (예: 0912345678)') : t('輸入手機號碼或末 3 碼（如 678）', 'Mobile number or last 3 digits', '携帯番号または下3桁', '휴대폰 번호 또는 뒷 3자리')}" value="${escapeHtml(state.checkoutPhone)}" oninput="state.checkoutPhone=this.value">
       </div>
 
       <div class="checkout-two-col-grid" style="margin-bottom:10px;">
         <div>
-          <label class="field-label">💳 ${t('付款方式', 'Payment Method')}</label>
+          <label class="field-label">💳 ${t('付款方式', 'Payment Method', 'お支払い方法', '결제 수단')}</label>
           <select class="select-input" onchange="setCheckoutMode('checkoutPayMethod', this.value)">
-            <option value="LINE Pay" ${state.checkoutPayMethod === 'LINE Pay' ? 'selected' : ''}>LINE Pay 行動支付</option>
+            <option value="LINE Pay" ${state.checkoutPayMethod === 'LINE Pay' ? 'selected' : ''}>${t('LINE Pay 行動支付', 'LINE Pay', 'LINE Pay', 'LINE Pay')}</option>
             <option value="現場櫃檯付現" ${state.checkoutPayMethod === '現場櫃檯付現' ? 'selected' : ''}>
-              ${isLargeOrderReserve ? t('現場櫃檯付訂確認 (大額團訂)', 'Cash Deposit at Counter') : t('取餐時櫃檯付現', 'Pay Cash at Pickup')}
+              ${isLargeOrderReserve ? t('現場櫃檯付訂確認 (大額團訂)', 'Cash Deposit at Counter', '店頭前金確認', '카운터 선금 확인') : t('取餐時櫃檯付現', 'Pay Cash at Pickup', '受取時店頭現金', '픽업 시 현장 현금')}
             </option>
-            ${allowPostPayHere ? `<option value="內用餐後結帳" ${state.checkoutPayMethod === '內用餐後結帳' ? 'selected' : ''}>🍽️ ${t('內用餐後至櫃檯結帳', 'Pay After Meal (Dine-in)')}</option>` : ''}
+            ${allowPostPayHere ? `<option value="內用餐後結帳" ${state.checkoutPayMethod === '內用餐後結帳' ? 'selected' : ''}>🍽️ ${t('內用餐後至櫃檯結帳', 'Pay After Meal (Dine-in)', '食後カウンター会計', '식후 카운터 결제')}</option>` : ''}
           </select>
         </div>
         <div>
-          <label class="field-label">📱 ${t('手機載具條碼 (選填)', 'Carrier Barcode (Optional)')}</label>
-          <input type="text" maxlength="8" class="select-input" style="font-family:monospace; text-transform:uppercase;" placeholder="/AB12345" value="${escapeHtml(state.checkoutCarrierCode || '')}" oninput="state.checkoutCarrierCode=this.value.trim().toUpperCase().slice(0,8)">
+          <label class="field-label">🏢 ${t('統一編號 (8碼，選填)', 'Tax ID (8 digits, Optional)', '統一番号 (8桁・任意)', '사업자번호 (8자리, 선택)')}</label>
+          <input type="tel" id="checkoutTaxIdInput" maxlength="8" inputmode="numeric" class="select-input" style="font-family:monospace;" placeholder="${t('例：24536806', 'e.g. 24536806', '例：24536806', '예: 24536806')}" value="${escapeHtml(state.checkoutTaxId || '')}" oninput="state.checkoutTaxId=this.value.replace(/\\D/g,'').slice(0,8); updateCartUI();">
+          ${taxIdValidationHint}
         </div>
       </div>
 
       <div>
-        <label class="field-label">📝 ${t('飲食備註 (選填)', 'Order Notes (Optional)')}</label>
-        <input type="text" class="select-input" placeholder="${t('例：飯少、湯分開裝、不要蔥', 'e.g. Less rice, sauce on side')}" value="${escapeHtml(state.checkoutNote)}" oninput="state.checkoutNote=this.value">
+        <label class="field-label">📝 ${t('飲食備註 (選填)', 'Order Notes (Optional)', 'ご要望・メモ（任意）', '주문 요청사항 (선택)')}</label>
+        <input type="text" class="select-input" placeholder="${t('例：飯少、湯分開裝、不要蔥', 'e.g. Less rice, sauce on side', '例：ご飯少なめ、ネギ抜き', '예: 밥 적게, 소스 따로')}" value="${escapeHtml(state.checkoutNote)}" oninput="state.checkoutNote=this.value">
       </div>
     </div>
   `;
@@ -7192,8 +7409,8 @@ function updateCartUI() {
   const modalTotalEl = document.getElementById('cartModalTotal');
   if (modalTotalEl) {
     const tags = [];
-    if (cutleryFee > 0) tags.push(`含免洗餐具+$${cutleryFee}`);
-    if (discount > 0) tags.push(`離峰折抵-$${discount}`);
+    if (cutleryFee > 0) tags.push(t(`含免洗餐具+$${cutleryFee}`, `Cutlery +$${cutleryFee}`, `カトラリー+$${cutleryFee}`, `수저 +$${cutleryFee}`));
+    if (discount > 0) tags.push(t(`優惠折抵-$${discount}`, `Promo -$${discount}`, `割引-$${discount}`, `할인 -$${discount}`));
     modalTotalEl.innerHTML = tags.length > 0
       ? `<span style="font-size:0.8rem; color:var(--green); margin-right:6px;">(${tags.join(' / ')})</span>NT$ ${finalTotal}`
       : `NT$ ${finalTotal}`;
@@ -7358,10 +7575,15 @@ async function submitStudentCartOrder() {
   const cleanPhone = (state.checkoutPhone || '').replace(/\D/g, '');
   const cleanTaxId = (state.checkoutTaxId || '').replace(/\D/g, '');
 
-  if (cleanTaxId && cleanTaxId.length !== 8) {
-    state.checkoutErrorBannerMsg = '統一編號格式錯誤，請輸入 8 位數字或留空。';
+  if (cleanTaxId && !validateTaiwanTaxId(cleanTaxId)) {
+    state.checkoutErrorBannerMsg = t(
+      '統一編號格式或邏輯檢核碼錯誤，請輸入有效之 8 碼台灣統一編號或留空。',
+      'Invalid Taiwan Tax ID checksum. Enter a valid 8-digit Tax ID or leave blank.',
+      '統一番号（8桁）の形式またはチェックサムが正しくありません。',
+      '유효한 8자리 대만 사업자등록번호를 입력하거나 비워 두세요.'
+    );
     updateCartUI();
-    showToast('⚠️ 統一編號須為 8 位數字！');
+    showToast(`⚠️ ${t('統一編號邏輯檢核未通過！', 'Invalid 8-digit Taiwan Tax ID!', '統一番号エラー', '사업자번호 오류')}`);
     return;
   }
 
@@ -7422,8 +7644,6 @@ async function submitStudentCartOrder() {
   const promoApplied = promoActive ? store.promoText : (evalPromo.matchedCoupon ? `優惠碼 ${evalPromo.matchedCoupon.code}` : '一般點餐');
   const generatedOrderId = generateOrderToken();
   const isDineInPostPay = Boolean(state.checkoutPayMethod === '內用餐後結帳' && store.allowDineInPostPay && state.checkoutDineType === '內用自取' && !isReserve);
-  const cleanTableNumber = state.checkoutDineType === '內用自取' ? String(state.checkoutTableNumber || '').trim().slice(0, 20) : '';
-  const cleanCarrierCode = String(state.checkoutCarrierCode || '').trim().toUpperCase().slice(0, 8);
 
   const isLargeOrderCashReserve = isReserve && finalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && state.checkoutPayMethod === '現場櫃檯付現';
   const paymentDeadline = isLargeOrderCashReserve ? normalizeDateStr(state.checkoutReserveDate) : '';
@@ -7471,8 +7691,6 @@ async function submitStudentCartOrder() {
     studentId: isReserve ? '📅 預訂點餐' : '📱 掃碼點餐',
     orderSource: isReserve ? '📅 預訂點餐' : '📱 掃碼點餐',
     dineType: state.checkoutDineType,
-    tableNumber: cleanTableNumber,
-    carrierCode: cleanCarrierCode,
     couponCode: evalPromo.matchedCoupon ? evalPromo.matchedCoupon.code : '',
     isDineInPostPay: isDineInPostPay,
     customerNote: (state.checkoutNote || '').trim(),
@@ -7612,6 +7830,9 @@ async function submitStudentCartOrder() {
   state.checkoutNote = '';
   state.checkoutErrorBannerMsg = '';
   saveStudentCartDraft();
+  if (state.lineProfile && state.lineProfile.lineUserId && String(state.lineProfile.lineUserId).startsWith('U')) {
+    saveMemberProfileToCloud();
+  }
   closeCartModal();
   navigateToOrderTicket(authoritativeOrder.orderId);
   syncWatchedOrdersToServiceWorker(true);
@@ -7620,12 +7841,22 @@ async function submitStudentCartOrder() {
   showToast(`🎉 點餐成功！單號 #${authoritativeOrder.pickupNumber}（核銷碼 ${authoritativeOrder.verificationCode}）`);
 }
 
-// ==================== 4. 智慧選餐顧問 ====================
+// ==================== 4. 智慧選餐顧問 (v25.0 完整 4 語系支援 zh-TW / en / ja / ko) ====================
+function askAiConciergePreset(presetKey) {
+  const map = {
+    FAST: t('我只剩 10 分鐘就要上課，推薦最快拿到的主餐', 'I only have 10 minutes before class, recommend the fastest meal', '授業まであと10分、一番早く受け取れるメニューを教えて', '수업까지 10분 남았는데 가장 빨리 나오는 메뉴 추천해 줘'),
+    BUDGET: t('預算 100 元以內、有優惠的超值正餐', 'Recommend a budget meal under NT$100 with great value', '予算NT$100以内でお得なメニューをおすすめして', '예산 NT$100 이하 가성비 좋은 메뉴 추천해 줘'),
+    PROTEIN: t('運動完想吃高蛋白質的大份量肉食主餐', 'High-protein, hearty meat meal after workout', '運動後に高タンパクでボリュームのある肉料理が食べたい', '운동 후 먹기 좋은 고단백 든든한 고기 메뉴 추천해 줘'),
+    SPICY: t('想吃韓式、椒麻或辣味，且不用排隊的餐點', 'Something spicy or Korean-style with a short wait', '韓国風やピリ辛で並ばずにすぐ買えるメニューは？', '줄 서지 않고 먹을 수 있는 매콤하거나 한식 메뉴 추천해 줘')
+  };
+  return askAiConcierge(map[presetKey] || presetKey);
+}
+
 async function askAiConcierge(presetQuery) {
   const inputEl = document.getElementById('aiUserQueryInput');
   const query = (presetQuery || (inputEl ? inputEl.value.trim() : '')).trim();
   if (!query) {
-    showToast('💬 請輸入您的問題或點擊上方快捷標籤！');
+    showToast(`💬 ${t('請輸入您的問題或點擊上方快捷標籤！', 'Please enter a question or tap a quick tag!', '質問を入力するか上のタグを選んでください！', '질문을 입력하거나 위 태그를 눌러 주세요!')}`);
     inputEl?.focus();
     return;
   }
@@ -7643,10 +7874,14 @@ async function askAiConcierge(presetQuery) {
   renderAiChatRoom(true);
 
   enrichStoresAndAi();
-  const openCampusStores = state.stores.filter(s => s.campus === state.campus && s.isOpen !== false);
-  const fallbackCampusStores = state.stores.filter(s => s.campus === state.campus);
-  const activeStoresPool = openCampusStores.length > 0 ? openCampusStores : fallbackCampusStores;
+  const visiblePool = getVisibleStudentStores();
+  const openVisible = visiblePool.filter(s => s.isOpen !== false);
+  const openCampusStores = openVisible.filter(s => s.campus === state.campus);
+  const activeStoresPool = openCampusStores.length > 0 ? openCampusStores : (openVisible.length > 0 ? openVisible : visiblePool);
   if (activeStoresPool.length === 0) return;
+
+  const curLang = getCurrentAppLang();
+  const localEngineName = t('MealFlow 快速條件篩選助手', 'MealFlow Smart Meal Advisor', 'MealFlow スマートメニュー案内', 'MealFlow 스마트 메뉴 도우미');
 
   try {
     const res = await fetch(GAS_URL, {
@@ -7656,7 +7891,8 @@ async function askAiConcierge(presetQuery) {
       body: JSON.stringify({
         action: 'askAiConcierge',
         campus: state.campus,
-        query: query
+        query: query,
+        lang: curLang
       })
     });
     const data = await res.json();
@@ -7670,25 +7906,35 @@ async function askAiConcierge(presetQuery) {
   const fastestStore = activeStoresPool.slice().sort((a, b) => a.avgPrepMinutes - b.avgPrepMinutes || b.aiScore - a.aiScore)[0];
   const busiestStore = activeStoresPool.slice().sort((a, b) => b.avgPrepMinutes - a.avgPrepMinutes)[0];
   const actualWaitDiff = busiestStore.avgPrepMinutes - fastestStore.avgPrepMinutes;
-  const firstAvailDish = (fastestStore.menus || []).find(m => !m.soldOut) || fastestStore.menus[0];
+  const firstAvailDish = (fastestStore.menus || []).find(m => !m.soldOut) || (fastestStore.menus && fastestStore.menus[0]) || { id: 'M01', name: '招牌主餐', price: 75 };
 
-  if (/^(你好|您好|哈囉|嗨|hi|hello|hey|在嗎|你是誰|測試|早安|午安|晚安|幹嘛|能做什麼)[！!？?\s]*$/i.test(q)) {
-    const storeNames = activeStoresPool.map(s => `${s.name}(約${s.avgPrepMinutes}分)`).join('、');
+  if (/^(你好|您好|哈囉|嗨|hi|hello|hey|help|who are you|test|在嗎|你是誰|測試|早安|午安|晚安|こんにちは|こんばんは|おはよう|안녕|안녕하세요)[！!？?\s]*$/i.test(q)) {
+    const storeNames = activeStoresPool.map(s => `${trTerm(s.name)} (~${s.avgPrepMinutes}${t('分', 'm', '分', '분')})`).join(curLang === 'zh-TW' ? '、' : ', ');
     appendAiAssistantReply({
-      reasoning: `👋 你好！我是 MealFlow 智慧選餐顧問。目前「${state.campus}」正常營業中的餐廳有：${storeNames}。你可以直接問我：「推薦 $100 內不排隊的餐」、「想吃辣的麵」、「哪家有送優惠？」或「無痕模式怎麼找回訂單？」，我會自動幫你排除已售罄品項與休息中店家！`,
+      reasoning: t(
+        `👋 你好！我是 MealFlow 智慧選餐顧問。目前營業中的餐廳有：${storeNames}。你可以問我「100元內快取」、「想吃辣的」或「怎麼找回訂單？」，我會自動排除售罄品項！`,
+        `👋 Hi! I'm MealFlow Smart Advisor. Open stores right now: ${storeNames}. Ask me for meals under NT$100, spicy picks, fastest pickup, or how to look up an order — sold-out items are excluded automatically!`,
+        `👋 こんにちは！MealFlowメニュー案内です。現在営業中：${storeNames}。「NT$100以内」「一番早いメニュー」「ピリ辛」など気軽に聞いてください！`,
+        `👋 안녕하세요! MealFlow 스마트 메뉴 도우미입니다. 현재 영업 중인 매장: ${storeNames}. "NT$100 이하", "가장 빠른 메뉴", "매콤한 메뉴" 등을 물어보세요!`
+      ),
       storeId: fastestStore.id,
       menuId: firstAvailDish.id,
-      engine: 'MealFlow 快速條件篩選助手'
+      engine: localEngineName
     });
     return;
   }
 
-  if (q.includes('預訂') || q.includes('預約') || q.includes('現金') || q.includes('付錢') || q.includes('付款') || q.includes('餐具') || q.includes('找回') || q.includes('查單') || q.includes('無痕')) {
+  if (/(預訂|預約|現金|付錢|付款|餐具|找回|查單|無痕|pre-?order|reserve|cash|pay|lookup|find order|cancel|cutlery|予約|現金|照会|예약|현금|조회)/.test(q)) {
     appendAiAssistantReply({
-      reasoning: `📋 取餐與查單說明：1️⃣ 為保護點餐隱私，跨裝置或無痕視窗查單請輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」雙重驗證找回。2️⃣ 每張電子取餐單與現場小票皆附有標準可掃描 ISO QR Code 供手機追蹤進度與櫃檯鏡頭秒速核銷。3️⃣ 離峰優惠限「立即製作」或「非 11:45~12:45 尖峰之預訂時段」使用！`,
+      reasoning: t(
+        `📋 點餐與查單說明：1️⃣ 跨裝置找回訂單請輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」。2️⃣ 每張電子取餐憑證皆附有可掃描 ISO QR Code 供櫃檯秒速核銷。3️⃣ 預設為立即製作，也可於購物車切換預訂取餐！`,
+        `📋 Ordering & Lookup Guide: 1) Find orders across devices using your 6-char verification code or Pickup # + last 3 phone digits. 2) Every digital ticket includes a scannable QR code for fast counter pickup. 3) Default mode is Make Now, and you can switch to Pre-order in Cart.`,
+        `📋 注文・照会ガイド：1) 他端末からの照会は6桁認証コードまたは受取番号＋携帯下3桁をご利用ください。2) 電子チケットのQRコードを店頭で提示して素早く受取できます。3) 標準は即時調理で、カート内で時間指定予約も選択できます。`,
+        `📋 주문 및 조회 안내: 1) 다른 기기에서 주문 조회 시 6자리 인증코드 또는 픽업번호+전화 뒤 3자리를 입력하세요. 2) 전자 티켓의 QR 코드를 카운터에 보여주면 빠르게 픽업할 수 있습니다. 3) 기본은 바로 조리이며 장바구니에서 예약 픽업으로 변경할 수 있습니다.`
+      ),
       storeId: fastestStore.id,
       menuId: firstAvailDish.id,
-      engine: 'MealFlow 快速條件篩選助手'
+      engine: localEngineName
     });
     return;
   }
@@ -7697,49 +7943,91 @@ async function askAiConcierge(presetQuery) {
   activeStoresPool.forEach(s => {
     (s.menus || []).forEach(m => {
       if (m.soldOut) return;
-      const isDrinkOrSide = m.price <= 45 && (m.name.includes('茶') || m.name.includes('湯') || m.name.includes('飲') || m.name.includes('豆漿') || m.name.includes('豆腐'));
+      const nm = `${m.name || ''} ${m.nameEn || ''}`.toLowerCase();
+      const cat = String(m.category || '').toLowerCase();
+      const isDrinkOrSide = m.price <= 45 && /(茶|湯|飲|豆漿|豆腐|tea|soup|drink|soy milk)/.test(nm);
       let score = s.aiScore + (isDrinkOrSide ? -20 : 10);
       const hitReasons = [];
 
-      if (q.includes('趕') || q.includes('10分') || q.includes('快') || q.includes('免排隊') || q.includes('不排隊')) {
+      if (/(趕|10分|快|免排隊|不排隊|fast|quick|10\s*min|hurry|short wait|早い|10分|빨리|빠른)/.test(q)) {
         score += Math.max(0, (22 - s.avgPrepMinutes) * 3.5);
-        hitReasons.push(`目前佇列順暢僅需約 ${s.avgPrepMinutes} 分鐘`);
+        hitReasons.push(t(
+          `目前佇列順暢僅需約 ${s.avgPrepMinutes} 分鐘`,
+          `fast queue (~${s.avgPrepMinutes} min wait)`,
+          `待ち時間わずか約${s.avgPrepMinutes}分`,
+          `현재 대기 시간 약 ${s.avgPrepMinutes}분으로 빠름`
+        ));
       }
 
-      const budgetMatch = q.match(/(\d{2,3})\s*(?:元|塊|以內|內)/) || (q.includes('100') ? [null, '100'] : null);
-      if (budgetMatch || q.includes('預算') || q.includes('便宜') || q.includes('cp') || q.includes('優惠') || q.includes('折')) {
+      const budgetMatch = q.match(/(?:nt\$|\$)?\s*(\d{2,3})\s*(?:元|塊|以內|內|ntd|twd|bucks|dollars)?/i) || (q.includes('100') ? [null, '100'] : null);
+      if (budgetMatch || /(預算|便宜|cp|優惠|折|budget|cheap|value|under|deal|promo|安い|お得|予算|예산|가성비|저렴)/.test(q)) {
         const limit = budgetMatch ? parseInt(budgetMatch[1], 10) : 100;
         const netPrice = m.price - (m.price >= AI_DISCOUNT_MIN_SUBTOTAL ? (s.promoDiscount || 0) : 0);
         if (netPrice <= limit && !isDrinkOrSide) {
           score += 42;
-          hitReasons.push(`價格 NT$${m.price} 符合 $${limit} 內高划算度預算`);
+          hitReasons.push(t(
+            `價格 NT$${m.price} 符合 $${limit} 內高划算度預算`,
+            `great value at NT$${m.price} (within NT$${limit} budget)`,
+            `NT$${m.price}で予算NT$${limit}以内の高コスパ`,
+            `NT$${m.price}로 NT$${limit} 예산 내 가성비 우수`
+          ));
         } else if (netPrice > limit) {
           score -= 30;
         }
-        if (s.promoMode !== 'none') {
+        if (s.promoMode !== 'none' && s.promoText) {
           score += 20;
-          hitReasons.push(`搭配「${s.promoText}」`);
+          hitReasons.push(t(`搭配「${s.promoText}」`, `with store promo`, `店舗割引あり`, `매장 할인 혜택 포함`));
         }
       }
 
-      if (q.includes('辣') || q.includes('韓') || q.includes('椒麻') || q.includes('重口味') || q.includes('泡菜') || q.includes('紅油') || q.includes('川味')) {
-        if (m.name.includes('椒麻') || m.name.includes('泡菜') || m.name.includes('辣') || m.name.includes('紅油') || m.name.includes('蔥爆') || m.name.includes('咖哩')) {
+      if (/(辣|韓|椒麻|重口味|泡菜|紅油|川味|spicy|hot|kimchi|korean|chili|辛い|ピリ辛|キムチ|매운|매콤|김치)/.test(q)) {
+        const hasSpicyTag = Array.isArray(m.dietaryTags) && m.dietaryTags.includes('SPICY');
+        if (hasSpicyTag || /(椒麻|泡菜|辣|紅油|蔥爆|咖哩|spicy|kimchi|curry|chili)/.test(nm)) {
           score += 55;
-          hitReasons.push(`香辣夠味符合您的重口味偏好`);
+          hitReasons.push(t(
+            `香辣夠味符合您的重口味偏好`,
+            `matches your spicy & bold flavor craving`,
+            `ピリ辛でしっかりした味わい`,
+            `매콤하고 진한 맛 취향에 딱 맞음`
+          ));
         }
       }
 
-      if (q.includes('肉') || q.includes('蛋白') || q.includes('運動') || q.includes('大份') || q.includes('飽') || q.includes('牛') || q.includes('豬') || q.includes('雞')) {
-        if (m.name.includes('牛') || m.name.includes('豬排') || m.name.includes('雞腿') || m.name.includes('白肉') || m.name.includes('排骨') || m.name.includes('漢堡排')) {
+      if (/(肉|蛋白|運動|大份|飽|牛|豬|雞|protein|meat|workout|hearty|beef|pork|chicken|beef|タンパク|肉|満腹|단백|고기|든든)/.test(q)) {
+        if (/(牛|豬|雞|燒肉|鮪魚|肉鬆|培根|火腿|卡拉|排骨|漢堡|beef|pork|chicken|tuna|bacon|ham)/.test(nm)) {
           score += 48;
-          hitReasons.push(`大份量肉食主餐、蛋白質充足`);
+          hitReasons.push(t(
+            `蛋白質充足、份量飽足`,
+            `protein-rich & filling main choice`,
+            `タンパク質豊富で食べ応え抜群`,
+            `단백질이 풍부하고 든든한 메뉴`
+          ));
         }
       }
 
-      ['烏龍', '麵', '水餃', '鍋貼', '飯捲', '丼', '便當', '咖哩', '涼麵', '抄手', '炸雞', '豆腐', '湯', '茶', '豆漿'].forEach(kw => {
-        if (q.includes(kw) && (m.name.includes(kw) || (m.category && m.category.includes(kw)))) {
+      const keywordPairs = [
+        ['飯捲', 'kimbap', 'roll', 'キンパ', '김밥'],
+        ['抓餅', 'pancake', 'ネギパイ', '총좌빙'],
+        ['烏龍', 'udon', 'うどん', '우동'],
+        ['麵', 'noodle', '麺', '면'],
+        ['水餃', '鍋貼', 'dumpling', 'potsticker', '餃子', '만두'],
+        ['丼', 'donburi', 'rice bowl', '丼', '덮밥'],
+        ['便當', 'bento', '弁当', '도시락'],
+        ['咖哩', 'curry', 'カレー', '카레'],
+        ['炸', 'crispy', 'fried', '揚げ', '튀김'],
+        ['湯', 'soup', 'スープ', '국'],
+        ['茶', 'tea', '茶', '차']
+      ];
+      keywordPairs.forEach(group => {
+        const matchedQ = group.find(kw => q.includes(kw));
+        if (matchedQ && group.some(kw => nm.includes(kw) || cat.includes(kw))) {
           score += 65;
-          hitReasons.push(`精準命中您想吃的「${kw}」`);
+          hitReasons.push(t(
+            `精準命中您想吃的「${matchedQ}」`,
+            `matches your "${matchedQ}" craving`,
+            `ご希望の「${matchedQ}」にぴったり`,
+            `원하시는 "${matchedQ}" 메뉴에 정확히 일치`
+          ));
         }
       });
 
@@ -7748,20 +8036,46 @@ async function askAiConcierge(presetQuery) {
   });
 
   candidates.sort((a, b) => b.totalScore - a.totalScore);
-  const best = candidates[0] || { store: fastestStore, menu: firstAvailDish, hitReasons: ['店內熱銷且目前正常供應中'] };
+  const best = candidates[0] || {
+    store: fastestStore,
+    menu: firstAvailDish,
+    hitReasons: [t('店內熱銷且目前正常供應中', 'popular in-stock house favorite', '人気の提供中メニュー', '현재 주문 가능한 인기 메뉴')]
+  };
   const alternatives = candidates.slice(1, 3);
+  const bestStoreName = trTerm(best.store.name);
+  const bestDishName = trDishName(best.menu);
 
-  let queueNote = `目前「${best.store.name}」佇列順暢，約 ${best.store.avgPrepMinutes} 分鐘即可取餐`;
+  let queueNote = t(
+    `目前「${bestStoreName}」佇列順暢，約 ${best.store.avgPrepMinutes} 分鐘即可取餐`,
+    `${bestStoreName} is moving smoothly (~${best.store.avgPrepMinutes} min wait)`,
+    `現在「${bestStoreName}」はスムーズで約${best.store.avgPrepMinutes}分で受取可能`,
+    `현재 "${bestStoreName}" 대기 시간이 약 ${best.store.avgPrepMinutes}분으로 원활합니다`
+  );
   if (busiestStore.id !== best.store.id && actualWaitDiff >= 4) {
-    queueNote = `目前「${busiestStore.name}」需等候約 ${busiestStore.avgPrepMinutes} 分鐘，改點「${best.store.name}」僅需 ${best.store.avgPrepMinutes} 分鐘（省下 ${actualWaitDiff} 分鐘）`;
+    queueNote = t(
+      `目前「${trTerm(busiestStore.name)}」需等約 ${busiestStore.avgPrepMinutes} 分，改點「${bestStoreName}」僅需 ${best.store.avgPrepMinutes} 分（省 ${actualWaitDiff} 分）`,
+      `Save ~${actualWaitDiff} min vs ${trTerm(busiestStore.name)} (${busiestStore.avgPrepMinutes}m) — ${bestStoreName} is ready in ~${best.store.avgPrepMinutes}m`,
+      `「${trTerm(busiestStore.name)}」(${busiestStore.avgPrepMinutes}分)より${actualWaitDiff}分短縮、約${best.store.avgPrepMinutes}分で受取可能`,
+      `"${trTerm(busiestStore.name)}"(${busiestStore.avgPrepMinutes}분)보다 ${actualWaitDiff}분 절약되어 약 ${best.store.avgPrepMinutes}분 만에 픽업 가능`
+    );
   }
 
   const whyText = best.hitReasons.length > 0
-    ? best.hitReasons.join('，且')
-    : `為校區內綜合評價 (${best.store.rating}★) 與出餐效率最佳的主廚招牌`;
+    ? best.hitReasons.join(curLang === 'zh-TW' ? '，且' : ', ')
+    : t(
+        `為校區內綜合評價 (${best.store.rating}★) 與出餐效率最佳的主廚招牌`,
+        `top-rated (${best.store.rating}★) fast house signature`,
+        `高評価(${best.store.rating}★)＆スピード提供の看板メニュー`,
+        `높은 평점(${best.store.rating}★)과 빠른 조리 속도의 대표 메뉴`
+      );
 
   appendAiAssistantReply({
-    reasoning: `💡 為您推薦「${best.store.name}」正常供應中的【${best.menu.name} (NT$${best.menu.price})】！原因：${whyText}。${queueNote}${best.store.promoMode !== 'none' ? `，立即製作再享「${best.store.promoText}」！` : '。'}`,
+    reasoning: t(
+      `💡 為您推薦「${bestStoreName}」的【${bestDishName} (NT$${best.menu.price})】！原因：${whyText}。${queueNote}。`,
+      `💡 Recommended: ${bestDishName} (NT$${best.menu.price}) from ${bestStoreName}! Why: ${whyText}. ${queueNote}.`,
+      `💡 おすすめ：「${bestStoreName}」の【${bestDishName} (NT$${best.menu.price})】！理由：${whyText}。${queueNote}。`,
+      `💡 추천 메뉴: "${bestStoreName}"의 [${bestDishName} (NT$${best.menu.price})]! 이유: ${whyText}. ${queueNote}.`
+    ),
     storeId: best.store.id,
     menuId: best.menu.id,
     alternatives: alternatives.map(a => ({
@@ -7769,10 +8083,10 @@ async function askAiConcierge(presetQuery) {
       storeName: a.store.name,
       waitMin: a.store.avgPrepMinutes,
       menuId: a.menu.id,
-      menuName: a.menu.name,
+      menuName: trDishName(a.menu),
       price: a.menu.price
     })),
-    engine: 'MealFlow 快速條件篩選助手'
+    engine: localEngineName
   });
 }
 
@@ -7798,7 +8112,7 @@ function renderAiChatRoom(isLoading = false) {
   const respBox = document.getElementById('aiConciergeResponse');
   if (!respBox) return;
 
-  const campusStores = state.stores.filter(s => s.campus === state.campus);
+  const visibleStores = getVisibleStudentStores();
 
   const historyHtml = state.aiChatMessages.map(msg => {
     if (msg.role === 'user') {
@@ -7810,19 +8124,19 @@ function renderAiChatRoom(isLoading = false) {
     }
 
     const aiResult = msg.aiResult || {};
-    const targetStore = state.stores.find(s => s.id === aiResult.storeId || s.name === aiResult.storeId) || campusStores[0] || state.stores[0];
+    const targetStore = state.stores.find(s => s.id === aiResult.storeId || s.name === aiResult.storeId) || visibleStores[0] || state.stores[0];
     const targetMenu = (targetStore.menus || []).find(m => (m.id === aiResult.menuId || m.name === aiResult.menuId) && !m.soldOut)
       || (targetStore.menus || []).find(m => !m.soldOut)
       || (targetStore.menus && targetStore.menus[0])
-      || { id: 'M01', name: '招牌主餐', price: 100 };
+      || { id: 'M01', name: '招牌主餐', price: 75 };
 
     const altHtml = Array.isArray(aiResult.alternatives) && aiResult.alternatives.length > 0
       ? `
         <div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--border); font-size:0.75rem; color:var(--text-secondary);">
-          <strong style="color:#4338CA;">💡 其他快取選擇：</strong>
+          <strong style="color:#4338CA;">💡 ${t('其他快取選擇：', 'Other Fast Picks:', 'その他のおすすめ：', '다른 빠른 추천:')}</strong>
           ${aiResult.alternatives.map(alt => `
             <button type="button" onclick="enterStoreOrdering(${escapeJsAttr(alt.storeId)}, ${escapeJsAttr(alt.menuId)})" style="border:1px solid #C7D2FE; background:#EEF2FF; color:#312E81; border-radius:6px; padding:3px 8px; margin-left:4px; margin-top:4px; font-size:0.72rem; font-weight:700;">
-              ${escapeHtml(alt.storeName)}・${escapeHtml(alt.menuName)} ($${alt.price} / 約${alt.waitMin}分) ➔
+              ${escapeHtml(trTerm(alt.storeName))}・<span data-dish-name="1">${escapeHtml(alt.menuName)}</span> ($${alt.price} / ~${alt.waitMin}${t('分', 'm', '分', '분')}) ➔
             </button>
           `).join('')}
         </div>
@@ -7834,21 +8148,21 @@ function renderAiChatRoom(isLoading = false) {
         <div class="chat-bubble">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
             <span style="font-size:0.7rem; font-weight:800; color:#4338CA; background:#EEF2FF; padding:2px 8px; border-radius:999px;">
-              🤖 ${escapeHtml(aiResult.engine || '智慧選餐顧問')}
+              🤖 ${escapeHtml(aiResult.engine || t('智慧選餐顧問', 'Smart Meal Advisor', 'AIメニュー案内', '스마트 메뉴 도우미'))}
             </span>
-            <span style="font-size:0.72rem; font-weight:800; color:var(--green);">⚡ ${escapeHtml(targetStore.name)} 約 ${targetStore.avgPrepMinutes} 分鐘取餐</span>
+            <span style="font-size:0.72rem; font-weight:800; color:var(--green);">⚡ ${escapeHtml(trTerm(targetStore.name))} ${t(`約 ${targetStore.avgPrepMinutes} 分鐘取餐`, `~${targetStore.avgPrepMinutes} min pickup`, `約${targetStore.avgPrepMinutes}分`, `약 ${targetStore.avgPrepMinutes}분`)}</span>
           </div>
           <p style="font-size:0.85rem; color:var(--text-primary); line-height:1.5; margin-bottom:8px;">
             ${escapeHtml(aiResult.reasoning)}
           </p>
           <div style="display:flex; justify-content:space-between; align-items:center; background:#FFF7ED; padding:8px 12px; border-radius:10px; border:1.5px solid #FDBA74; flex-wrap:wrap; gap:8px;">
             <div>
-              <div style="font-size:0.7rem; font-weight:800; color:var(--brand-dark);">🍽️ 推薦一鍵點餐</div>
-              <strong style="font-size:0.9rem; color:var(--text-primary);">${escapeHtml(targetStore.name)} — ${escapeHtml(targetMenu.name)}</strong>
+              <div style="font-size:0.7rem; font-weight:800; color:var(--brand-dark);">🍽️ ${t('推薦一鍵點餐', '1-Tap Recommended Order', 'おすすめワンタップ注文', '추천 원클릭 주문')}</div>
+              <strong style="font-size:0.9rem; color:var(--text-primary);">${escapeHtml(trTerm(targetStore.name))} — <span data-dish-name="1">${escapeHtml(trDishName(targetMenu))}</span></strong>
               <span style="color:var(--red); font-weight:900; margin-left:6px; font-size:0.95rem;">NT$ ${targetMenu.price}</span>
             </div>
             <button type="button" class="btn-tip-action" style="padding:7px 14px; font-size:0.8rem;" onclick="enterStoreOrdering(${escapeJsAttr(targetStore.id)}, ${escapeJsAttr(targetMenu.id)})">
-              ⚡ 點選此餐點 ➔
+              ⚡ ${t('點選此餐點 ➔', 'Order This ➔', 'これを注文 ➔', '이 메뉴 주문 ➔')}
             </button>
           </div>
           ${altHtml}
@@ -7861,15 +8175,15 @@ function renderAiChatRoom(isLoading = false) {
     <div class="chat-msg-row assistant">
       <div class="chat-bubble" style="display:flex; align-items:center; gap:8px; color:#4338CA; font-weight:800;">
         <span class="sync-dot syncing" style="width:9px; height:9px;"></span>
-        <span>🧠 正在分析「${escapeHtml(state.campus)}」營業中店家佇列與供應中菜單...</span>
+        <span>🧠 ${t(`正在分析「${state.campus}」營業中店家佇列與供應中菜單...`, `Analyzing live wait times and in-stock menus...`, `リアルタイムの待ち時間と提供中メニューを分析中...`, `실시간 대기 시간과 주문 가능한 메뉴를 분석 중...`)}</span>
       </div>
     </div>
   ` : '';
 
   respBox.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--border);">
-      <span style="font-size:0.75rem; font-weight:900; color:var(--indigo);">💬 選餐顧問多輪對話紀錄 (${state.aiChatMessages.length} 則)</span>
-      <button type="button" onclick="clearAiChatHistory()" style="border:none; background:transparent; color:var(--text-muted); font-size:0.72rem; font-weight:700; cursor:pointer;">🗑️ 清空對話</button>
+      <span style="font-size:0.75rem; font-weight:900; color:var(--indigo);">💬 ${t(`選餐顧問對話紀錄 (${state.aiChatMessages.length} 則)`, `Advisor Chat (${state.aiChatMessages.length})`, `相談履歴 (${state.aiChatMessages.length}件)`, `추천 대화 기록 (${state.aiChatMessages.length})`)}</span>
+      <button type="button" onclick="clearAiChatHistory()" style="border:none; background:transparent; color:var(--text-muted); font-size:0.72rem; font-weight:700; cursor:pointer;">🗑️ ${t('清空對話', 'Clear', 'クリア', '비우기')}</button>
     </div>
     <div class="ai-chat-history">${historyHtml}${loadingHtml}</div>
   `;
@@ -8159,22 +8473,23 @@ function renderSingleTicketView() {
   const step3Class = isCancelled ? '' : (o.status === '製作中' ? 'active' : (isReady || isCompleted ? 'done' : ''));
   const step4Class = isCompleted ? 'done' : (isReady ? 'active' : '');
 
-  let statusHeadline = '🍳 廚房正為您製作餐點中';
+  let statusHeadline = t('🍳 廚房正為您製作餐點中', '🍳 Kitchen is preparing your meal', '🍳 キッチンで調理中です', '🍳 주방에서 음식을 조리 중입니다');
   let statusColor = 'var(--brand)';
   if (isCancelled) {
-    statusHeadline = `🚫 ${o.status}`;
+    statusHeadline = `🚫 ${trTerm(o.status)}`;
     statusColor = 'var(--red)';
   } else if (isPendingPay) {
-    statusHeadline = '⏳ 待櫃檯確認付款後排程';
+    statusHeadline = t('⏳ 待櫃檯確認付款後排程', '⏳ Pending counter payment confirmation', '⏳ 店頭での支払い確認待ち', '⏳ 카운터 결제 확인 대기 중');
     statusColor = 'var(--amber)';
   } else if (isScheduled) {
-    statusHeadline = `📅 已接單待排程（將於取餐前 25 分鐘自動下鍋）`;
+    statusHeadline = t('📅 已接單待排程（將於取餐前自動推入廚房）', '📅 Scheduled (auto-fires to kitchen before pickup)', '📅 予約受付済（受取前に自動で調理開始）', '📅 예약 접수됨 (픽업 전 자동으로 주방에 투입됩니다)');
     statusColor = 'var(--blue)';
   } else if (isReady) {
-    statusHeadline = `🔔 您的餐點已備妥！請至櫃檯取餐 (已叫號 ${Math.max(1, o.notifyCount || 1)} 次)`;
+    const callN = Math.max(1, o.notifyCount || 1);
+    statusHeadline = t(`🔔 您的餐點已備妥！請至櫃檯取餐 (已叫號 ${callN} 次)`, `🔔 Ready for pickup! Please come to the counter (Call #${callN})`, `🔔 お待たせしました！店頭へお越しください (${callN}回目呼出)`, `🔔 음식이 준비되었습니다! 카운터에서 픽업하세요 (${callN}회 호출)`);
     statusColor = 'var(--green)';
   } else if (isCompleted) {
-    statusHeadline = '✅ 已完成取餐，祝您用餐愉快！';
+    statusHeadline = t('✅ 已完成取餐，祝您用餐愉快！', '✅ Picked up! Enjoy your meal!', '✅ 受取完了！ごゆっくりお召し上がりください。', '✅ 픽업 완료! 맛있게 드세요!');
     statusColor = 'var(--text-secondary)';
   }
 
@@ -8185,45 +8500,45 @@ function renderSingleTicketView() {
   box.innerHTML = `
     <div class="ticket-hero-card" style="${isReady ? 'border:2.5px solid var(--green); box-shadow:0 0 0 6px rgba(16,185,129,0.12);' : ''}">
       <div class="live-verify-banner">
-        <span><span class="live-clock-pulse"></span>防偽動態電子取餐憑證 (${escapeHtml(o.pickupDate)})</span>
+        <span><span class="live-clock-pulse"></span>${t('防偽動態電子取餐憑證', 'Verified Live Pickup Ticket', '偽造防止リアルタイム受取チケット', '위조 방지 실시간 픽업 티켓')} (${escapeHtml(o.pickupDate)})</span>
         <span id="ticketAntiFraudClock" style="font-family:monospace; font-size:0.9rem; letter-spacing:0.5px;">${liveNowClock}</span>
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
         <span style="font-size:0.76rem; font-weight:800; color:var(--brand-dark); background:var(--brand-light); padding:4px 12px; border-radius:999px;">
-          📍 ${escapeHtml(o.storeName)}（${escapeHtml(o.dineType || '外帶自取')}）
+          📍 ${escapeHtml(trTerm(o.storeName))}（${escapeHtml(trTerm(o.dineType || '外帶自取'))}）
         </span>
         <div style="display:flex; gap:6px;">
           ${myTrackedCount > 1 ? `
             <button type="button" onclick="openMyOrdersDrawer()" style="border:1.5px solid var(--brand); background:var(--brand-light); color:var(--brand-dark); padding:4px 10px; border-radius:999px; font-size:0.75rem; font-weight:900; cursor:pointer;">
-              🧾 切換我的其他訂單 (${myTrackedCount})
+              🧾 ${t(`切換其他訂單 (${myTrackedCount})`, `Other Orders (${myTrackedCount})`, `他の注文 (${myTrackedCount})`, `다른 주문 (${myTrackedCount})`)}
             </button>
           ` : ''}
           <button type="button" onclick="openLineBindModal()" style="border:1px solid #86EFAC; background:${state.lineProfile.isBound ? '#DCFCE7' : '#F0FDF4'}; color:#065F46; padding:4px 10px; border-radius:999px; font-size:0.75rem; font-weight:800; cursor:pointer;">
-            💚 ${state.lineProfile.isBound ? '推播已綁定' : '綁定取餐推播'}
+            💚 ${state.lineProfile.isBound ? t('推播已綁定', 'Alerts Linked', '通知連携済', '알림 연동됨') : t('綁定取餐推播', 'Link Pickup Alerts', '受取通知を連携', '픽업 알림 연동')}
           </button>
         </div>
       </div>
 
-      <div style="font-size:0.84rem; color:var(--text-secondary); margin-top:12px; font-weight:700;">您的專屬取餐流水號</div>
+      <div style="font-size:0.84rem; color:var(--text-secondary); margin-top:12px; font-weight:700;">${t('您的專屬取餐流水號', 'Your Pickup Number', 'あなたの受取番号', '나의 픽업 번호')}</div>
       <div class="ticket-Serial" style="color:${statusColor};">#${escapeHtml(o.pickupNumber)}</div>
       <div style="font-size:1rem; font-weight:900; color:${statusColor}; margin-bottom:10px;">${escapeHtml(statusHeadline)}</div>
 
       ${!isCompleted && !isCancelled && (('Notification' in window && Notification.permission !== 'granted') || !state.isAudioUnlocked) ? `
         <div style="margin:10px 0; background:linear-gradient(135deg, #FEF3C7 0%, #FFFBEB 100%); border:2px solid #F59E0B; border-radius:14px; padding:12px 14px; text-align:left; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; box-shadow:0 4px 12px rgba(245,158,11,0.18);">
           <div style="flex:1; min-width:210px;">
-            <div style="font-size:0.86rem; font-weight:950; color:#92400E;">🔔 ${t('防漏單必開：啟用取餐背景通知與震動', 'Enable background pickup alerts')}</div>
-            <div style="font-size:0.75rem; color:#B45309; font-weight:700; margin-top:2px;">${t('開啟後即使切換 App 或鎖屏，餐點做好時手機會立刻通知提醒（預設不播語音，不打擾上課）。', 'Get instant alerts even when screen is off (silent-safe by default).')}</div>
+            <div style="font-size:0.86rem; font-weight:950; color:#92400E;">🔔 ${t('防漏單必開：啟用取餐背景通知與震動', 'Enable background pickup alerts', 'バックグラウンド通知・バイブを有効化', '백그라운드 픽업 알림 및 진동 켜기')}</div>
+            <div style="font-size:0.75rem; color:#B45309; font-weight:700; margin-top:2px;">${t('開啟後即使切換 App 或鎖屏，餐點做好時手機會立刻通知提醒（預設不播語音，不打擾上課）。', 'Get instant alerts even when screen is off (silent-safe by default).', '画面オフでも出来上がり時に通知されます（標準では音声なし）。', '화면이 꺼져 있어도 준비 완료 시 즉시 알림을 받습니다.')}</div>
           </div>
           <button type="button" onclick="requestBrowserNotificationPermission(); renderSingleTicketView(${escapeJsAttr(o.orderId)});" style="border:none; background:#D97706; color:#FFFFFF; padding:9px 16px; border-radius:999px; font-size:0.82rem; font-weight:950; cursor:pointer; white-space:nowrap; box-shadow:0 3px 10px rgba(217,119,6,0.3);">
-            🔔 ${t('一鍵開啟取餐提醒', 'Enable Alerts')}
+            🔔 ${t('一鍵開啟取餐提醒', 'Enable Alerts', '通知を有効にする', '알림 켜기')}
           </button>
         </div>
       ` : ''}
 
       ${!isCompleted && !isCancelled ? `
         <div style="text-align:left; margin:8px 0;">
-          <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary); margin-bottom:4px;">${t('取餐提醒音效模式（預設關閉語音，避免課堂尷尬）', 'Pickup Alert Mode (Voice off by default)')}</div>
+          <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary); margin-bottom:4px;">${t('取餐提醒音效模式（預設關閉語音，避免課堂尷尬）', 'Pickup Alert Mode (Voice off by default)', '通知サウンド設定', '알림 소리 모드')}</div>
           <div class="alert-mode-bar" style="margin:0;">
             <button type="button" class="alert-mode-btn ${(state.studentAlertSoundMode || 'CHIME') === 'CHIME' ? 'active' : ''}" onclick="setStudentAlertSoundMode('CHIME')">🔔 ${t('提示音', 'Chime', 'チャイム', '알림음')}</button>
             <button type="button" class="alert-mode-btn ${state.studentAlertSoundMode === 'MUTE' ? 'active' : ''}" onclick="setStudentAlertSoundMode('MUTE')">🔇 ${t('靜音震動', 'Silent', 'サイレント', '무음진동')}</button>
@@ -8235,21 +8550,21 @@ function renderSingleTicketView() {
       ${!isCompleted && !isCancelled ? `
         <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; background:#F8FAFC; border:1.5px solid #E2E8F0; border-radius:14px; padding:12px 10px; margin:10px 0;">
           <div>
-            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">📢 目前叫號</div>
+            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">📢 ${t('目前叫號', 'Now Serving', '現在呼出中', '현재 호출')}</div>
             <div style="font-size:1.25rem; font-weight:950; color:var(--green); margin-top:2px;">
-              ${latestCalledNum !== '--' ? `#${escapeHtml(latestCalledNum)}` : '準備中'}
+              ${latestCalledNum !== '--' ? `#${escapeHtml(latestCalledNum)}` : t('準備中', 'Preparing', '準備中', '준비 중')}
             </div>
           </div>
           <div style="border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
-            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">🍳 前方等候</div>
+            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">🍳 ${t('前方等候', 'Ahead of You', '前の待ち件数', '앞 대기')}</div>
             <div style="font-size:1.25rem; font-weight:950; color:${isReady ? 'var(--green)' : 'var(--brand-dark)'}; margin-top:2px;">
-              ${isReady ? '輪到您了' : isScheduled ? '預約排程' : `${ordersAheadCount} 單`}
+              ${isReady ? t('輪到您了', 'Your Turn', 'お呼び出中', '순서입니다') : isScheduled ? t('預約排程', 'Scheduled', '予約待機', '예약 대기') : t(`${ordersAheadCount} 單`, `${ordersAheadCount}`, `${ordersAheadCount}件`, `${ordersAheadCount}건`)}
             </div>
           </div>
           <div>
-            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">⏱️ 預估剩餘</div>
+            <div style="font-size:0.72rem; font-weight:800; color:var(--text-secondary);">⏱️ ${t('預估剩餘', 'Est. Wait', '予想残り', '예상 대기')}</div>
             <div style="font-size:1.25rem; font-weight:950; color:var(--indigo); margin-top:2px;">
-              ${isReady ? '立即取餐' : isScheduled ? escapeHtml(o.pickupTime) : `約 ${estRemainingMins} 分`}
+              ${isReady ? t('立即取餐', 'Pick Up Now', '今すぐ受取', '지금 픽업') : isScheduled ? escapeHtml(o.pickupTime) : t(`約 ${estRemainingMins} 分`, `~${estRemainingMins} min`, `約${estRemainingMins}分`, `약 ${estRemainingMins}분`)}
             </div>
           </div>
         </div>
@@ -8258,29 +8573,29 @@ function renderSingleTicketView() {
       <div class="hmac-verify-badge-box ${isServerVerified ? '' : 'unverified-warning'}">
         <div style="text-align:left;">
           <div style="font-size:0.74rem; font-weight:900; color:${isServerVerified ? '#4338CA' : '#B45309'};">
-            ${isServerVerified ? '🛡️ 伺服器 HMAC 簽章防偽核銷碼' : '⚠️ 門市離線單（待雲端同步核發防偽碼）'}
+            ${isServerVerified ? `🛡️ ${t('伺服器 HMAC 簽章防偽核銷碼', 'Server-Verified 6-Char Code', 'サーバー認証6桁コード', '서버 인증 6자리 코드')}` : `⚠️ ${t('門市離線單（待雲端同步核發防偽碼）', 'Offline POS Ticket (Syncing)', 'オフライン伝票（同期待ち）', '오프라인 전표 (동기화 대기)')}`}
           </div>
           <div style="font-size:0.72rem; color:#475569;">
-            ${isServerVerified ? '領餐時請供店員掃描下方 QR Code 或核對此 6 碼' : '此單為店內 POS 離線建立，將於連線後自動補發雲端簽章'}
+            ${isServerVerified ? t('領餐時請供店員掃描下方 QR Code 或核對此 6 碼', 'Show QR code below or this 6-char code at pickup', '受取時に下のQRコードまたは6桁コードを提示してください', '픽업 시 아래 QR 코드 또는 6자리 코드를 제시하세요') : t('此單為店內 POS 離線建立，將於連線後自動補發雲端簽章', 'Created offline on POS; cloud signature syncs once online', 'オフライン作成済・接続後に自動同期されます', '오프라인 생성됨・연결 후 자동 동기화됩니다')}
           </div>
         </div>
         <div class="hmac-code-digits" style="${isServerVerified ? '' : 'color:#B45309; border-color:#F59E0B; font-size:1.05rem;'}">${escapeHtml(verCodeDisplay)}</div>
       </div>
 
       <div style="font-size:0.78rem; color:var(--text-muted);">
-        訂單憑證：${escapeHtml(o.orderId)} ・ 下單時間：${escapeHtml(o.createdAt)}
-        ${phoneLast3 ? ` ・ 手機末碼：${escapeHtml(phoneLast3)}` : ''}
+        ${t('訂單憑證', 'Order ID', '注文ID', '주문번호')}：${escapeHtml(o.orderId)} ・ ${t('下單時間', 'Ordered', '注文時刻', '주문시각')}：${escapeHtml(o.createdAt)}
+        ${phoneLast3 ? ` ・ ${t('手機末碼', 'Phone Last 3', '携帯下3桁', '전화 뒤 3자리')}：${escapeHtml(phoneLast3)}` : ''}
       </div>
 
       ${isReady ? `
         <div style="margin-top:12px; background:#ECFDF5; border:1.5px solid #10B981; color:#065F46; padding:12px; border-radius:12px; font-weight:800; font-size:0.9rem;">
-          🎉 櫃檯已按下「通知取餐」！請出示下方 QR Code 或核銷碼 <strong>${escapeHtml(verCodeDisplay)}</strong> 領取餐點。
+          🎉 ${t(`櫃檯已叫號！請出示下方 QR Code 或核銷碼 ${verCodeDisplay} 領取餐點。`, `Counter called your order! Show QR or code ${verCodeDisplay} to pick up.`, `呼出されました！QRコードまたは認証コード ${verCodeDisplay} をご提示ください。`, `호출되었습니다! QR 코드 또는 인증코드 ${verCodeDisplay}를 제시하여 픽업하세요.`)}
         </div>
       ` : ''}
 
       ${(o.merchantMessage || (Array.isArray(o.merchantMessages) && o.merchantMessages.length > 0)) ? `
         <div style="margin-top:12px; background:#EFF6FF; border:2px solid #3B82F6; color:#1E3A8A; padding:12px 14px; border-radius:14px; text-align:left;">
-          <div style="font-size:0.82rem; font-weight:950; margin-bottom:4px;">💬 店家櫃檯即時通知</div>
+          <div style="font-size:0.82rem; font-weight:950; margin-bottom:4px;">💬 ${t('店家櫃檯即時通知', 'Message from Store Counter', '店舗からのメッセージ', '매장 카운터 메시지')}</div>
           ${Array.isArray(o.merchantMessages) && o.merchantMessages.length > 0 ? o.merchantMessages.map(m => `
             <div style="font-size:0.86rem; font-weight:800; margin-top:4px;">
               「${escapeHtml(m.text)}」 <span style="font-size:0.72rem; color:#64748B; font-family:monospace;">(${escapeHtml(m.timeStr || '')})</span>
@@ -8294,29 +8609,29 @@ function renderSingleTicketView() {
       <div class="status-stepper">
         <div class="step-item ${step1Class}">
           <div class="step-dot">✓</div>
-          <div class="step-label">已接單</div>
+          <div class="step-label">${t('已接單', 'Confirmed', '受付済', '접수됨')}</div>
         </div>
         <div class="step-item ${step2Class}">
           <div class="step-dot">2</div>
-          <div class="step-label">排程候鍋</div>
+          <div class="step-label">${t('排程候鍋', 'Scheduled', '予約待機', '예약 대기')}</div>
         </div>
         <div class="step-item ${step3Class}">
           <div class="step-dot">3</div>
-          <div class="step-label">廚房製作</div>
+          <div class="step-label">${t('廚房製作', 'Preparing', '調理中', '조리 중')}</div>
         </div>
         <div class="step-item ${step4Class}">
           <div class="step-dot">4</div>
-          <div class="step-label">叫號取餐</div>
+          <div class="step-label">${t('叫號取餐', 'Pickup', '受取呼出', '호출 픽업')}</div>
         </div>
       </div>
 
       ${Array.isArray(o.statusTimeline) && o.statusTimeline.length > 0 ? `
         <div style="text-align:left; background:#F8FAFC; border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin:10px 0;">
-          <div style="font-size:0.76rem; font-weight:900; color:var(--text-secondary); margin-bottom:6px;">⏱️ 訂單狀態歷程時間軸</div>
+          <div style="font-size:0.76rem; font-weight:900; color:var(--text-secondary); margin-bottom:6px;">⏱️ ${t('訂單狀態歷程時間軸', 'Order Timeline', '注文ステータス履歴', '주문 진행 타임라인')}</div>
           <div style="display:flex; flex-direction:column; gap:4px;">
             ${o.statusTimeline.slice(-6).reverse().map(ev => `
               <div style="display:flex; justify-content:space-between; gap:8px; font-size:0.76rem;">
-                <span style="font-weight:800; color:var(--text-primary);">• ${escapeHtml(ev.label || ev.status || '')}</span>
+                <span style="font-weight:800; color:var(--text-primary);">• ${escapeHtml(trTerm(ev.label || ev.status || ''))}</span>
                 <span style="font-family:monospace; color:var(--text-muted); white-space:nowrap;">${escapeHtml(ev.timeStr || '')}</span>
               </div>
             `).join('')}
@@ -8326,60 +8641,57 @@ function renderSingleTicketView() {
 
       <div style="text-align:left; background:var(--bg-page); padding:16px; border-radius:14px; border:1px solid var(--border); margin:16px 0;">
         <div style="font-size:0.8rem; font-weight:800; color:var(--text-secondary); margin-bottom:8px;">
-          📋 ${t('點餐明細', 'Order Details')}（${escapeHtml(trTerm(o.dineType || '自取'))}${o.tableNumber ? ` ・ 🪑 ${t('桌號', 'Table')} ${escapeHtml(o.tableNumber)}` : ''}${o.carrierCode ? ` ・ 📱 ${escapeHtml(o.carrierCode)}` : ''}${o.customerNote ? ` ・ ${t('備註', 'Note')}：${escapeHtml(o.customerNote)}` : ''}）
+          📋 ${t('點餐明細', 'Order Details', '注文明細', '주문 내역')}（${escapeHtml(trTerm(o.dineType || '外帶自取'))}${o.taxId ? ` ・ 🏢 ${t('統編', 'Tax ID', '統一番号', '사업자번호')} ${escapeHtml(o.taxId)}` : ''}${o.customerNote ? ` ・ ${t('備註', 'Note', 'メモ', '메모')}：${escapeHtml(o.customerNote)}` : ''}）
         </div>
         ${itemsHtml}
         ${o.cutleryFee > 0 ? `
           <div style="display:flex; justify-content:space-between; padding-top:6px; font-size:0.84rem; color:var(--text-secondary);">
-            <span>🥢 一次性免洗餐具</span>
+            <span>🥢 ${t('一次性免洗餐具', 'Disposable Cutlery', '使い捨てカトラリー', '일회용 수저')}</span>
             <span>+NT$ ${o.cutleryFee}</span>
           </div>
         ` : ''}
         ${o.discount > 0 ? `
           <div style="display:flex; justify-content:space-between; padding-top:6px; font-size:0.84rem; color:var(--green); font-weight:700;">
-            <span>🎁 離峰分流優惠 (${escapeHtml(o.promoApplied)})</span>
+            <span>🎁 ${t('優惠折抵', 'Promo Discount', '割引', '할인')}</span>
             <span>-NT$ ${o.discount}</span>
           </div>
         ` : ''}
         ${o.manualDiscount > 0 ? `
           <div style="display:flex; justify-content:space-between; padding-top:6px; font-size:0.84rem; color:var(--indigo); font-weight:700;">
-            <span>🏷️ 櫃檯手動折讓 (${escapeHtml(o.manualDiscountReason || '專案折扣')})</span>
+            <span>🏷️ ${t('櫃檯手動折讓', 'Counter Discount', '店頭割引', '카운터 할인')}</span>
             <span>-NT$ ${o.manualDiscount}</span>
           </div>
         ` : ''}
         <div style="display:flex; justify-content:space-between; padding-top:10px; margin-top:6px; border-top:1px solid var(--border); font-size:1.05rem; font-weight:900;">
-          <span>總計金額 (${escapeHtml(o.paymentMethod)}・${escapeHtml(o.paymentStatus || '已確認')})</span>
+          <span>${t('總計金額', 'Total', '合計金額', '총 금액')} (${escapeHtml(trTerm(o.paymentMethod))}・${escapeHtml(trTerm(o.paymentStatus || '已付款'))})</span>
           <span style="color:var(--red);">NT$ ${o.finalTotal}</span>
         </div>
         <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:8px;">
-          ⏰ 取餐時段：${escapeHtml(o.pickupTimeSlot)}
+          ⏰ ${t('取餐時段', 'Pickup Slot', '受取時間', '픽업 시간')}：${escapeHtml(o.isReservation ? `${o.pickupDate} ${o.pickupTime}` : t('立即製作', 'Make Now', '今すぐ調理', '바로 조리'))}
         </div>
       </div>
 
       <div style="display:flex; align-items:center; justify-content:center; gap:18px; background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:14px; padding:16px; margin-bottom:16px; flex-wrap:wrap;">
-        <div class="svg-qr-box" title="ISO/IEC 18004 標準追蹤與核銷條碼">${inlineQrSvg}</div>
+        <div class="svg-qr-box" title="ISO/IEC 18004 QR Code">${inlineQrSvg}</div>
         <div style="text-align:left; max-width:270px;">
-          <div style="font-size:0.9rem; font-weight:900; color:var(--text-primary); margin-bottom:4px;">📷 顧客追蹤 & 櫃檯核銷 QR Code</div>
+          <div style="font-size:0.9rem; font-weight:900; color:var(--text-primary); margin-bottom:4px;">📷 ${t('顧客追蹤 & 櫃檯核銷 QR Code', 'Live Tracking & Pickup QR Code', '追跡・店頭検収 QRコード', '실시간 추적 및 픽업 QR 코드')}</div>
           <p style="font-size:0.78rem; color:var(--text-secondary); line-height:1.45; margin-bottom:10px;">
-            手機相機直接掃描即可<strong>開啟此訂單即時追蹤網頁</strong>；取餐時出示供店家平板鏡頭或掃碼槍掃描即可秒速核銷。
+            ${t('手機相機掃描即可開啟此訂單即時追蹤網頁；取餐時出示供店家平板鏡頭掃描秒速核銷。', 'Scan with phone camera to track live status, or show at the counter for instant pickup verification.', 'スマホでスキャンして進捗確認、受取時に店頭でスキャンして素早く受領できます。', '카메라로 스캔하여 실시간 상태를 확인하고 픽업 시 카운터에 제시하세요.')}
           </p>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="copyOrderUrl(${escapeJsAttr(shareUrl)})">📋 ${t('複製訂單網址', 'Copy Link')}</button>
-            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="openReceiptPrintModalSafe(${escapeJsAttr(o.orderId)})">🖨️ ${t('電子收據小票', 'Receipt')}</button>
+            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="copyOrderUrl(${escapeJsAttr(shareUrl)})">📋 ${t('複製訂單網址', 'Copy Link', 'リンクコピー', '링크 복사')}</button>
+            <button type="button" class="filter-chip" style="padding:5px 12px; font-size:0.76rem;" onclick="openReceiptPrintModalSafe(${escapeJsAttr(o.orderId)})">🖨️ ${t('電子收據小票', 'Receipt', 'レシート', '영수증')}</button>
           </div>
         </div>
       </div>
 
       <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-        <button type="button" class="btn-outline" onclick="syncCloud(true)">🔄 ${t('立即刷新狀態', 'Refresh')}</button>
-        ${(!isCompleted && !isCancelled && String(o.dineType || '').includes('內用')) ? `
-          <button type="button" class="btn-tip-action" style="background:#4F46E5; padding:10px 14px; font-size:0.86rem;" onclick="startAddOnFromTicket(${escapeJsAttr(o.orderId)})">➕ ${t('同桌加點餐點', 'Add More Items')}</button>
-        ` : ''}
-        <button type="button" class="btn-outline" style="border-color:var(--brand); color:var(--brand-dark);" onclick="reorderFromTicket(${escapeJsAttr(o.orderId)})">🔁 ${t('再買一次', 'Order Again')}</button>
+        <button type="button" class="btn-outline" onclick="syncCloud(true)">🔄 ${t('立即刷新狀態', 'Refresh', '更新', '새로고침')}</button>
+        <button type="button" class="btn-outline" style="border-color:var(--brand); color:var(--brand-dark);" onclick="reorderFromTicket(${escapeJsAttr(o.orderId)})">🔁 ${t('再買一次', 'Order Again', 'もう一度注文', '다시 주문')}</button>
         ${(isScheduled || isPendingPay) && !isCancelled ? `
-          <button type="button" class="btn-danger-soft" style="padding:10px 14px; font-size:0.86rem; border-radius:12px;" onclick="cancelMyScheduledOrder(${escapeJsAttr(o.orderId)})">🚫 ${t('取消此預訂單', 'Cancel Pre-order')}</button>
+          <button type="button" class="btn-danger-soft" style="padding:10px 14px; font-size:0.86rem; border-radius:12px;" onclick="cancelMyScheduledOrder(${escapeJsAttr(o.orderId)})">🚫 ${t('取消此預訂單', 'Cancel Pre-order', '予約キャンセル', '예약 취소')}</button>
         ` : ''}
-        <button type="button" class="btn-primary-full" style="max-width:210px;" onclick="navigateToOrderMenu()">➕ ${t('返回學餐菜單', 'Back to Menu')}</button>
+        <button type="button" class="btn-primary-full" style="max-width:210px;" onclick="navigateToOrderMenu()">➕ ${t('返回學餐菜單', 'Back to Menu', 'メニューへ戻る', '메뉴로 돌아가기')}</button>
       </div>
     </div>
   `;

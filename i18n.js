@@ -1,6 +1,6 @@
 // =========================================================================
-// MealFlow v24.1 — 全系統 4 語系零漏譯核心引擎 (zh-TW / en / ja / ko)
-// 無 MutationObserver、WeakMap 原文無損還原、嚴格保護商家自訂菜名 [data-dish-name="1"]
+// MealFlow v25.0 — 結構化 4 語系精準翻譯核心引擎 (zh-TW / en / ja / ko)
+// 徹底移除貪婪子字串切碎替換，僅採結構化 t() + 整句精確查表 + 完整樣式比對，零中英夾雜！
 // =========================================================================
 
 function getCurrentAppLang() {
@@ -85,7 +85,18 @@ const I18N_DICTIONARY = {
   '定食(3菜)': { en: 'Set Meal (3 Sides)', ja: '定食（副菜3品付）', ko: '정식 (반찬 3종)' },
   '單點': { en: 'À La Carte', ja: '単品', ko: '단품' },
   '抓餅類': { en: 'Scallion Pancakes', ja: '台湾風ネギパイ', ko: '총좌빙' },
+  '蔥抓餅類': { en: 'Scallion Pancakes', ja: '台湾風ネギパイ', ko: '총좌빙' },
   '飯捲類': { en: 'Rice Rolls', ja: 'ライスロール', ko: '라이스롤' },
+  '酥炸類': { en: 'Crispy Fried', ja: '揚げ物', ko: '바삭 튀김류' },
+  '炸物類': { en: 'Fried Snacks', ja: '揚げ物', ko: '튀김류' },
+  '點心類': { en: 'Snacks', ja: '軽食・スナック', ko: '간식류' },
+  '湯品類': { en: 'Soups', ja: 'スープ', ko: '국물류' },
+  '飲品類': { en: 'Drinks', ja: 'ドリンク', ko: '음료류' },
+  '主廚推薦': { en: "Chef's Specials", ja: 'シェフおすすめ', ko: '셰프 추천' },
+  '小菜類': { en: 'Side Dishes', ja: 'サイドメニュー', ko: '반찬류' },
+  '便當類': { en: 'Bento Boxes', ja: 'お弁当', ko: '도시락류' },
+  '麵食類': { en: 'Noodles', ja: '麺類', ko: '면류' },
+  '其他': { en: 'Other', ja: 'その他', ko: '기타' },
 
   // 餐點標籤
   '🔥 必點人氣': { en: '🔥 Popular', ja: '🔥 人気', ko: '🔥 인기' },
@@ -171,7 +182,13 @@ const I18N_DICTIONARY = {
   '待付訂確認': { en: 'Deposit Pending', ja: '前金確認待ち', ko: '선금 확인 대기' },
   '已接單待排程': { en: 'Scheduled', ja: '予約受付済', ko: '예약 접수됨' },
   '待付款確認': { en: 'Pending Payment', ja: 'お支払い待ち', ko: '결제 대기' },
+  '待付款 (LINE Pay 授權中)': { en: 'Awaiting LINE Pay', ja: 'LINE Pay決済待ち', ko: 'LINE Pay 결제 대기' },
+  '已逾期取消': { en: 'Expired & Cancelled', ja: '期限切れ取消', ko: '만료 취소' },
   '已退單作廢': { en: 'Voided', ja: '取消・無効', ko: '취소 무효' },
+  '已退單': { en: 'Voided', ja: '取消・無効', ko: '취소됨' },
+  '現場單': { en: 'Counter', ja: '店頭', ko: '매장' },
+  '線上單': { en: 'Online', ja: 'オンライン', ko: '온라인' },
+  '預訂單': { en: 'Pre-order', ja: '予約', ko: '예약' },
   '製作中': { en: 'Preparing', ja: '調理中', ko: '조리 중' },
   '可取餐': { en: 'Ready for Pickup', ja: '受取可能', ko: '픽업 가능' },
   '已完成': { en: 'Completed', ja: '完了', ko: '완료' },
@@ -236,6 +253,15 @@ const I18N_DICTIONARY = {
   '編輯': { en: 'Edit', ja: '編集', ko: '수정' },
   '刪除': { en: 'Delete', ja: '削除', ko: '삭제' },
   '刪': { en: 'Del', ja: '削除', ko: '삭제' },
+  '自取': { en: 'Pickup', ja: '受取', ko: '픽업' },
+
+  // Built-in default sample menu items (S01 demo fallback)
+  '特製韓式泡菜燒肉飯捲': { en: 'Kimchi Grilled Pork Kimbap', ja: '特製キムチ焼肉キンパ', ko: '특제 김치 불고기 김밥' },
+  '起司炸蝦海苔飯捲': { en: 'Cheese Fried Shrimp Kimbap', ja: 'チーズエビフライキンパ', ko: '치즈 새우튀김 김밥' },
+  '經典鮪魚玉米飯捲': { en: 'Classic Tuna Corn Kimbap', ja: '定番ツナコーンキンパ', ko: '클래식 참치 옥수수 김밥' },
+  '釜山魚板蘿蔔湯': { en: 'Busan Fish Cake Radish Soup', ja: '釜山おでん大根スープ', ko: '부산 어묵 무국' },
+  '韓國水蜜桃果粒飲': { en: 'Korean Peach Pulp Drink', ja: '韓国白桃果肉ドリンク', ko: '한국 복숭아 알갱이 음료' },
+  '招牌主餐': { en: 'Signature Main', ja: 'おすすめメイン', ko: '대표 메뉴' },
   '移除': { en: 'Remove', ja: '削除', ko: '제거' },
   '清空': { en: 'Clear', ja: 'クリア', ko: '비우기' },
   '套用': { en: 'Apply', ja: '適用', ko: '적용' },
@@ -260,11 +286,41 @@ const I18N_DICTIONARY = {
   '尚無推播紀錄': { en: 'No notification history yet', ja: '通知履歴はありません', ko: '알림 기록이 없습니다' },
   '值班店長': { en: 'Shift Manager', ja: '当番店長', ko: '당번 점장' },
   '當班店長': { en: 'Shift Manager', ja: '当番店長', ko: '당번 점장' },
+  '早班店長': { en: 'Morning Manager', ja: '早番店長', ko: '오전 점장' },
+  '晚班店長': { en: 'Evening Manager', ja: '遅番店長', ko: '오후 점장' },
+  '早班收銀': { en: 'Morning Cashier', ja: '早番レジ担当', ko: '오전 캐셔' },
+  '晚班收銀': { en: 'Evening Cashier', ja: '遅番レジ担当', ko: '오후 캐셔' },
   '當班收銀員': { en: 'Shift Cashier', ja: '当番レジ担当', ko: '당번 캐셔' },
   '值班人員': { en: 'Staff on Duty', ja: '担当スタッフ', ko: '근무 직원' },
   '店長': { en: 'Manager', ja: '店長', ko: '점장' },
-  '收銀員': { en: 'Cashier', ja: 'スタッフ', ko: '캐셔' }
+  '收銀員': { en: 'Cashier', ja: 'スタッフ', ko: '캐셔' },
+  '開發者': { en: 'Developer', ja: '開発者', ko: '개발자' },
+  '系統開發者': { en: 'System Developer', ja: 'システム開発者', ko: '시스템 개발자' },
+  '開發者 (Developer)': { en: 'Developer', ja: '開発者 (Developer)', ko: '개발자 (Developer)' },
+  '營業中 (點此切換)': { en: 'Open (Tap to Pause)', ja: '営業中 (タップで休止)', ko: '영업 중 (탭하여 중지)' },
+  '暫停營業 (點此開啟)': { en: 'Paused (Tap to Open)', ja: '営業休止 (タップで再開)', ko: '영업 중지 (탭하여 재개)' },
+  '已打烊 (開放預訂)': { en: 'Closed (Pre-order)', ja: '営業終了 (予約可)', ko: '영업 종료 (예약 가능)' },
+  '全部日期': { en: 'All Dates', ja: 'すべての日付', ko: '전체 날짜' },
+  '全部狀態': { en: 'All Status', ja: 'すべての状態', ko: '전체 상태' },
+  '立即出餐': { en: 'Make Now', ja: '即時調理', ko: '즉시 조리' },
+  '暫停中': { en: 'Paused', ja: '休止中', ko: '중지됨' }
 };
+
+const DIETARY_TAG_MAP = {
+  SPICY: { zh: '🌶️ 辣', en: '🌶️ Spicy', ja: '🌶️ 辛口', ko: '🌶️ 매운맛' },
+  VEG: { zh: '🥬 蔬食', en: '🥬 Veg', ja: '🥬 野菜・ベジ', ko: '🥬 채식' },
+  BEEF: { zh: '🐮 含牛', en: '🐮 Beef', ja: '🐮 牛肉含', ko: '🐮 소고기' },
+  PORK: { zh: '🐷 含豬', en: '🐷 Pork', ja: '🐷 豚肉含', ko: '🐷 돼지고기' },
+  NUTS: { zh: '🥜 堅果', en: '🥜 Nuts', ja: '🥜 ナッツ', ko: '🥜 견과류' },
+  SEAFOOD: { zh: '🦐 海鮮', en: '🦐 Seafood', ja: '🦐 海鮮', ko: '🦐 해산물' },
+  DAIRY: { zh: '🥛 蛋奶', en: '🥛 Dairy/Egg', ja: '🥛 卵・乳', ko: '🥛 유제품/계란' }
+};
+
+function trDietaryTag(code) {
+  const rec = DIETARY_TAG_MAP[String(code || '').trim().toUpperCase()];
+  if (!rec) return String(code || '');
+  return t(rec.zh, rec.en, rec.ja, rec.ko);
+}
 
 // 2. 後端錯誤與系統動態模板（帶參數精準翻譯）
 const SERVER_ERROR_PATTERNS = [
@@ -279,7 +335,11 @@ const SERVER_ERROR_PATTERNS = [
   [/權限驗證失敗|請重新輸入.*PIN|Unauthorized/, () => t('店務權限已失效，請重新輸入授權碼', 'Merchant session expired. Please re-enter store PIN.', '店舗認証が期限切れです。PINを再入力してください。', '매장 인증이 만료되었습니다. PIN을 다시 입력해 주세요.')],
   [/已達本日限量上限|目前已售罄/, (m) => t(m[0], 'Item sold out or reached daily limit', '売切れまたは1日限定数に達しました', '품절되었거나 일일 한정 수량에 도달했습니다')],
   [/優惠券無效|未達優惠券低消/, (m) => t(m[0], 'Coupon invalid or minimum spend not met', 'クーポン無効または最低利用金額未満です', '쿠폰이 유효하지 않거나 최소 주문 금액 미만입니다')],
-  [/查單嘗試次數過於頻繁/, () => t('查單次數過於頻繁，請 60 秒後再試', 'Too many lookup attempts. Please wait 60s and try again.', '照会回数が多すぎます。60秒後に再試行してください。', '조회 시도가 너무 많습니다. 60초 후 다시 시도하세요.')]
+  [/查單嘗試次數過於頻繁/, () => t('查單次數過於頻繁，請 60 秒後再試', 'Too many lookup attempts. Please wait 60s and try again.', '照会回数が多すぎます。60秒後に再試行してください。', '조회 시도가 너무 많습니다. 60초 후 다시 시도하세요.')],
+  [/統一編號格式或邏輯檢核碼錯誤/, () => t('統一編號格式或邏輯檢核碼錯誤（請輸入有效之 8 碼台灣統一編號）', 'Invalid Taiwan Tax ID (must pass 8-digit checksum).', '台湾統一番号（8桁）の形式またはチェックサムが正しくありません。', '올바른 8자리 대만 사업자등록번호가 아닙니다.')],
+  [/已鎖定.*帳務|本班次已日結鎖定/, () => t('本日帳務已交班鎖定，如需補登請由店長解除鎖定', 'Today\'s shift is locked. Manager unlock is required.', '本日の精算はロック済です。店長の解除が必要です。', '오늘 마감 정산이 잠겨 있습니다. 점장 해제가 필요합니다.')],
+  [/付款逾時|已逾期取消/, () => t('LINE Pay 付款已逾時取消，請重新下單', 'LINE Pay payment expired. Please place your order again.', 'LINE Pay決済が期限切れになりました。再度ご注文ください。', 'LINE Pay 결제가 만료되었습니다. 다시 주문해 주세요.')],
+  [/OneTimeKey|付款條碼/, (m) => t(m[0], 'Invalid or expired LINE Pay OneTimeKey barcode. Please scan again.', 'LINE Pay決済コードが無効または期限切れです。再スキャンしてください。', 'LINE Pay 결제 바코드가 유효하지 않거나 만료되었습니다. 다시 스캔해 주세요.')]
 ];
 
 const UI_DYNAMIC_PATTERNS = [
@@ -430,6 +490,23 @@ const UI_PHRASE_TRANSLATIONS = [
   ['安全鎖定並卸載店家後台節點', 'Lock and unload POS session', '安全にロックする', '안전하게 POS 잠금'],
   ['開啟顧客叫號大螢幕看板', 'Open Customer TV Call Board', '呼出大画面ボードを開く', '고객 호출 대형 전광판 열기'],
   ['確認購物車明細與預訂設定', 'Review Cart & Pickup Options', 'カート内容と受取設定の確認', '장바구니 내역 및 픽업 설정 확인'],
+  ['查看購物車・選取餐與預訂時間', 'View Cart & Pickup Time', 'カートを見る・受取時間選択', '장바구니 보기・픽업 시간 선택'],
+  ['櫃檯收銀數字鍵盤', 'POS Cash Numpad', 'レジ現金テンキー', 'POS 현금 숫자 키패드'],
+  ['點選輸入顧客實收金額', 'Enter Cash Tendered', 'お預かり金額を入力', '고객 수령 금액 입력'],
+  ['ISO/IEC 18004 光學條碼核銷', 'ISO/IEC 18004 Optical QR Verification', 'ISO/IEC 18004 QRコード検収', 'ISO/IEC 18004 QR 코드 인증'],
+  ['掃描顧客電子取餐憑證 QR Code', 'Scan Customer Pickup QR Code', 'お客様の受取QRコードをスキャン', '고객 픽업 QR 코드 스캔'],
+  ['廚房出單小票與日結單預覽', '80mm Ticket & Z-Report Preview', '80mm伝票・精算書プレビュー', '80mm 영수증・마감 정산 미리보기'],
+  ['櫃檯掛單暫存佇列', 'Counter Held Orders Queue', '一時保留リスト', '카운터 보류 주문 목록'],
+  ['暫存掛單清單（隨時取回結帳）', 'Held Orders (Resume Anytime)', '保留注文一覧（いつでも再開可）', '보류 주문 목록 (언제든 결제 재개)'],
+  ['未完成訂單修改與單品作廢', 'Modify Active Order / Void Item', '注文内容の変更・単品取消', '진행 주문 수정 / 단품 취소'],
+  ['改單 / 單品作廢', 'Edit Order / Void Item', '注文修正 / 単品取消', '주문 수정 / 단품 취소'],
+  ['行動支付線上結帳收銀台', 'Online Mobile Payment Checkout', 'モバイル決済チェックアウト', '모바일 온라인 결제창'],
+  ['LINE Pay 付款確認', 'LINE Pay Payment Confirmation', 'LINE Pay 決済確認', 'LINE Pay 결제 확인'],
+  ['雲端 HMAC 時效簽章驗證 (4碼)', 'Cloud HMAC Session Auth (PIN)', 'クラウドHMAC認証 (PIN)', '클라우드 HMAC 세션 인증 (PIN)'],
+  ['店家營運管理授權驗證', 'Merchant Operations Authorization', '店舗管理システム認証', '매장 운영 관리 권한 인증'],
+  ['返回點餐頁', 'Back to Ordering', '注文ページへ戻る', '주문 화면으로 돌아가기'],
+  ['MealFlow 系統確認', 'MealFlow Confirmation', 'MealFlow システム確認', 'MealFlow 시스템 확인'],
+  ['請確認操作', 'Confirm Action', '操作の確認', '작업 확인'],
   ['應付總計金額', 'Total Due', 'お支払い合計', '총 결제 금액'],
   ['防偽動態電子取餐憑證', 'Verified Live Pickup Ticket', '偽造防止リアルタイム受取チケット', '위조 방지 실시간 픽업 티켓'],
   ['您的專屬取餐流水號', 'Your Pickup Number', 'お客様の受取番号', '고객님의 픽업 번호'],
@@ -832,18 +909,16 @@ const UI_PHRASE_TRANSLATIONS = [
   ['立即', 'Now', '今すぐ', '즉시']
 ];
 
-// 預編譯合併排序詞表（嚴格依原文長度由長到短排序，杜絕短詞搶先切碎長詞如「蒲家廚房」或「現場櫃檯付現」）
-const __COMBINED_GLOSSARY_SORTED = (() => {
+// 精確整句對應表（v25.0 徹底廢除貪婪子字串切碎，杜絕任何「葱Scallion Pancakes」或「Morning Shift收銀」中英夾雜！）
+const UI_PHRASE_EXACT_MAP = (() => {
   const map = new Map();
-  Object.entries(I18N_DICTIONARY).forEach(([k, v]) => {
-    if (!k || k.length < 2) return;
-    if (typeof v === 'string') map.set(k, [k, v, v, v]);
-    else map.set(k, [k, v.en || k, v.ja || v.en || k, v.ko || v.en || k]);
-  });
   UI_PHRASE_TRANSLATIONS.forEach(row => {
-    if (row && row[0]) map.set(row[0], row);
+    if (!row || !row[0]) return;
+    const key = String(row[0]).trim();
+    if (!key) return;
+    map.set(key, row);
   });
-  return Array.from(map.values()).sort((a, b) => b[0].length - a[0].length);
+  return map;
 })();
 
 function translateServerError(rawMsg) {
@@ -869,24 +944,35 @@ function translateSystemText(rawText) {
   const startIdx = orig.indexOf(trimmed);
   const leadingWs = orig.slice(0, startIdx);
   const trailingWs = orig.slice(startIdx + trimmed.length);
+  const langIdx = lang === 'en' ? 1 : (lang === 'ja' ? 2 : (lang === 'ko' ? 3 : 0));
 
-  // 1. 完整精確字典比對（含帶前綴 Emoji 的標籤）
-  const exactFull = I18N_DICTIONARY[trimmed];
-  if (exactFull) {
-    const tr = typeof exactFull === 'string' ? exactFull : (exactFull[lang] || exactFull.en || trimmed);
+  // 1. 完整精確詞典比對（含純前置 Emoji 符號）
+  const exactDict = I18N_DICTIONARY[trimmed];
+  if (exactDict) {
+    const tr = typeof exactDict === 'string' ? exactDict : (exactDict[lang] || exactDict.en || trimmed);
     return `${leadingWs}${tr}${trailingWs}`;
   }
+  const exactPhrase = UI_PHRASE_EXACT_MAP.get(trimmed);
+  if (exactPhrase) {
+    return `${leadingWs}${exactPhrase[langIdx] || exactPhrase[1] || trimmed}${trailingWs}`;
+  }
+
   const emojiPrefixMatch = trimmed.match(/^([^\u4E00-\u9FFFA-Za-z0-9(\[（【]+)\s*(.+)$/);
   if (emojiPrefixMatch) {
-    const body = emojiPrefixMatch[2];
-    const exactBody = I18N_DICTIONARY[body];
-    if (exactBody) {
-      const tr = typeof exactBody === 'string' ? exactBody : (exactBody[lang] || exactBody.en || body);
-      return `${leadingWs}${emojiPrefixMatch[1]} ${tr}${trailingWs}`;
+    const prefix = emojiPrefixMatch[1].trim();
+    const body = emojiPrefixMatch[2].trim();
+    const exactBodyDict = I18N_DICTIONARY[body];
+    if (exactBodyDict) {
+      const tr = typeof exactBodyDict === 'string' ? exactBodyDict : (exactBodyDict[lang] || exactBodyDict.en || body);
+      return `${leadingWs}${prefix} ${tr}${trailingWs}`;
+    }
+    const exactBodyPhrase = UI_PHRASE_EXACT_MAP.get(body);
+    if (exactBodyPhrase) {
+      return `${leadingWs}${prefix} ${exactBodyPhrase[langIdx] || exactBodyPhrase[1] || body}${trailingWs}`;
     }
   }
 
-  // 2. 動態結構化模板比對
+  // 2. 完整結構化動態樣式比對（整句錨定，絕不做局部切碎）
   for (let i = 0; i < UI_DYNAMIC_PATTERNS.length; i++) {
     const [re, fn] = UI_DYNAMIC_PATTERNS[i];
     const m = trimmed.match(re);
@@ -898,40 +984,8 @@ function translateSystemText(rawText) {
     if (m) return `${leadingWs}${fn(m)}${trailingWs}`;
   }
 
-  // 3. 合併詞表嚴格長詞優先替換
-  let out = trimmed;
-  const langIdx = lang === 'en' ? 1 : (lang === 'ja' ? 2 : (lang === 'ko' ? 3 : 0));
-
-  for (let i = 0; i < __COMBINED_GLOSSARY_SORTED.length; i++) {
-    const row = __COMBINED_GLOSSARY_SORTED[i];
-    if (out.indexOf(row[0]) >= 0) {
-      out = out.split(row[0]).join(row[langIdx] || row[1]);
-      if (!/[\u4E00-\u9FFF]/.test(out)) break;
-    }
-  }
-
-  // 殘餘單字單位（如「1組」「3份」「0單」「4分」）快速收尾
-  if (/[\u4E00-\u9FFF]/.test(out)) {
-    out = out
-      .replace(/(\d+)\s*組/g, (_, n) => t(`${n}組`, `${n} groups`, `${n}組`, `${n}그룹`))
-      .replace(/(\d+)\s*道/g, (_, n) => t(`${n}道`, `${n} dishes`, `${n}品`, `${n}개`))
-      .replace(/(\d+)\s*份/g, (_, n) => t(`${n}份`, `${n} pcs`, `${n}点`, `${n}개`))
-      .replace(/(\d+)\s*筆/g, (_, n) => t(`${n}筆`, `${n} orders`, `${n}件`, `${n}건`))
-      .replace(/(\d+)\s*單/g, (_, n) => t(`${n}單`, `${n} orders`, `${n}件`, `${n}건`))
-      .replace(/(\d+)\s*分/g, (_, n) => t(`${n}分`, `${n}m`, `${n}分`, `${n}분`))
-      .replace(/(\d+)\s*項/g, (_, n) => t(`${n}項`, `${n} items`, `${n}点`, `${n}개`));
-  }
-
-  if (lang === 'en' || lang === 'ko') {
-    out = out
-      .replace(/（/g, ' (').replace(/）/g, ')')
-      .replace(/：/g, ': ').replace(/、/g, ', ').replace(/，/g, ', ').replace(/。/g, '.').replace(/；/g, '; ')
-      .replace(/「/g, '"').replace(/」/g, '"')
-      .replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
-      .replace(/\s{2,}/g, ' ').trim();
-  }
-
-  return `${leadingWs}${out}${trailingWs}`;
+  // 3. 未命中完整詞條時原樣保留（嚴格保護商家自訂菜名、分類與人名，絕不產生中英夾雜！）
+  return orig;
 }
 
 function trTerm(rawStr) {
@@ -942,22 +996,56 @@ function trTerm(rawStr) {
   if (exact) {
     return typeof exact === 'string' ? exact : (exact[lang] || exact.en || s);
   }
+  const exactPhrase = UI_PHRASE_EXACT_MAP.get(s);
+  if (exactPhrase) {
+    const langIdx = lang === 'ja' ? 2 : (lang === 'ko' ? 3 : 1);
+    return exactPhrase[langIdx] || exactPhrase[1] || s;
+  }
   const qtyMatch = s.match(/^(.+?)\s*([×x]\s*\d+)$/i);
   if (qtyMatch && I18N_DICTIONARY[qtyMatch[1].trim()]) {
     const baseEntry = I18N_DICTIONARY[qtyMatch[1].trim()];
     const baseTranslated = typeof baseEntry === 'string' ? baseEntry : (baseEntry[lang] || baseEntry.en || qtyMatch[1]);
     return `${baseTranslated} ${qtyMatch[2].replace(/\s+/g, '')}`;
   }
-  return translateSystemText(s);
+  // 逗號或頓號分隔的多重詞條（如「正常飯量、小辣」）：僅當所有段落皆可精確翻譯時才翻譯
+  if (/[、,]/.test(s)) {
+    const parts = s.split(/[、,]/).map(p => p.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      const translatedParts = parts.map(p => {
+        const ex = I18N_DICTIONARY[p];
+        if (ex) return typeof ex === 'string' ? ex : (ex[lang] || ex.en || p);
+        const ep = UI_PHRASE_EXACT_MAP.get(p);
+        if (ep) {
+          const langIdx = lang === 'ja' ? 2 : (lang === 'ko' ? 3 : 1);
+          return ep[langIdx] || ep[1] || p;
+        }
+        const qm = p.match(/^(.+?)\s*([×x]\s*\d+)$/i);
+        if (qm && I18N_DICTIONARY[qm[1].trim()]) {
+          const be = I18N_DICTIONARY[qm[1].trim()];
+          return `${typeof be === 'string' ? be : (be[lang] || be.en)} ${qm[2].replace(/\s+/g, '')}`;
+        }
+        return null;
+      });
+      if (translatedParts.every(Boolean)) return translatedParts.join(', ');
+    }
+  }
+  return s;
 }
 
 function trDishName(item) {
   if (!item) return '';
   const lang = getCurrentAppLang();
-  if (lang !== 'zh-TW' && item.nameEn && String(item.nameEn).trim()) {
-    return String(item.nameEn).trim();
+  const baseName = String(item.baseName || item.name || '').trim();
+  if (lang !== 'zh-TW') {
+    if (item.nameEn && String(item.nameEn).trim()) {
+      return String(item.nameEn).trim();
+    }
+    const exact = I18N_DICTIONARY[baseName];
+    if (exact) {
+      return typeof exact === 'string' ? exact : (exact[lang] || exact.en || baseName);
+    }
   }
-  return String(item.baseName || item.name || '');
+  return baseName;
 }
 
 // WeakMap 保存原文，確保切換語系 100% 可逆無損，且完全不使用 MutationObserver

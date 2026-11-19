@@ -1,4 +1,8 @@
-const CACHE_NAME = 'mealflow-pwa-v24';
+// =========================================================================
+// MealFlow v25.0 — 潔淨高效 PWA Service Worker
+// 三-2：徹底移除易遭瀏覽器強殺的 5 分鐘遞迴 setTimeout 輪詢迴圈；專注離線快取、Web Push 與通知點擊導航
+// =========================================================================
+const CACHE_NAME = 'mealflow-pwa-v25';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -8,12 +12,12 @@ const APP_SHELL_ASSETS = [
   './store/index.html',
   './board/',
   './board/index.html',
-  './board/qr.js?v=24.0',
+  './board/qr.js?v=25.0',
   './board/manifest.json',
-  './styles.css?v=24.0',
-  './i18n.js?v=24.0',
-  './app.js?v=24.0',
-  './merchant.js?v=24.0',
+  './styles.css?v=25.0',
+  './i18n.js?v=25.0',
+  './app.js?v=25.0',
+  './merchant.js?v=25.0',
   './jsQR.min.js',
   './logo-icon.jpg',
   './logo-text.png',
@@ -38,21 +42,6 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// ==================== #1 & 四-1 背景節流輪詢與系統級推播引擎 (不劫持音訊、不發動輪詢風暴) ====================
-const SW_WATCH_INTERVAL_MS = 15000;
-const swWatchState = {
-  gasUrl: '',
-  clientDeviceId: '',
-  watchedOrderIds: [],
-  knownOrderStateMap: {},
-  storeMode: false,
-  merchantAuthToken: '',
-  merchantStoreId: '',
-  knownStoreOrderIds: {},
-  isLoopRunning: false,
-  lastLoopActiveTs: 0
-};
-
 async function showSwOrderNotification(title, body, tag, targetUrl, orderId) {
   try {
     await self.registration.showNotification(title, {
@@ -68,176 +57,11 @@ async function showSwOrderNotification(title, body, tag, targetUrl, orderId) {
         orderId: orderId || ''
       },
       actions: [
-        { action: 'open', title: '🎟️ 立即開啟查看取餐單' },
+        { action: 'open', title: '🎟️ 查看取餐單' },
         { action: 'dismiss', title: '稍後' }
       ]
     });
   } catch (e) {}
-}
-
-async function broadcastToWindowClients(payload) {
-  try {
-    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of clientList) {
-      try {
-        client.postMessage(payload);
-      } catch (e) {}
-    }
-  } catch (e) {}
-}
-
-async function checkSingleWatchedOrderFromSw(orderId) {
-  if (!swWatchState.gasUrl || !orderId) return null;
-  try {
-    const res = await fetch(swWatchState.gasUrl, {
-      method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'getOrder',
-        orderId: orderId,
-        clientDeviceId: swWatchState.clientDeviceId || ''
-      })
-    });
-    const data = await res.json();
-    if (data && data.success && data.order) {
-      return data.order;
-    }
-  } catch (e) {}
-  return null;
-}
-
-async function pollCloudOrdersFromServiceWorker() {
-  if (!swWatchState.gasUrl) return;
-  const hasStudentOrders = Array.isArray(swWatchState.watchedOrderIds) && swWatchState.watchedOrderIds.length > 0;
-  const hasStoreWatch = Boolean(swWatchState.storeMode && swWatchState.merchantAuthToken && swWatchState.merchantStoreId);
-  if (!hasStudentOrders && !hasStoreWatch) return;
-
-  try {
-    const reqBody = {
-      action: 'initBundle',
-      myOrderIds: swWatchState.watchedOrderIds.slice(0, 20),
-      clientDeviceId: swWatchState.clientDeviceId || ''
-    };
-    if (hasStoreWatch) {
-      reqBody.merchantAuthToken = swWatchState.merchantAuthToken;
-      reqBody.storeId = swWatchState.merchantStoreId;
-    }
-
-    const res = await fetch(swWatchState.gasUrl, {
-      method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(reqBody)
-    });
-    const data = await res.json();
-    const payload = (data && data.bundle) ? data.bundle : data;
-    let cloudOrders = (payload && Array.isArray(payload.orders))
-      ? payload.orders
-      : ((payload && Array.isArray(payload.recentOrders)) ? payload.recentOrders : []);
-
-    if (hasStudentOrders) {
-      const returnedIds = new Set(cloudOrders.map((o) => String(o && o.orderId)));
-      for (const wid of swWatchState.watchedOrderIds.slice(0, 3)) {
-        if (!returnedIds.has(String(wid))) {
-          const singleOrd = await checkSingleWatchedOrderFromSw(wid);
-          if (singleOrd) cloudOrders.push(singleOrd);
-        }
-      }
-    }
-
-    if (hasStudentOrders && cloudOrders.length > 0) {
-      for (const wid of swWatchState.watchedOrderIds) {
-        const ord = cloudOrders.find((o) => o && String(o.orderId) === String(wid));
-        if (!ord) continue;
-
-        const curStatus = String(ord.status || '');
-        const curNotifyCount = Math.max(0, Number(ord.notifyCount) || (curStatus === '可取餐' ? 1 : 0));
-        const prev = swWatchState.knownOrderStateMap[wid];
-        const transitionedToReady = curStatus === '可取餐' && (!prev || prev.status !== '可取餐' || curNotifyCount > (prev.notifyCount || 0));
-
-        swWatchState.knownOrderStateMap[wid] = {
-          status: curStatus,
-          notifyCount: curNotifyCount,
-          pickupNumber: ord.pickupNumber || '',
-          storeName: ord.storeName || 'MealFlow'
-        };
-
-        if (transitionedToReady) {
-          const verCode = (ord.verificationCode && ord.verificationCode !== '******') ? ord.verificationCode : '';
-          const targetUrl = `./order/?id=${encodeURIComponent(ord.orderId)}${verCode ? '&v=' + encodeURIComponent(verCode) : ''}`;
-          await showSwOrderNotification(
-            `🔔 取餐號 #${ord.pickupNumber} 餐點好囉！`,
-            `【${ord.storeName || '學餐櫃位'}】已呼叫您取餐（第 ${Math.max(1, curNotifyCount)} 次通知），請前往櫃檯出示憑證領取！`,
-            `pickup-ready-${ord.orderId}-${curNotifyCount}`,
-            targetUrl,
-            ord.orderId
-          );
-          await broadcastToWindowClients({
-            type: 'SW_ORDER_READY_ALERT',
-            order: ord
-          });
-        }
-      }
-    }
-
-    if (hasStoreWatch && cloudOrders.length > 0) {
-      for (const ord of cloudOrders) {
-        if (!ord || !ord.orderId) continue;
-        if (String(ord.storeId) !== String(swWatchState.merchantStoreId)) continue;
-        if (!swWatchState.knownStoreOrderIds[ord.orderId]) {
-          swWatchState.knownStoreOrderIds[ord.orderId] = true;
-          if (ord.status === '製作中') {
-            await showSwOrderNotification(
-              `🔔 新訂單進單 #${ord.pickupNumber} (${ord.storeName || ''})`,
-              `應收 NT$${ord.finalTotal} (${ord.paymentMethod || '現場'}) ・ 點擊返回 KDS 廚房控單`,
-              `kds-new-${ord.orderId}`,
-              `./store/?store=${encodeURIComponent(ord.storeId)}&tab=kds`,
-              ord.orderId
-            );
-            await broadcastToWindowClients({
-              type: 'SW_NEW_KDS_ORDER',
-              order: ord
-            });
-          }
-        }
-      }
-    }
-  } catch (e) {}
-}
-
-function startSwAutonomousWatchChunk(event) {
-  const hasWork = (Array.isArray(swWatchState.watchedOrderIds) && swWatchState.watchedOrderIds.length > 0) ||
-                  Boolean(swWatchState.storeMode && swWatchState.merchantAuthToken);
-  if (!hasWork || !swWatchState.gasUrl) return;
-
-  const now = Date.now();
-  if (swWatchState.isLoopRunning && (now - swWatchState.lastLoopActiveTs) < SW_WATCH_INTERVAL_MS * 1.5) {
-    return;
-  }
-
-  swWatchState.isLoopRunning = true;
-  swWatchState.lastLoopActiveTs = now;
-
-  // 四-1：節流至 15 秒一次，單段最多 20 次（5 分鐘），大幅降低 GAS 並發壓力
-  const watchPromise = (async () => {
-    try {
-      for (let step = 0; step < 20; step++) {
-        const stillHasWork = (Array.isArray(swWatchState.watchedOrderIds) && swWatchState.watchedOrderIds.length > 0) ||
-                             Boolean(swWatchState.storeMode && swWatchState.merchantAuthToken);
-        if (!stillHasWork) break;
-        swWatchState.lastLoopActiveTs = Date.now();
-        await pollCloudOrdersFromServiceWorker();
-        await new Promise((r) => setTimeout(r, SW_WATCH_INTERVAL_MS));
-      }
-    } finally {
-      swWatchState.isLoopRunning = false;
-    }
-  })();
-
-  if (event && typeof event.waitUntil === 'function') {
-    event.waitUntil(watchPromise);
-  }
 }
 
 self.addEventListener('push', (event) => {
@@ -275,55 +99,9 @@ self.addEventListener('message', (event) => {
   if (data.type === 'SHOW_SYSTEM_NOTIFICATION') {
     const title = data.title || '🔔 MealFlow 即時通知';
     const tag = data.tag || ('mealflow-notify-' + Date.now());
-    if (data.orderId && data.orderStatus) {
-      swWatchState.knownOrderStateMap[data.orderId] = {
-        status: data.orderStatus,
-        notifyCount: Math.max(1, Number(data.notifyCount) || 1),
-        pickupNumber: data.pickupNumber || '',
-        storeName: data.storeName || ''
-      };
-    }
     event.waitUntil(
       showSwOrderNotification(title, data.body || '', tag, data.url || './order/', data.orderId || '')
     );
-    return;
-  }
-
-  if (data.type === 'SYNC_WATCHED_ORDERS') {
-    if (data.gasUrl) swWatchState.gasUrl = String(data.gasUrl);
-    if (data.clientDeviceId) swWatchState.clientDeviceId = String(data.clientDeviceId);
-    if (Array.isArray(data.watchedOrderIds)) {
-      swWatchState.watchedOrderIds = data.watchedOrderIds.map((id) => String(id)).filter(Boolean);
-    }
-    if (data.knownStateMap && typeof data.knownStateMap === 'object') {
-      Object.keys(data.knownStateMap).forEach((oid) => {
-        const entry = data.knownStateMap[oid];
-        if (!entry) return;
-        const existing = swWatchState.knownOrderStateMap[oid];
-        if (!existing || (Number(entry.notifyCount) || 0) >= (Number(existing.notifyCount) || 0)) {
-          swWatchState.knownOrderStateMap[oid] = {
-            status: String(entry.status || ''),
-            notifyCount: Math.max(0, Number(entry.notifyCount) || 0),
-            pickupNumber: String(entry.pickupNumber || ''),
-            storeName: String(entry.storeName || '')
-          };
-        }
-      });
-    }
-    swWatchState.storeMode = Boolean(data.storeMode);
-    swWatchState.merchantAuthToken = String(data.merchantAuthToken || '');
-    swWatchState.merchantStoreId = String(data.merchantStoreId || '');
-    if (Array.isArray(data.knownStoreOrderIds)) {
-      data.knownStoreOrderIds.forEach((oid) => {
-        if (oid) swWatchState.knownStoreOrderIds[oid] = true;
-      });
-    }
-    startSwAutonomousWatchChunk(event);
-    return;
-  }
-
-  if (data.type === 'KEEP_ALIVE_PING') {
-    startSwAutonomousWatchChunk(event);
   }
 });
 
@@ -363,7 +141,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 四-2：Network-First + 版本號容錯快取比對 (ignoreSearch: true)，杜絕 ?v=23.0 與預快取鍵值對不上的離線白屏問題
+  // Network-First + 版本號容錯快取比對 (ignoreSearch: true)
   event.respondWith(
     fetch(req)
       .then((networkRes) => {
