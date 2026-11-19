@@ -371,14 +371,19 @@ function isStoreClosedOnDate(store, dateStr) {
  */
 function getStoreBusinessHoursStatus(store) {
   if (!store) {
-    return { canOrderNow: false, reasonCode: 'MANUAL_CLOSED', statusLabel: '暫停營業（僅開放預訂）', shortPillText: '🔴 暫停營業 (可預訂)' };
+    return {
+      canOrderNow: false,
+      reasonCode: 'MANUAL_CLOSED',
+      statusLabel: t('暫停營業（僅開放預訂）', 'Closed (Pre-order open)', '準備中（予約のみ受付）', '휴식 중 (예약만 가능)'),
+      shortPillText: t('🔴 暫停營業 (可預訂)', '🔴 Closed (Pre-order)', '🔴 準備中 (予約可)', '🔴 휴식 중 (예약 가능)')
+    };
   }
   if (store.isOpen === false) {
     return {
       canOrderNow: false,
       reasonCode: 'MANUAL_CLOSED',
-      statusLabel: t('本店目前為休息或備料時段，暫停「立即製作」（開放預訂未來時段）', 'Store is currently on break (Pre-order open)'),
-      shortPillText: t('🔴 暫停營業 (可預訂)', '🔴 Closed (Pre-order)')
+      statusLabel: t('本店目前為休息或備料時段，暫停「立即製作」（開放預訂未來時段）', 'Store is currently on break (Pre-order open)', '現在準備中です（予約受付中）', '현재 브레이크 타임입니다 (예약 가능)'),
+      shortPillText: t('🔴 暫停營業 (可預訂)', '🔴 Closed (Pre-order)', '🔴 準備中 (予約可)', '🔴 휴식 중 (예약 가능)')
     };
   }
   const now = getTaipeiDateObj();
@@ -387,8 +392,8 @@ function getStoreBusinessHoursStatus(store) {
     return {
       canOrderNow: false,
       reasonCode: 'CLOSED_DAY',
-      statusLabel: t('今日為本店固定公休日，暫不提供立即製作（可預訂其他營業日）', 'Closed today for scheduled day off (Pre-order open)'),
-      shortPillText: t('🗓️ 今日公休 (可預訂)', '🗓️ Day Off (Pre-order)')
+      statusLabel: t('今日為本店固定公休日，暫不提供立即製作（可預訂其他營業日）', 'Closed today for scheduled day off (Pre-order open)', '本日は定休日です（別日の予約可）', '오늘은 정기 휴무일입니다 (다른 날 예약 가능)'),
+      shortPillText: t('🗓️ 今日公休 (可預訂)', '🗓️ Day Off (Pre-order)', '🗓️ 定休日 (予約可)', '🗓️ 휴무 (예약 가능)')
     };
   }
   const nowMins = now.getHours() * 60 + now.getMinutes();
@@ -401,16 +406,16 @@ function getStoreBusinessHoursStatus(store) {
     return {
       canOrderNow: false,
       reasonCode: 'BEFORE_OPEN',
-      statusLabel: t(`尚未開門（營業時間 ${openStr}~${closeStr}），歡迎先預訂今日取餐時段！`, `Opens at ${openStr} (Pre-order available)`),
-      shortPillText: t(`🌅 ${openStr} 開門 (可預訂)`, `🌅 Opens ${openStr} (Pre-order)`)
+      statusLabel: t(`尚未開門（營業時間 ${openStr}~${closeStr}），歡迎先預訂今日取餐時段！`, `Opens at ${openStr} (Pre-order available)`, `${openStr}開店（予約受付中）`, `${openStr} 오픈 (예약 가능)`),
+      shortPillText: t(`🌅 ${openStr} 開門 (可預訂)`, `🌅 Opens ${openStr} (Pre-order)`, `🌅 ${openStr}開店 (予約可)`, `🌅 ${openStr} 오픈`)
     };
   }
   if (nowMins > closeMins) {
     return {
       canOrderNow: false,
       reasonCode: 'AFTER_CLOSE',
-      statusLabel: t(`今日已打烊（營業時間 ${openStr}~${closeStr}），歡迎預訂明日取餐時段！`, `Closed for today (${openStr}~${closeStr}), pre-order for tomorrow!`),
-      shortPillText: t('🌙 今日已打烊 (可預訂)', '🌙 Closed (Pre-order)')
+      statusLabel: t(`今日已打烊（營業時間 ${openStr}~${closeStr}），歡迎預訂明日取餐時段！`, `Closed for today (${openStr}~${closeStr}), pre-order for tomorrow!`, `本日営業終了（${openStr}~${closeStr}）・明日分予約可`, `오늘 영업 종료 (${openStr}~${closeStr})・내일 예약 가능`),
+      shortPillText: t('🌙 今日已打烊 (可預訂)', '🌙 Closed (Pre-order)', '🌙 営業終了 (予約可)', '🌙 영업 종료 (예약 가능)')
     };
   }
 
@@ -423,8 +428,8 @@ function getStoreBusinessHoursStatus(store) {
       return {
         canOrderNow: false,
         reasonCode: 'ON_BREAK',
-        statusLabel: t(`目前為午休備料時段（${breakStartStr}~${breakEndStr}），暫停立即製作，可預訂 ${breakEndStr} 後取餐！`, `Afternoon break (${breakStartStr}~${breakEndStr}), pre-order available!`),
-        shortPillText: t(`☕ 午休中 ${breakEndStr}開鍋 (可預訂)`, `☕ Break until ${breakEndStr}`)
+        statusLabel: t(`目前為午休備料時段（${breakStartStr}~${breakEndStr}），暫停立即製作，可預訂 ${breakEndStr} 後取餐！`, `Afternoon break (${breakStartStr}~${breakEndStr}), pre-order available!`, `休憩中（${breakStartStr}~${breakEndStr}）・予約受付中`, `브레이크 타임 (${breakStartStr}~${breakEndStr})・예약 가능`),
+        shortPillText: t(`☕ 午休中 ${breakEndStr}開鍋 (可預訂)`, `☕ Break until ${breakEndStr}`, `☕ 休憩中 ${breakEndStr}再開`, `☕ 휴식 중 ${breakEndStr} 재개`)
       };
     }
   }
@@ -432,8 +437,8 @@ function getStoreBusinessHoursStatus(store) {
   return {
     canOrderNow: true,
     reasonCode: 'OPEN',
-    statusLabel: t('正常營業中', 'Open Now'),
-    shortPillText: t(`🟢 順暢・約 ${store.avgPrepMinutes || 5} 分取餐`, `🟢 ~${store.avgPrepMinutes || 5} min wait`)
+    statusLabel: t('正常營業中', 'Open Now', '営業中', '영업 중'),
+    shortPillText: t(`🟢 順暢・約 ${store.avgPrepMinutes || 5} 分取餐`, `🟢 ~${store.avgPrepMinutes || 5} min wait`, `🟢 約${store.avgPrepMinutes || 5}分`, `🟢 약 ${store.avgPrepMinutes || 5}분`)
   };
 }
 
@@ -1856,8 +1861,8 @@ function t(zhText, enText, jaText, koText) {
 }
 
 const I18N_DICTIONARY = {
-  '雙溪校區': { en: 'Waishuangxi Campus', ja: '双渓キャンパス', ko: '솽시 캠퍼스' },
-  '城中校區': { en: 'Downtown Campus', ja: '城中キャンパス', ko: '청중 캠퍼스' },
+  '雙溪校區': { en: 'Waishuangxi', ja: '双渓キャンパス', ko: '솽시 캠퍼스' },
+  '城中校區': { en: 'Downtown', ja: '城中キャンパス', ko: '청중 캠퍼스' },
   '趙班長海苔飯捲': { en: "Capt. Zhao's Kimbap", ja: '趙班長キンパ', ko: '조반장 김밥' },
   '雙溪-丼物園': { en: 'Donburi Garden', ja: '丼物園', ko: '돈부리 가든' },
   '丼物園': { en: 'Donburi Garden', ja: '丼物園', ko: '돈부리 가든' },
@@ -1865,13 +1870,33 @@ const I18N_DICTIONARY = {
   '四海遊龍': { en: 'Sihai Youlong Dumplings', ja: '四海遊龍（餃子）', ko: '스하이요우룽 만두' },
   '蒲家廚房': { en: 'Pu Family Kitchen', ja: '蒲家キッチン', ko: '푸가 키친' },
   '城中-咖哩食堂': { en: 'Curry House', ja: 'カレー食堂', ko: '카레 식당' },
+  '咖哩食堂': { en: 'Curry House', ja: 'カレー食堂', ko: '카레 식당' },
   '城中-吳葉食堂': { en: 'Wuye Bento & Grill', ja: '呉葉食堂', ko: '우예 식당' },
+  '林娘食堂': { en: "Lin's Noodle Kitchen", ja: '林娘食堂', ko: '린냥 식당' },
+  '海音咖啡': { en: 'Haiyin Cafe', ja: '海音カフェ', ko: '하이인 카페' },
+  '奕香咖啡': { en: 'Yixiang Coffee', ja: '奕香コーヒー', ko: '이샹 커피' },
+  '夠健康廚房': { en: 'Go Healthy Kitchen', ja: 'ヘルシーキッチン', ko: '고 헬시 키친' },
+  '醬心獨辣': { en: 'Spicy Malatang & Braised', ja: '醤心麻辣湯', ko: '마라탕・루웨이' },
+  '醬心獨辣麻辣燙': { en: 'Spicy Malatang & Braised', ja: '醤心麻辣湯', ko: '마라탕・루웨이' },
+  '東吳涼麵': { en: 'SCU Cold Noodles', ja: '東呉冷麺', ko: '둥우 냉면' },
+  '拉手-捲鑫酥': { en: 'Crispy Wraps & Bakery', ja: 'ラショウ・ラップサンド', ko: '크리스피 랩・베이커리' },
   '大熊涼麵 X 吃好食堂': { en: 'Big Bear Cold Noodles', ja: '大熊冷麺食堂', ko: '빅베어 냉면' },
   '人氣韓式・飯捲': { en: 'Korean Kimbap & Rolls', ja: '韓国キンパ・海苔巻き', ko: '김밥・한식' },
+  '人氣飯捲・抓餅輕食': { en: 'Kimbap & Crispy Pancakes', ja: 'キンパ・ネギパイ軽食', ko: '김밥・총좌빙' },
   '日式蓋飯・烏龍麵': { en: 'Donburi & Udon', ja: '丼・うどん', ko: '덮밥・우동' },
+  '日式丼飯・咖哩定食': { en: 'Japanese Donburi & Curry', ja: '和風丼・カレー定食', ko: '일본 덮밥・카레' },
   '鍋貼水餃・麵食': { en: 'Potstickers & Dumplings', ja: '焼餃子・水餃子', ko: '군만두・물만두' },
   '中式特餐・便當': { en: 'Signature Bento', ja: '中華弁当', ko: '중식 도시락' },
   '熟成咖哩・炸物': { en: 'Aged Curry & Cutlets', ja: '熟成カレー・揚げ物', ko: '숙성 카레・돈카츠' },
+  '風味咖哩・特色蓋飯': { en: 'Curry & Rice Bowls', ja: '風味カレー・丼ぶり', ko: '카레・덮밥' },
+  '台式麵食・手工餃': { en: 'Taiwanese Noodles & Dumplings', ja: '台湾麺・手作り餃子', ko: '대만 면・수제 만두' },
+  '港式便當・秘製涼麵': { en: 'HK Bento & Cold Noodles', ja: '香港弁当・特製冷麺', ko: '홍콩 도시락・냉면' },
+  '特調飲品・手作輕食': { en: 'Craft Drinks & Light Bites', ja: '特製ドリンク・軽食', ko: '음료・가벼운 식사' },
+  '特調咖啡・輕食簡餐': { en: 'Specialty Coffee & Meals', ja: '特製コーヒー・軽食', ko: '스페셜티 커피・식사' },
+  '健康廚房・低GI餐盒': { en: 'Low-GI Healthy Bento', ja: '低GIヘルシー弁当', ko: '저혈당 건강 도시락' },
+  '麻辣燙・乾拌滷味': { en: 'Malatang & Braised Dishes', ja: '麻辣湯・台湾煮込み', ko: '마라탕・루웨이' },
+  '招牌涼麵・各式熱麵': { en: 'Cold & Hot Noodles', ja: '名物冷麺・温かい麺', ko: '냉면・온면' },
+  '酥脆捲餅・法式麵包': { en: 'Crispy Wraps & French Bread', ja: 'サクサク巻餅・フランスパン', ko: '바삭한 랩・바게트' },
   '精緻台式簡餐': { en: 'Taiwanese Set Meals', ja: '台湾定食', ko: '대만 정식' },
   '手工涼麵・味噌湯': { en: 'Cold Noodles & Miso Soup', ja: '手打ち冷麺・味噌汁', ko: '냉면・미소국' },
   '韓式海苔飯捲': { en: 'Korean Kimbap Rolls', ja: '韓国海苔巻き', ko: '김밥류' },
@@ -1935,8 +1960,463 @@ const I18N_DICTIONARY = {
   '已完成': { en: 'Completed', ja: '完了', ko: '완료' },
   '已付款': { en: 'Paid', ja: '支払済', ko: '결제 완료' },
   '取餐付現': { en: 'Pay Cash at Pickup', ja: '受取時現金払い', ko: '픽업 시 현금 결제' },
-  '現場櫃檯付現': { en: 'Pay Cash at Counter', ja: '店頭現金払い', ko: '카운터 현금 결제' }
+  '現場櫃檯付現': { en: 'Pay Cash at Counter', ja: '店頭現金払い', ko: '카운터 현금 결제' },
+  '全部': { en: 'All', ja: 'すべて', ko: '전체' }
 };
+
+// 全系統介面多語詞彙庫（覆蓋學生端、店家 POS、KDS、日結單、營運分析、設定、彈窗與 Toast；保留店家自訂菜名交由店家編輯 nameEn）
+const SYSTEM_UI_PHRASES = [
+  ['瀏覽器接單鈴聲尚未解鎖（👉 點此立即啟用接單音效）', 'Order alarm audio locked (Tap to unlock sound)', '受注アラーム未解除（タップして音声を有効化）', '주문 알림음 잠금됨 (탭하여 알림음 켜기)'],
+  ['店務營運後台受雲端時效憑證保護中', 'Merchant Console Protected by Cloud Session', '店舗管理画面はクラウド認証で保護されています', '매장 관리 콘솔이 보안 세션으로 보호 중입니다'],
+  ['未持有該店有效 HMAC Session Token 前，系統禁止渲染收銀、退單與營業報表節點。', 'Verify your store PIN to access POS, orders, and reports.', '店舗PIN認証後、レジ・注文・売上レポートをご利用いただけます。', '매장 PIN 인증 후 POS, 주문 및 매출 리포트에 접근할 수 있습니다.'],
+  ['輸入店務授權碼驗證', 'Unlock with Store PIN', '店舗PINで解除', '매장 PIN 인증'],
+  ['請點擊左側餐點卡片加入點餐單', 'Tap a dish on the left to add to order', '左のメニューをタップして追加', '왼쪽 메뉴를 탭하여 주문에 추가하세요'],
+  ['支援「⏸️ 掛單暫存」與兩段式防誤觸收銀結帳', 'Supports Hold Order & Two-Step Checkout', '保留注文・2段階会計に対応', '주문 보류 및 2단계 결제 지원'],
+  ['班別錢箱清點・中途零用金收支與關班鎖定（列印時自動隱藏此設定框）', 'Cash Drawer Count, Petty Cash & Shift Lock (hidden when printing)', 'レジ点検・小口現金・締めロック（印刷時は非表示）', '시재 점검・소액 현금・마감 잠금 (인쇄 시 숨김)'],
+  ['確認購物車明細與預訂設定', 'Review Cart & Pickup Options', 'カート明細と受取設定の確認', '장바구니 및 픽업 설정 확인'],
+  ['查看購物車・選取餐與預訂時間', 'View Cart & Pickup Time', 'カートを見る・受取時間選択', '장바구니 보기・픽업 시간'],
+  ['我的點餐紀錄與跨裝置訂單查詢', 'My Orders & Cross-Device Lookup', '注文履歴・他端末照会', '내 주문 내역・다른 기기 조회'],
+  ['支援雙重驗證跨裝置安全找回', 'Secure cross-device order recovery', '二重認証で他端末からも安全に照会', '이중 인증으로 안전하게 주문 조회'],
+  ['確認金額・收款找零與出單', 'Confirm Amount, Payment & Print', '金額確認・お会計・発券', '금액 확인・결제 및 발행'],
+  ['櫃檯收銀確認・多元付款找零', 'Counter Checkout & Split Payment', 'レジ確認・複数決済対応', '카운터 결제・복합 결제'],
+  ['暫存掛單清單（隨時取回結帳）', 'Held Orders (Resume Anytime)', '保留注文リスト（いつでも再開）', '보류된 주문 목록 (언제든 재개)'],
+  ['目前本店沒有暫存中的掛單', 'No held orders for this store', '保留中の注文はありません', '보류 중인 주문이 없습니다'],
+  ['櫃檯掛單暫存佇列', 'POS Held Orders Queue', 'レジ保留キュー', 'POS 보류 주문'],
+  ['點選輸入顧客實收金額', 'Enter Cash Tendered', 'お預かり金額を入力', '받은 현금 입력'],
+  ['櫃檯收銀數字鍵盤', 'POS Cash Numpad', 'レジ数字キーパッド', 'POS 현금 키패드'],
+  ['櫃檯錢箱交班日結單 (Z-Report)', 'Shift Z-Report & Cash Reconciliation', 'シフト精算・日次レポート (Z-Report)', '교대 정산・일일 마감 (Z-Report)'],
+  ['櫃檯錢箱交班日結單', 'Shift Z-Report', 'シフト日次精算', '교대 일일 정산'],
+  ['廚房出單小票與日結單預覽', 'Receipt & Kitchen Ticket Preview', 'レシート・キッチン伝票プレビュー', '영수증・주방 주문서 미리보기'],
+  ['80mm 熱感應出單機格式', '80mm Thermal Printer Format', '80mmサーマルプリンタ形式', '80mm 감열지 인쇄 형식'],
+  ['立即列印 80mm 單據', 'Print 80mm Ticket', '80mm伝票を印刷', '80mm 전표 인쇄'],
+  ['顧客收據與追蹤 QR 憑證聯 (80mm)', 'Customer Receipt & QR (80mm)', 'お客様レシート・QR (80mm)', '고객 영수증 및 QR (80mm)'],
+  ['廚房大字工單聯 (Kitchen Work Ticket)', 'Kitchen Work Ticket', 'キッチン調理伝票', '주방 조리 주문서'],
+  ['餐盒 / 飲料杯貼紙聯 (Meal Stickers)', 'Meal Box & Cup Stickers', '弁当・カップ用ラベル', '도시락・음료 스티커'],
+  ['店家營運管理授權驗證', 'Merchant PIN Authorization', '店舗管理PIN認証', '매장 관리자 PIN 인증'],
+  ['雲端 HMAC 時效簽章驗證 (4碼)', 'Cloud HMAC Session Auth', 'クラウドHMAC認証', '클라우드 HMAC 인증'],
+  ['選擇收款方式（支援現金、行動支付與複合付款）', 'Payment Method (Cash / LINE Pay / Split)', 'お支払い方法（現金・LINE Pay・併用）', '결제 수단 (현금 / LINE Pay / 복합결제)'],
+  ['複合付款拆帳（現金入錢箱 + LINE Pay 入行動支付）', 'Split Payment (Cash Drawer + LINE Pay)', '併用払い内訳（現金＋LINE Pay）', '복합 결제 분할 (현금 + LINE Pay)'],
+  ['掃描顧客電子取餐憑證 QR Code', 'Scan Customer Pickup QR Code', '受取用QRコードをスキャン', '고객 픽업 QR 코드 스캔'],
+  ['未完成訂單修改與單品作廢', 'Modify Active Order / Void Item', '注文変更・単品取消', '주문 수정 / 단품 취소'],
+  ['編輯餐點與客製化選項', 'Edit Dish & Modifiers', 'メニュー・オプション編集', '메뉴 및 옵션 편집'],
+  ['餐點規格與選項設定', 'Dish Specs & Modifiers', 'メニュー仕様設定', '메뉴 옵션 설정'],
+  ['儲存餐點設定並同步雲端', 'Save Dish & Sync', '保存してクラウド同期', '저장 및 클라우드 동기화'],
+  ['依即時排隊狀況幫你快速選餐', 'Quick meal suggestions by live wait time', 'リアルタイム待ち時間からおすすめ提案', '실시간 대기시간 기반 메뉴 추천'],
+  ['MealFlow 智慧選餐與免排隊助手', 'MealFlow Smart Meal Assistant', 'MealFlow 食事アシスタント', 'MealFlow 메뉴 도우미'],
+  ['MealFlow 快速條件篩選助手', 'MealFlow Quick Filter Assistant', 'MealFlow クイック検索アシスタント', 'MealFlow 빠른 필터 도우미'],
+  ['一鍵透過 LINE 帳號授權綁定', 'One-Tap LINE Notification Binding', 'LINEアカウントで簡単通知連携', 'LINE 계정 원클릭 알림 연동'],
+  ['使用 LINE 帳號一鍵授權綁定', 'Connect with LINE', 'LINEで連携する', 'LINE으로 연동하기'],
+  ['綁定電子信箱免費取餐通知 / 或手動填入識別碼', 'Bind Email for Free Pickup Alerts', 'メール通知設定 / ID手動入力', '이메일 무료 픽업 알림 설정'],
+  ['綁定取餐推播通知', 'Bind Pickup Notifications', '受取通知を連携', '픽업 알림 연동'],
+  ['營業中 (點此切換)', 'Open (Tap to Pause)', '営業中 (切替)', '영업 중 (전환)'],
+  ['暫停營業 (點此恢復)', 'Paused (Tap to Open)', '準備中 (再開)', '휴식 중 (재개)'],
+  ['店家櫃檯收銀與營運中心', 'Merchant POS & Operations', '店舗POS・管理センター', '매장 POS・운영 센터'],
+  ['顧客即時取餐叫號大螢幕看板', 'Live Pickup Call Board', '受取番号ディスプレイ', '실시간 픽업 호출 전광판'],
+  ['訂單專屬追蹤憑證', 'Order Pickup Ticket', '受取電子チケット', '주문 픽업 티켓'],
+  ['線上點餐系統', 'Campus Ordering', 'オンライン注文', '온라인 주문'],
+  ['系統入口導覽', 'Portal Home', 'ポータルホーム', '포털 홈'],
+  ['即時取餐叫號看板', 'Live Pickup Board', '受取番号ボード', '실시간 호출판'],
+  ['廚房準備中 (Preparing)', 'Preparing', '調理中 (Preparing)', '조리 중 (Preparing)'],
+  ['請至櫃檯取餐 (Ready for Pickup)', 'Ready for Pickup', '受取可能 (Ready)', '픽업 가능 (Ready)'],
+  ['啟用叫號音效', 'Enable Sound', '音声ON', '알림음 켜기'],
+  ['關閉看板', 'Close Board', '閉じる', '닫기'],
+  ['切換看板店鋪：', 'Switch Store: ', '店舗切替：', '매장 전환: '],
+  ['目前無準備中單號', 'No orders preparing', '調理中の注文はありません', '조리 중인 주문 없음'],
+  ['請稍候，餐點完成將立即顯示並語音叫號', 'Ready numbers will appear here', '出来上がり次第ここに表示されます', '완료되면 여기에 번호가 표시됩니다'],
+  ['前往收銀確認', 'Proceed to Checkout', 'お会計へ進む', '결제 확인으로 이동'],
+  ['確認收款並立即出單', 'Confirm & Issue Order', '会計確定・発券', '결제 확정 및 발행'],
+  ['結帳出單', 'Checkout', '会計確定', '결제 완료'],
+  ['返回修改', 'Back', '戻って修正', '돌아가기'],
+  ['進階選項（預訂 / 折讓 / 備註 / 電話 / 統編）', 'More Options (Pre-order / Discount / Note)', '詳細オプション（予約・割引・メモ）', '추가 옵션 (예약 / 할인 / 메모)'],
+  ['進階選項', 'More Options', '詳細オプション', '추가 옵션'],
+  ['立即出餐', 'Make Now', '今すぐ調理', '즉시 조리'],
+  ['預訂取餐', 'Pre-order', '予約受取', '예약 픽업'],
+  ['全單招待', 'Comp Order', '全額サービス', '전액 무료'],
+  ['顧客實收現金', 'Cash Received', 'お預かり現金', '받은 현금'],
+  ['顧客實收金額', 'Cash Tendered', 'お預かり金額', '받은 금액'],
+  ['應找零錢', 'Change Due', 'お釣り', '거스름돈'],
+  ['應收總計', 'Total Due', '合計金額', '결제 합계'],
+  ['應付總計金額', 'Order Total', 'お支払い合計', '총 결제 금액'],
+  ['確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문하기'],
+  ['現場立即製作', 'Immediate Order', '即時調理', '즉시 조리'],
+  ['預覽單號', 'Preview #', 'プレビュー #', '미리보기 #'],
+  ['櫃檯點餐單', 'Counter Order', 'レジ注文票', '카운터 주문서'],
+  ['現場現金', 'Cash', '現金', '현금'],
+  ['複合付款', 'Split Pay', '併用払い', '복합 결제'],
+  ['現金支付金額 ($)', 'Cash Portion ($)', '現金金額 ($)', '현금 금액 ($)'],
+  ['LINE Pay 補差額 ($)', 'LINE Pay Balance ($)', 'LINE Pay残額 ($)', 'LINE Pay 잔액 ($)'],
+  ['開班點鈔登記', 'Open Shift Float', '開店準備金登録', '개점 시재 등록'],
+  ['已開班', 'Shift Open', '開局済', '개점 완료'],
+  ['開班點鈔', 'Open Shift', '開店点検', '개점 시재'],
+  ['交班日結單', 'Z-Report', '日次精算', '일일 마감'],
+  ['交班日結', 'Z-Report', '日次精算', '일일 마감'],
+  ['同步雲端', 'Sync', '同期', '동기화'],
+  ['鎖定後台', 'Lock', 'ロック', '잠금'],
+  ['叫號看板', 'Call Board', '呼出画面', '호출판'],
+  ['售罄切換', 'Sold Out', '売切切替', '품절 전환'],
+  ['已售罄(點此上架)', 'Sold Out (Restore)', '売切 (再販)', '품절 (재판매)'],
+  ['客製 ・ 售罄', 'Opts · Sold Out', '設定・売切', '옵션·품절'],
+  ['掛單', 'Hold', '保留', '보류'],
+  ['拆單', 'Split', '分割', '분할'],
+  ['清空', 'Clear', 'クリア', '비우기'],
+  ['收合', 'Hide', '閉じる', '접기'],
+  ['展開', 'Show', '開く', '펼치기'],
+  ['剛好', 'Exact', '丁度', '정확히'],
+  ['鍵盤', 'Keypad', 'テンキー', '키패드'],
+  ['折讓', 'Discount', '割引', '할인'],
+  ['自訂', 'Custom', 'カスタム', '직접입력'],
+  ['餐具', 'Cutlery', 'カトラリー', '수저'],
+  ['內用', 'Dine-in', '店内', '매장'],
+  ['外帶', 'Takeout', '持ち帰り', '포장'],
+  ['備註', 'Note', 'メモ', '메모'],
+  ['電話/末3碼', 'Phone', '電話番号', '전화번호'],
+  ['統編(8碼)', 'Tax ID', '法人番号', '사업자번호'],
+  ['全部站點', 'All Stations', '全ステーション', '전체 파트'],
+  ['主食飯麵', 'Mains', 'メイン', '메인 요리'],
+  ['炸物小菜', 'Sides & Fried', '揚げ物・副菜', '튀김・사이드'],
+  ['湯品飲品', 'Soups & Drinks', 'スープ・飲物', '국・음료'],
+  ['最緊急優先 (FIFO)', 'Urgent First (FIFO)', '緊急順 (FIFO)', '긴급순 (FIFO)'],
+  ['最新下單優先', 'Newest First', '新着順', '최신순'],
+  ['全部狀態', 'All Status', '全ステータス', '전체 상태'],
+  ['預約待排程', 'Scheduled', '予約待機', '예약 대기'],
+  ['待付款', 'Unpaid', '未払い', '미결제'],
+  ['製作中', 'Preparing', '調理中', '조리 중'],
+  ['可取餐', 'Ready', '受取可', '픽업 가능'],
+  ['已完成', 'Done', '完了', '완료'],
+  ['已取消', 'Cancelled', '取消済', '취소됨'],
+  ['鏡頭掃碼', 'Scan QR', 'QRスキャン', 'QR 스캔'],
+  ['確認核銷', 'Verify', '認証', '인증'],
+  ['現場單', 'POS', '店頭', '매장'],
+  ['線上預訂', 'Pre-order', 'ネット予約', '온라인 예약'],
+  ['線上單', 'Online', 'オンライン', '온라인'],
+  ['預訂轉入', 'Auto-Fired', '予約投入', '예약 투입'],
+  ['通知取餐', 'Call Ready', '呼出通知', '픽업 호출'],
+  ['再次叫號', 'Recall', '再呼出', '재호출'],
+  ['完成結單', 'Complete', '受取完了', '픽업 완료'],
+  ['退回製作', 'Back to Prep', '調理に戻す', '조리로 복원'],
+  ['復原為待取餐', 'Undo to Ready', '受取可に戻す', '픽업대기 복원'],
+  ['改單 / 單品作廢', 'Modify / Void', '変更・取消', '수정 / 취소'],
+  ['改單', 'Modify', '変更', '수정'],
+  ['留言', 'Message', '連絡', '메시지'],
+  ['印單', 'Print', '印刷', '인쇄'],
+  ['退單', 'Cancel', '取消', '취소'],
+  ['收款', 'Pay', '会計', '결제'],
+  ['廚房備料拆解統計', 'Kitchen Prep Summary', 'キッチン仕込み集計', '주방 조리 집계'],
+  ['顧客收據聯', 'Customer Receipt', 'お客様用', '고객 영수증'],
+  ['廚房大字工單', 'Kitchen Ticket', 'キッチン用', '주방 주문서'],
+  ['餐盒貼紙聯', 'Meal Stickers', 'ラベル用', '스티커'],
+  ['菜單管理', 'Menu', 'メニュー管理', '메뉴 관리'],
+  ['產能與優惠', 'Capacity & Deals', 'キャパ・割引', '생산량・할인'],
+  ['餐廳資料', 'Store Info', '店舗情報', '매장 정보'],
+  ['推播與安全', 'Alerts & Security', '通知・セキュリティ', '알림・보안'],
+  ['批次加料售罄開關', 'Bulk Modifier Sold-Out', 'トッピング一括売切', '토핑 일괄 품절'],
+  ['目前架上菜單', 'Active Menu', '登録メニュー', '등록된 메뉴'],
+  ['手動新增單一品項', 'Add New Dish', 'メニュー手動追加', '메뉴 수동 추가'],
+  ['新增選項群組', 'Add Option Group', 'グループ追加', '옵션 그룹 추가'],
+  ['套用範本', 'Presets', 'テンプレ', '템플릿'],
+  ['必選單選', 'Required (Single)', '必須（単一）', '필수 (단일)'],
+  ['可多選加料', 'Optional (Multi)', '複数選択可', '다중 선택'],
+  ['每日限量', 'Daily Limit', '1日限定数', '일일 한정'],
+  ['上傳照片 (自動壓縮)', 'Upload Photo', '写真をアップロード', '사진 업로드'],
+  ['移除照片', 'Remove Photo', '写真削除', '사진 삭제'],
+  ['編輯', 'Edit', '編集', '편집'],
+  ['上架', 'Restore', '再販', '판매'],
+  ['售罄', 'Sold Out', '売切', '품절'],
+  ['刪除', 'Delete', '削除', '삭제'],
+  ['儲存設定並同步雲端', 'Save & Sync', '保存・同期', '저장 및 동기화'],
+  ['開店找零零用金 ($)', 'Opening Float ($)', '開店準備金 ($)', '개점 시재 ($)'],
+  ['櫃檯實際清點現金 ($)', 'Counted Cash ($)', '実査現金 ($)', '실제 현금 ($)'],
+  ['交班收銀員姓名', 'Cashier Name', '担当者名', '담당자 이름'],
+  ['中途零用金收支登記', 'Petty Cash Log', '小口現金入出金', '소액 현금 입출금'],
+  ['錢箱支出', 'Payout (-)', '出金 (-)', '지출 (-)'],
+  ['錢箱補入', 'Pay-in (+)', '入金 (+)', '입금 (+)'],
+  ['新增收支', 'Add Entry', '登録', '등록'],
+  ['確認關班並鎖定今日日結', 'Lock & Close Shift', '締め確定・ロック', '마감 확정 및 잠금'],
+  ['店長解除鎖定', 'Unlock Shift', 'ロック解除', '잠금 해제'],
+  ['實收淨營業額', 'Net Paid Revenue', '実収純売上', '순 매출'],
+  ['應有現金總額', 'Expected Cash', '理論現金残高', '예상 현금'],
+  ['短溢差額', 'Cash Variance', '過不足差額', '현금 과부족'],
+  ['今日', 'Today', '本日', '오늘'],
+  ['近 7 日', '7 Days', '直近7日', '최근 7일'],
+  ['全區間', 'All Time', '全期間', '전체 기간'],
+  ['匯出 CSV 報表', 'Export CSV', 'CSV出力', 'CSV 내보내기'],
+  ['熱銷餐點排行', 'Top Selling Dishes', '人気メニューランキング', '인기 메뉴 순위'],
+  ['返回點餐頁', 'Back to Order', '注文画面へ', '주문 화면으로'],
+  ['返回點餐首頁', 'Back to Menu', 'メニューへ戻る', '메뉴로 돌아가기'],
+  ['防偽動態電子取餐憑證', 'Verified Pickup Ticket', '電子受取チケット', '전자 픽업 티켓'],
+  ['您的專屬取餐流水號', 'Your Pickup Number', 'お客様の受取番号', '픽업 번호'],
+  ['目前叫號', 'Now Calling', '呼出番号', '현재 호출'],
+  ['前方等候', 'Ahead', '待ち組数', '앞 대기'],
+  ['預估剩餘', 'Est. Left', '残り目安', '예상 남은시간'],
+  ['準備中', 'Prep', '準備中', '준비 중'],
+  ['輪到您了', 'Your Turn', 'お呼び出し中', '차례입니다'],
+  ['立即取餐', 'Pick Up Now', '今すぐ受取', '즉시 픽업'],
+  ['預約排程', 'Scheduled', '予約済', '예약됨'],
+  ['防偽核銷碼', 'Verification Code', '認証コード', '인증코드'],
+  ['訂單狀態歷程時間軸', 'Order Status Timeline', '注文ステータス履歴', '주문 상태 타임라인'],
+  ['店家櫃檯即時通知', 'Message from Store', '店舗からのメッセージ', '매장 메시지'],
+  ['分享 / 複製取餐網址', 'Copy Ticket Link', 'チケットURLをコピー', '티켓 링크 복사'],
+  ['再點一單', 'Order Again', 'もう一度注文', '다시 주문'],
+  ['取消預約', 'Cancel Pre-order', '予約キャンセル', '예약 취소'],
+  ['儲存通知設定', 'Save Settings', '設定を保存', '알림 설정 저장'],
+  ['開啟網頁震動響鈴', 'Enable Web Alerts', 'ブラウザ通知ON', '웹 알림 켜기'],
+  ['解除綁定', 'Unbind', '連携解除', '연동 해제'],
+  ['最近推播紀錄匣', 'Recent Notification Log', '最近の通知履歴', '최근 알림 내역'],
+  ['關閉', 'Close', '閉じる', '닫기'],
+  ['確定', 'Confirm', '確認', '확인'],
+  ['取消', 'Cancel', 'キャンセル', '취소'],
+  ['點餐', 'POS', 'レジ', '포스'],
+  ['訂單', 'Orders', '注文', '주문'],
+  ['分析', 'Analytics', '分析', '분석'],
+  ['設定', 'Settings', '設定', '설정'],
+  ['即時廚房爐上備料與規格拆解看板', 'Live Kitchen Prep & Modifier Breakdown', 'リアルタイム調理・仕様集計ボード', '실시간 주방 조리・옵션 집계판'],
+  ['同時顯示主餐總數與飯量/辣度/內外帶拆解，方便師傅批次下鍋盛飯', 'Groups dishes by portion, spice & dine-in/takeout for batch cooking', 'ご飯量・辛さ・店内/持帰別に集計し調理を効率化', '밥 양・맵기・매장/포장별로 집계해 일괄 조리 지원'],
+  ['目前爐上無製作中單品，廚房順暢待命', 'No dishes currently preparing — kitchen clear', '現在調理中の品目はありません', '현재 조리 중인 메뉴가 없습니다'],
+  ['目前爐上無製作中單品', 'No dishes currently preparing', '現在調理中の品目はありません', '현재 조리 중인 메뉴 없음'],
+  ['廚房順暢待命', 'Kitchen ready', 'キッチン待機中', '주방 대기 중'],
+  ['櫃檯快速核銷取餐：', 'Quick Pickup Verify: ', 'クイック受取認証：', '빠른 픽업 인증: '],
+  ['支援鏡頭掃描顧客 QR 憑證，或輸入 6 碼防偽核銷碼（未收款單將自動彈出收銀視窗）', 'Scan customer QR code or enter 6-char code (unpaid orders open cashier automatically)', 'QRスキャンまたは6桁コード入力（未払いは自動でレジ表示）', '고객 QR 스캔 또는 6자리 코드 입력 (미결제 시 결제창 자동 오픈)'],
+  ['支援鏡頭掃描顧客 QR 憑證', 'Scan customer QR code', 'QRコードをスキャン', '고객 QR 코드 스캔'],
+  ['或輸入 6 碼防偽核銷碼（未收款將自動彈出收銀視窗）', 'or enter 6-char code (unpaid orders open cashier)', 'または6桁コード入力（未払いはレジ起動）', '또는 6자리 코드 입력 (미결제 시 결제창 표시)'],
+  ['合共 ', 'Total ', '合計 ', '합계 '],
+  ['・共 ', ' · ', '・計 ', ' · '],
+  ['已退單', 'Cancelled', '取消済', '취소됨'],
+  ['站點', 'Station', 'ステーション', '파트'],
+  ['收款後退單退款', 'Paid Refunds', '支払済返金', '결제 후 환불'],
+  ['未收款退單作廢', 'Unpaid Voids', '未払い取消', '미결제 취소'],
+  ['此時間區間尚無訂單紀錄', 'No orders in this time range', 'この期間の注文履歴はありません', '이 기간의 주문 내역이 없습니다'],
+  ['區間真實訂單明細', 'Order Details in Period', '期間内注文明細', '기간 내 주문 상세'],
+  ['上傳紙本菜單照片或貼上文字，系統將自動進行結構化解析並綁定確定性品項 ID，絕不破壞進行中訂單關聯', 'Upload a menu photo or paste text to parse dishes with stable IDs without breaking active orders', '紙メニューの写真またはテキストから自動解析し、既存注文を壊さず登録します', '종이 메뉴 사진이나 텍스트를 업로드하면 기존 주문을 유지한 채 자동 등록합니다'],
+  ['點擊一次即同步全店所有含該加料的主餐', 'Tap once to sync across all dishes with this add-on', 'ワンタップで全該当メニューに同期', '한 번 탭하여 모든 해당 메뉴에 일괄 적용'],
+  ['支援每日限量自動扣減售罄與客製加料規則', 'Supports daily limits & modifier rules', '1日限定数・オプション対応', '일일 한정 및 옵션 규칙 지원'],
+  ['紅虛線：15分鐘警戒', 'Red dashed: 15m alert', '赤破線：15分警戒', '빨간 점선: 15분 경고'],
+  ['本區間人氣王備料建議：', 'Top Seller Prep Insight: ', '人気メニュー仕込み提案：', '인기 메뉴 준비 제안: '],
+  ['排程與配額隔離保護：', 'Schedule & Quota Isolation: ', '予約枠・負荷分離保護：', '예약 및 생산량 분리 보호: '],
+  ['筆)', ')', '件)', '건)'],
+  ['單)', ')', '件)', '건)'],
+  ['共 ', 'Total ', '計 ', '총 '],
+  ['櫃檯快速核銷取餐：支援鏡頭掃描顧客 QR 憑證，或輸入 6 碼防偽核銷碼（未收款單將自動彈出收銀視窗）', 'Quick Pickup Verify: scan customer QR code or enter 6-char code (unpaid orders open cashier automatically)', 'クイック受取認証：QRスキャンまたは6桁コード入力（未払いは自動でレジ表示）', '빠른 픽업 인증: 고객 QR 스캔 또는 6자리 코드 입력 (미결제 시 결제창 자동 오픈)'],
+  ['開啟鏡頭掃碼', 'Open QR Scanner', 'QRスキャナ起動', 'QR 스캐너 열기'],
+  ['核銷取餐', 'Verify Pickup', '受取認証', '픽업 인증'],
+  ['取餐日期：', 'Pickup Date: ', '受取日：', '픽업 날짜: '],
+  ['新單語音播報: 開', 'New Order Voice: ON', '新着音声案内: ON', '신규 주문 음성: ON'],
+  ['新單語音播報: 關', 'New Order Voice: OFF', '新着音声案内: OFF', '신규 주문 음성: OFF'],
+  ['預訂待發送', 'Scheduled', '予約待機', '예약 대기'],
+  ['待收款確認', 'Unpaid', '未払い確認', '미결제 확인'],
+  ['已通知待取餐', 'Called / Ready', '呼出済・受取待', '호출됨・픽업대기'],
+  ['明日', 'Tomorrow', '明日', '내일'],
+  ['日期', 'Date', '日付', '날짜'],
+  ['商業會計損益與真實訂單分析', 'Revenue P&L & Real Order Analytics', '売上損益・注文分析レポート', '매출 손익 및 실시간 주문 분석'],
+  ['嚴格區分「今日逐時」、「過去 7 日趨勢」與「應收/實收帳款」，絕不混入未來預訂單造成帳務失真。', 'Separates Today, 7-Day Trend & Paid vs Receivable accurately without mixing future pre-orders.', '本日・直近7日・実収/売掛を正確に分離し集計します。', '오늘・최근 7일・실수입/미수금을 정확하게 분리하여 집계합니다.'],
+  ['今日逐時', 'Today Hourly', '本日時間別', '오늘 시간별'],
+  ['過去 7 日趨勢', '7-Day Trend', '過去7日推移', '최근 7일 추이'],
+  ['過去7日趨勢', '7-Day Trend', '過去7日推移', '최근 7일 추이'],
+  ['全區間含未來預訂', 'All Time + Pre-orders', '全期間(予約含)', '전체(예약 포함)'],
+  ['含未來預訂', 'Incl. Pre-orders', '予約含む', '예약 포함'],
+  ['匯出 CSV', 'Export CSV', 'CSV出力', 'CSV 내보내기'],
+  ['毛銷售額 vs 折扣讓利成本', 'Gross Sales vs Discount Cost', '総売上 vs 割引コスト', '총 매출 vs 할인 비용'],
+  ['總折讓成本', 'Total Discounts', '割引合計', '총 할인액'],
+  ['未收應收帳款', 'Unpaid Receivables', '未収売掛金', '미수금'],
+  ['未來預訂', 'Future Pre-orders', '今後の予約', '향후 예약'],
+  ['區間待收', 'Unpaid in Period', '期間内未収', '기간 내 미수'],
+  ['目前即時出餐等候 / 產能負載', 'Live Wait Time / Kitchen Load', '現在の待ち時間・負荷率', '실시간 대기시간 / 주방 부하'],
+  ['各時段真實實收營收', 'Real Paid Revenue by Period', '時間帯別実収売上', '시간대별 실매출'],
+  ['點擊柱狀圖篩選明細', 'Click bar to filter orders', '棒グラフをクリックして絞込', '막대를 클릭하여 내역 필터'],
+  ['已收款', 'Paid', '支払済', '결제 완료'],
+  ['客單價', 'Avg Ticket', '客単価', '객단가'],
+  ['菜單管理與智慧照片辨識', 'Menu & Smart OCR Import', 'メニュー管理・AI読取', '메뉴 관리 및 스마트 인식'],
+  ['營業狀態・餐具收費與離峰優惠', 'Hours, Cutlery & Off-Peak Deals', '営業状態・容器代・割引', '영업상태・수저비・할인'],
+  ['餐廳與校區管理', 'Store & Campus Info', '店舗・キャンパス管理', '매장 및 캠퍼스 관리'],
+  ['推播設定・安全鎖與稽核紀錄', 'Alerts, Security & Audit Log', '通知・セキュリティ・履歴', '알림・보안・감사 로그'],
+  ['切換店鋪：', 'Switch Store: ', '店舗切替：', '매장 전환: '],
+  ['智慧視覺菜單辨識（支援拍照上傳與穩定品項 ID 匯入）', 'Smart Menu Photo Scanner (Stable Item ID Import)', 'メニュー写真AI読取（安定IDインポート）', '스마트 메뉴 사진 인식 (안정 ID 가져오기)'],
+  ['上傳紙本菜單照片或貼上文字，系統將自動進行結構化解析並綁定確定性品項 ID，絕不破壞進行中訂單關聯。', 'Upload a menu photo or paste text to parse dishes with stable IDs without breaking active orders.', '紙メニューの写真またはテキストから自動解析し、既存注文を壊さず登録します。', '종이 메뉴 사진이나 텍스트를 업로드하면 기존 주문을 유지한 채 자동 등록합니다.'],
+  ['拍照 / 上傳菜單圖片', 'Take / Upload Menu Photo', 'メニュー写真をアップロード', '메뉴 사진 촬영/업로드'],
+  ['執行結構化解析與預覽', 'Parse & Preview Menu', '解析してプレビュー', '구조화 분석 및 미리보기'],
+  ['載入範例新菜單測試', 'Load Sample Menu', 'サンプル読込', '샘플 메뉴 불러오기'],
+  ['自動產生穩定品項 ID・支援每日限量', 'Auto Stable ID · Daily Limit Supported', '安定ID自動生成・1日限定数対応', '안정 ID 자동생성・일일 한정 지원'],
+  ['確認完成本班日結並鎖定當日帳務 (防篡改)', 'Confirm Z-Report & Lock Shift (Tamper-Proof)', '本シフト精算確定・当日帳簿ロック', '교대 정산 확정 및 당일 장부 잠금'],
+  ['尚無中途零用金支出或補入紀錄', 'No petty cash entries yet', '小口現金の入出金記録はありません', '소액 현금 입출금 내역이 없습니다'],
+  ['如：買冰塊、買免洗袋、採買食材或臨時補零錢，自動計入錢箱應有現金', 'e.g. ice, bags, ingredients, or change refill — auto-applied to expected drawer cash', '例：氷・袋・食材購入や釣銭補充（理論残高に自動反映）', '예: 얼음, 봉투, 식자재 구매 또는 거스름돈 보충 (예상 현금 자동 반영)'],
+  ['營業收款日：', 'Settlement Date: ', '営業精算日：', '정산 일자: '],
+  ['出表時間：', 'Printed At: ', '出力時刻：', '출력 시간: '],
+  ['值班人員：', 'Cashier: ', '担当者：', '담당자: '],
+  ['當班收銀員', 'On-Duty Cashier', '当番スタッフ', '당번 캐셔'],
+  ['當日收款單數：', 'Paid Orders Today: ', '本日精算件数：', '당일 결제 건수: '],
+  ['平均客單價：', 'Avg Order Value: ', '平均客単価：', '평균 객단가: '],
+  ['當日收款損益與代收費用拆解', 'Daily Revenue & Fee Breakdown', '本日売上・手数料内訳', '당일 매출 및 비용 내역'],
+  ['餐點商品毛銷售額', 'Gross Food Sales', '商品総売上', '음식 총 매출'],
+  ['一次性環保餐具費', 'Disposable Cutlery Fee', '使い捨てカトラリー代', '일회용 수저비'],
+  ['離峰分流折扣讓利', 'Off-Peak Promo Discounts', 'オフピーク割引額', '오프피크 할인액'],
+  ['櫃檯手動折讓/招待', 'Counter Discounts / Comps', '店頭手動割引・サービス', '카운터 수동 할인/무료'],
+  ['當日實收淨營業額', 'Daily Net Paid Revenue', '本日実収純売上', '당일 실매출 순수익'],
+  ['錢箱現金收付與盤點核對', 'Cash Drawer Reconciliation', 'レジ現金収支・点検照合', '현금 시재 정산 및 대조'],
+  ['開店找零準備金 (零用金)', 'Opening Float (Petty Cash)', '開店釣銭準備金', '개점 시재 준비금'],
+  ['現金交易顧客實收總額', 'Cash Tendered Total', '現金お預かり合計', '현금 수령 총액'],
+  ['現金交易找零總額', 'Cash Change Given Total', 'お釣り支払合計', '거스름돈 지급 총액'],
+  ['現金已收後退單退款', 'Cash Order Refunds', '現金注文返金', '현금 주문 환불'],
+  ['現金營業淨入帳', 'Net Cash Sales', '現金純売上', '현금 순매출'],
+  ['錢箱應有現金總額 (含零用金收支)', 'Expected Cash in Drawer (incl. Petty Cash)', 'レジ理論現金残高（小口現金込）', '예상 현금 시재 (소액 현금 포함)'],
+  ['櫃檯實際清點現金', 'Actual Counted Cash', '実査現金合計', '실제 점검 현금'],
+  ['盤點差額 (短溢)', 'Cash Variance', '現金過不足', '시재 과부족'],
+  ['帳實相符', 'Balanced', '一致', '일치'],
+  ['行動支付與無現金清點', 'Digital & Cashless Payments', 'キャッシュレス決済集計', '모바일・비현금 결제'],
+  ['當日入帳', 'Settled Today', '当日入金', '당일 정산'],
+  ['非現金支付小計', 'Cashless Subtotal', 'キャッシュレス小計', '비현금 소계'],
+  ['退款、作廢與跨日預收履約對帳', 'Refunds, Voids & Cross-Day Pre-Orders', '返金・取消・事前決済照合', '환불・취소 및 사전결제 대조'],
+  ['待收款訂單', 'Unpaid Orders', '未払い注文', '미결제 주문'],
+  ['已付款後退單退款', 'Paid Order Refunds', '支払済返金', '결제 후 환불'],
+  ['未付款取消作廢', 'Unpaid Cancelled', '未払い取消', '미결제 취소'],
+  ['跨日預收今日取餐', 'Prepaid Earlier / Pickup Today', '事前決済・本日受取', '사전결제 오늘 픽업'],
+  ['不重複入錢箱', 'Not counted in cash drawer', '現金重複計上なし', '현금 중복 미계산'],
+  ['值班收銀員簽名：', 'Cashier Signature:', '担当者署名：', '캐셔 서명:'],
+  ['店長覆核簽名：', 'Manager Approval:', '店長確認署名：', '점장 확인 서명:'],
+  ['廚房分站過濾:', 'Kitchen Station:', 'ステーション:', '주방 파트:'],
+  ['排序:', 'Sort:', '並び順:', '정렬:'],
+  ['此日期 / 分站 / 篩選條件下目前沒有訂單', 'No orders match the current date / station / filter', '該当する注文はありません', '조건에 맞는 주문이 없습니다'],
+  ['結構化單品營收佔比', 'Itemized Revenue Share', '品目別売上構成比', '품목별 매출 비중'],
+  ['各時段 15 分鐘尖峰密度與候餐時間曲線', '15-Min Peak Load & Wait Time Curve', '時間帯別ピーク負荷・待ち時間推移', '시간대별 피크 부하・대기시간 추이'],
+  ['商業財務與廚房排程診斷', 'Financial & Kitchen Capacity Insights', '財務・キッチン稼働診断', '재무 및 주방 스케줄 진단'],
+  ['餐點總計', 'Total Items', '合計点数', '총 메뉴 수'],
+  ['此區間無紀錄', 'No records in this period', 'データなし', '기록 없음'],
+  ['餐點名稱', 'Dish Name', 'メニュー名', '메뉴 이름'],
+  ['價格', 'Price', '価格', '가격'],
+  ['推薦標籤', 'Tag', 'タグ', '추천 태그'],
+  ['客製選項 (逗號分隔)', 'Options (comma-separated)', 'オプション (カンマ区切り)', '옵션 (쉼표 구분)'],
+  ['新增', 'Add', '追加', '추가'],
+  ['必點人氣', 'Popular', '人気', '인기'],
+  ['主廚推薦', "Chef's Pick", 'おすすめ', '셰프 추천'],
+  ['快速出餐', 'Express', 'スピード', '빠른 제공'],
+  ['暖胃湯品', 'Hot Soup', '温かいスープ', '따뜻한 국'],
+  ['人氣飲品', 'Popular Drink', '人気ドリンク', '인기 음료'],
+  ['合計 ', 'Total ', '合計 ', '합계 '],
+  ['合計', 'Total', '合計', '합계'],
+  ['基礎 ', 'Base ', '基本 ', '기본 '],
+  ['佇列 ', 'Queue ', '待機 ', '대기 '],
+  ['分類', 'Category', 'カテゴリ', '카테고리'],
+  ['預覽', 'Preview', 'プレビュー', '미리보기'],
+  ['登記', 'Log', '登録', '등록'],
+  ['狀態', 'Status', '状態', '상태'],
+  [' 筆', ' orders', '件', '건'],
+  [' 單', ' orders', '件', '건'],
+  ['組選項', ' option groups', 'グループ', '개 옵션'],
+  ['離峰分流招待：免費招牌冰紅茶', 'Off-Peak Deal: Free Iced Black Tea', 'オフピーク特典：アイス紅茶無料', '오프피크 혜택: 아이스 홍차 무료'],
+  ['離峰分流招待：免費溫泉蛋乙顆', 'Off-Peak Deal: Free Onsen Egg', 'オフピーク特典：温泉卵無料', '오프피크 혜택: 온천계란 무료'],
+  ['離峰分流招待：免費溏心溫泉蛋', 'Off-Peak Deal: Free Onsen Egg', 'オフピーク特典：温泉卵無料', '오프피크 혜택: 온천계란 무료'],
+  ['離峰分流招待：', 'Off-Peak Freebie: ', 'オフピーク特典：', '오프피크 증정: '],
+  ['離峰分流折抵：', 'Off-Peak Discount: ', 'オフピーク割引：', '오프피크 할인: '],
+  ['離峰分流優惠：', 'Off-Peak Deal: ', 'オフピーク割引：', '오프피크 할인: '],
+  ['離峰優惠：', 'Off-Peak Deal: ', 'オフピーク割引：', '오프피크 할인: '],
+  ['全單現折', 'Order Off', '全品割引', '전체 할인'],
+  ['滿額現折', 'Min Spend Off', '割引', '할인'],
+  ['免費招待', 'Free Gift', '無料サービス', '무료 증정'],
+  ['現折', 'Off', '割引', '할인'],
+  ['已同步', 'Synced', '同期済', '동기화됨'],
+  ['同步中...', 'Syncing...', '同期中...', '동기화 중...'],
+  ['連線中', 'Live', '接続中', '연결됨'],
+  ['離線中', 'Offline', 'オフライン', '오프라인'],
+  ['份餐點', ' items', '点', '개'],
+  ['・共 ', ' · Total ', '・計 ', ' · 총 '],
+  [' 單', ' orders', '件', '건'],
+  [' 分鐘', ' min', '分', '분'],
+  [' 份', ' pcs', '点', '개']
+].sort((a, b) => b[0].length - a[0].length);
+
+const DOM_I18N_ORIGINALS = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+const DOM_ATTR_ORIGINALS = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+
+function translateSystemText(rawStr) {
+  const s = String(rawStr == null ? '' : rawStr);
+  const lang = (state && state.lang) || 'zh-TW';
+  if (lang === 'zh-TW' || !s || !/[\u4e00-\u9fff]/.test(s)) return s;
+  const idx = lang === 'en' ? 1 : (lang === 'ja' ? 2 : 3);
+  let out = s;
+  // 先套用 I18N_DICTIONARY 精確店名與分類
+  for (const [zhKey, valObj] of Object.entries(I18N_DICTIONARY)) {
+    if (out.includes(zhKey)) {
+      const rep = typeof valObj === 'string' ? valObj : (valObj[lang] || valObj.en || zhKey);
+      out = out.split(zhKey).join(rep);
+    }
+  }
+  // 再套用全系統詞彙庫（最長詞優先）
+  for (let i = 0; i < SYSTEM_UI_PHRASES.length; i++) {
+    const row = SYSTEM_UI_PHRASES[i];
+    if (out.includes(row[0])) {
+      out = out.split(row[0]).join(row[idx] || row[1]);
+    }
+  }
+  return out;
+}
+
+let _isTranslatingDom = false;
+let _i18nObserverInstalled = false;
+
+function ensureDomI18nObserver() {
+  if (_i18nObserverInstalled || typeof MutationObserver === 'undefined' || typeof document === 'undefined' || !document.body) return;
+  _i18nObserverInstalled = true;
+  const obs = new MutationObserver(mutations => {
+    if (_isTranslatingDom || !state || state.lang === 'zh-TW') return;
+    for (let i = 0; i < mutations.length; i++) {
+      const m = mutations[i];
+      if (m.addedNodes && m.addedNodes.length > 0) {
+        m.addedNodes.forEach(n => {
+          if (n && (n.nodeType === 1 || n.nodeType === 3)) applyDomSystemTranslation(n);
+        });
+      }
+    }
+  });
+  try { obs.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+}
+
+function applyDomSystemTranslation(rootEl) {
+  if (typeof document === 'undefined' || _isTranslatingDom) return;
+  ensureDomI18nObserver();
+  const target = rootEl || document.body;
+  if (!target) return;
+  const lang = (state && state.lang) || 'zh-TW';
+  _isTranslatingDom = true;
+
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 3) {
+      const parent = node.parentNode;
+      if (parent && parent.tagName && /^(SCRIPT|STYLE|CODE|TEXTAREA)$/i.test(parent.tagName)) return;
+      if (parent && parent.dataset && (parent.dataset.noI18n === '1' || parent.dataset.dishName === '1')) return;
+      const curVal = node.nodeValue || '';
+      let orig = DOM_I18N_ORIGINALS ? DOM_I18N_ORIGINALS.get(node) : undefined;
+      if (orig === undefined) {
+        if (lang === 'zh-TW') return;
+        orig = curVal;
+        if (DOM_I18N_ORIGINALS) DOM_I18N_ORIGINALS.set(node, orig);
+      }
+      const nextVal = lang === 'zh-TW' ? orig : translateSystemText(orig);
+      if (nextVal !== curVal) node.nodeValue = nextVal;
+      return;
+    }
+    if (node.nodeType === 1) {
+      if (/^(SCRIPT|STYLE|SVG)$/i.test(node.tagName || '')) return;
+      if (node.dataset && (node.dataset.noI18n === '1' || node.dataset.dishName === '1')) return;
+      if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
+        ['placeholder', 'title'].forEach(attr => {
+          const curA = node.getAttribute ? node.getAttribute(attr) : node[attr];
+          if (!curA) return;
+          let rec = DOM_ATTR_ORIGINALS ? DOM_ATTR_ORIGINALS.get(node) : null;
+          if (!rec) { rec = {}; if (DOM_ATTR_ORIGINALS) DOM_ATTR_ORIGINALS.set(node, rec); }
+          if (rec[attr] === undefined) {
+            if (lang === 'zh-TW') return;
+            rec[attr] = curA;
+          }
+          const nextA = lang === 'zh-TW' ? rec[attr] : translateSystemText(rec[attr]);
+          if (nextA !== curA && node.setAttribute) node.setAttribute(attr, nextA);
+        });
+        return;
+      }
+      const kids = node.childNodes || [];
+      for (let i = 0; i < kids.length; i++) walk(kids[i]);
+    }
+  }
+  try { walk(target); } catch (e) {} finally { _isTranslatingDom = false; }
+}
 
 function trTerm(rawStr) {
   const s = String(rawStr || '');
@@ -1950,7 +2430,7 @@ function trTerm(rawStr) {
   if (s.includes('🔥')) return s.replace('必點人氣', t('必點人氣', 'Popular', '人気', '인기')).replace('店長推薦', t('店長推薦', "Chef's Pick", '店長おすすめ', '추천')).replace('招牌必點', t('招牌必點', 'Signature', '看板メニュー', '시그니처')).replace('銷量冠軍', t('銷量冠軍', 'Best Seller', '人気No.1', '베스트')).replace('排隊人氣', t('排隊人氣', 'Top Pick', '人気', '인기')).replace('現點現做', t('現點現做', 'Made to Order', '作りたて', '즉시 조리')).replace('經典酥脆', t('經典酥脆', 'Crispy Classic', 'サクサク定番', '바삭 클래식'));
   if (s.includes('⭐')) return s.replace('主廚推薦', t('主廚推薦', "Chef's Special", 'おすすめ', '셰프 추천')).replace('飽足首選', t('飽足首選', 'Hearty Choice', '満腹メニュー', '든든한 메뉴')).replace('限量供應', t('限量供應', 'Limited', '数量限定', '한정 수량')).replace('學生最愛', t('學生最愛', 'Student Favorite', '学生人気', '학생 인기'));
   if (s.includes('⚡')) return s.replace('快速出餐', t('快速出餐', 'Express', 'スピード提供', '빠른 제공')).replace('極速出餐', t('極速出餐', 'Express', 'スピード提供', '빠른 제공')).replace('極速便當', t('極速便當', 'Fast Bento', 'スピード弁当', '빠른 도시락')).replace('秒取', t('秒取', 'Fast Pickup', '即受取', '빠른 픽업'));
-  return s;
+  return translateSystemText(s);
 }
 
 function trDishName(item) {
@@ -1959,7 +2439,8 @@ function trDishName(item) {
   if (lang !== 'zh-TW' && item.nameEn && String(item.nameEn).trim()) {
     return String(item.nameEn).trim();
   }
-  return trTerm(item.baseName || item.name || '');
+  // 餐點名稱交由店家自行輸入 nameEn，不強制翻譯未設定英文名的自訂菜名
+  return String(item.baseName || item.name || '');
 }
 
 function syncHeaderLanguageControls() {
@@ -1978,14 +2459,29 @@ function syncHeaderLanguageControls() {
   const btnAdvisor = document.getElementById('btnOpenAiAdvisor');
   if (fAll) fAll.innerText = t('全部櫃位', 'All', 'すべて', '전체');
   if (fFast) fFast.innerText = t('免排隊', 'Fast', '待ちなし', '빠른 픽업');
-  if (fPromo) fPromo.innerText = t('離峰優惠', 'Deals', 'オフピーク割', '할인');
+  if (fPromo) fPromo.innerText = t('離峰優惠', 'Deals', '割引', '할인');
   if (btnLookup) btnLookup.innerText = t('🔍 查單', '🔍 Lookup', '🔍 注文照会', '🔍 주문조회');
-  if (btnAdvisor) btnAdvisor.innerText = t('✨ 選餐助手', '✨ Advisor', '✨ 選び方', '✨ 추천');
+  if (btnAdvisor) btnAdvisor.innerText = t('✨ 選餐助手', '✨ Advisor', '✨ おすすめ', '✨ 추천');
   const myOrdersBtn = document.getElementById('headerMyOrdersBtn');
   if (myOrdersBtn) {
-    const labelSpan = myOrdersBtn.querySelector('span:first-child');
+    const labelSpan = myOrdersBtn.querySelector ? myOrdersBtn.querySelector('span:first-child') : null;
     if (labelSpan) labelSpan.innerText = `🧾 ${t('我的訂單', 'Orders', '注文履歴', '주문내역')}`;
   }
+  const railLabels = {
+    'railBtn-pos': t('點餐', 'POS', 'レジ', '포스'),
+    'railBtn-kds': t('訂單', 'Orders', '注文', '주문'),
+    'railBtn-analytics': t('分析', 'Stats', '分析', '분석'),
+    'railBtn-settings': t('設定', 'Settings', '設定', '설정')
+  };
+  Object.entries(railLabels).forEach(([id, lbl]) => {
+    const btn = document.getElementById(id);
+    if (btn && btn.querySelectorAll) {
+      const spans = btn.querySelectorAll('span');
+      if (spans[1]) spans[1].innerText = lbl;
+    }
+  });
+  const headerEl = document.querySelector ? document.querySelector('.app-header') : null;
+  if (headerEl) applyDomSystemTranslation(headerEl);
 }
 
 function setAppLanguage(nextLang) {
@@ -1995,6 +2491,7 @@ function setAppLanguage(nextLang) {
   syncHeaderLanguageControls();
   applyRouteView();
   updateCartUI();
+  applyDomSystemTranslation(document.body);
   const msgMap = {
     'zh-TW': '🌐 已切換為繁體中文介面',
     'en': '🌐 Switched to English interface',
@@ -2108,9 +2605,9 @@ function updateDynamicCampusSwitcherButtons() {
     state.campus = campuses[0];
   }
   switcher.innerHTML = campuses.map(c => {
-    const shortName = c.replace(/校區$/, '');
     const icon = c.includes('雙溪') ? '⛰️' : c.includes('城中') ? '🏙️' : '🏫';
-    return `<button type="button" id="btnCampus-${escapeHtml(c)}" class="campus-btn ${state.campus === c ? 'active' : ''}" onclick="switchCampus(${escapeJsAttr(c)})">${icon} ${escapeHtml(shortName)}校區</button>`;
+    const label = state.lang === 'zh-TW' ? c : trTerm(c);
+    return `<button type="button" id="btnCampus-${escapeHtml(c)}" class="campus-btn ${state.campus === c ? 'active' : ''}" onclick="switchCampus(${escapeJsAttr(c)})">${icon} ${escapeHtml(label)}</button>`;
   }).join('');
 }
 
@@ -2904,6 +3401,7 @@ function openLineBindModal() {
 
   renderLineLogsInModal();
   modal.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(modal);
 }
 
 function closeLineBindModal() {
@@ -3509,6 +4007,7 @@ function showAppConfirmModal(opts = {}) {
       `;
     }
     document.getElementById('appCustomDialogModal')?.classList.add('open');
+    if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('appCustomDialogModal'));
   });
 }
 
@@ -3819,17 +4318,17 @@ function setSyncState(mode, text) {
   const dot = document.getElementById('syncDot');
   const label = document.getElementById('syncText');
   if (dot) dot.className = 'sync-dot ' + (mode === 'syncing' ? 'syncing' : mode === 'offline' ? 'offline' : '');
-  if (label) label.innerText = text;
+  if (label) label.innerText = translateSystemText(text);
 }
 
 let toastTimer = null;
 function showToast(msg) {
-  const t = document.getElementById('toast');
-  if (!t) return;
-  t.innerText = msg;
-  t.style.display = 'block';
+  const tEl = document.getElementById('toast');
+  if (!tEl) return;
+  tEl.innerText = translateSystemText(msg);
+  tEl.style.display = 'block';
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 3500);
+  toastTimer = setTimeout(() => { tEl.style.display = 'none'; }, 3500);
 }
 
 function isUserEditingFormInput() {
@@ -4674,8 +5173,8 @@ function applyRouteView() {
   const lineBtnText = document.getElementById('headerLineBtnText');
   if (lineBtnText) {
     lineBtnText.innerText = state.lineProfile.isBound
-      ? `💚 已綁定通知 (${state.lineProfile.lineDisplayName})`
-      : '💬 綁定取餐通知';
+      ? t(`💚 已綁定 (${state.lineProfile.lineDisplayName})`, `💚 Alerts On`, `💚 通知ON`, `💚 알림ON`)
+      : t('💬 綁定取餐通知', '💬 Pickup Alerts', '💬 受取通知連携', '💬 픽업 알림');
   }
 
   const sections = ['viewPortal', 'viewOrder', 'viewTicket', 'viewStore'];
@@ -4708,29 +5207,30 @@ function applyRouteView() {
 
   const campusSwitcher = document.getElementById('headerCampusSwitcher');
   if (campusSwitcher) {
-    campusSwitcher.style.display = (state.routeMode === 'order' && !state.selectedStoreId) ? 'inline-flex' : 'none';
+    const isLockedSingleStore = Boolean(state.urlLockedStoreId && state.selectedStoreId === state.urlLockedStoreId);
+    campusSwitcher.style.display = (state.routeMode === 'order' && !state.selectedStoreId && !isLockedSingleStore) ? 'inline-flex' : 'none';
   }
 
   const roleBadge = document.getElementById('headerRoleBadge');
   if (roleBadge) {
     if (state.routeMode === 'board') {
-      roleBadge.innerText = '📺 顧客即時取餐叫號大螢幕看板';
+      roleBadge.innerText = '📺 ' + t('顧客即時取餐叫號大螢幕看板', 'Live Pickup Call Board', '受取番号ディスプレイ', '실시간 픽업 호출 전광판');
       roleBadge.style.background = '#0F172A';
       roleBadge.style.color = '#34D399';
     } else if (state.routeMode === 'store') {
-      roleBadge.innerText = '🖥️ 店家櫃檯收銀與營運中心';
+      roleBadge.innerText = '🖥️ ' + t('店家櫃檯收銀與營運中心', 'Merchant POS & Operations', '店舗POS・管理センター', '매장 POS・운영 센터');
       roleBadge.style.background = 'var(--brand-light)';
       roleBadge.style.color = 'var(--brand-dark)';
     } else if (state.routeMode === 'ticket') {
-      roleBadge.innerText = '🎟️ 訂單專屬追蹤憑證';
+      roleBadge.innerText = '🎟️ ' + t('訂單專屬追蹤憑證', 'Order Pickup Ticket', '受取電子チケット', '주문 픽업 티켓');
       roleBadge.style.background = 'var(--brand-light)';
       roleBadge.style.color = 'var(--brand-dark)';
     } else if (state.routeMode === 'order') {
-      roleBadge.innerText = '📱 線上點餐系統';
+      roleBadge.innerText = '📱 ' + t('線上點餐系統', 'Campus Ordering', 'オンライン注文', '온라인 주문');
       roleBadge.style.background = 'var(--brand-light)';
       roleBadge.style.color = 'var(--brand-dark)';
     } else {
-      roleBadge.innerText = '⚡ 系統入口導覽';
+      roleBadge.innerText = '⚡ ' + t('系統入口導覽', 'Portal Home', 'ポータルホーム', '포털 홈');
       roleBadge.style.background = 'var(--bg-page)';
       roleBadge.style.color = 'var(--text-secondary)';
     }
@@ -4747,6 +5247,10 @@ function applyRouteView() {
   if (state.routeMode === 'store') {
     checkMerchantSecurityGate();
     renderMerchantView();
+  }
+
+  if (state.lang && state.lang !== 'zh-TW') {
+    applyDomSystemTranslation(document.body);
   }
 
   updateBackgroundSilentAudioKeepAlive();
@@ -4937,6 +5441,7 @@ function openMyOrdersDrawer() {
     }).join('');
   }
   modal.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(modal);
 }
 
 function closeMyOrdersDrawer() {
@@ -4958,6 +5463,7 @@ function checkMerchantSecurityGate() {
   state.pinInputBuffer = '';
   renderStorePinModal(false);
   modal.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(modal);
 }
 
 function renderStorePinModal(hasError = false) {
@@ -5010,6 +5516,7 @@ function renderStorePinModal(hasError = false) {
       </div>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('storePinModal'));
 }
 
 function unbindDeviceMerchantStore() {
@@ -5730,7 +6237,7 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
                   <div style="flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between; gap:6px;">
                     <div>
                       <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                        <h4 style="font-size:1.02rem; font-weight:850; color:var(--text-primary); letter-spacing:-0.01em;">${escapeHtml(displayDishName)}</h4>
+                        <h4 data-dish-name="1" style="font-size:1.02rem; font-weight:850; color:var(--text-primary); letter-spacing:-0.01em;">${escapeHtml(displayDishName)}</h4>
                         ${isSoldOut
                           ? `<span class="sold-out-ribbon">${t('已售罄', 'Sold Out', '完売', '품절')}</span>`
                           : (item.tag ? `<span style="font-size:0.7rem; font-weight:800; background:linear-gradient(135deg, #FFF3EE 0%, #FFEDD5 100%); color:#C2410C; border:1px solid #FED7AA; padding:2px 8px; border-radius:999px;">${escapeHtml(trTerm(item.tag))}</span>` : '')}
@@ -5766,10 +6273,13 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
     return;
   }
 
+  const isSingleStoreLocked = Boolean(state.urlLockedStoreId && state.urlLockedStoreId === store.id);
   box.innerHTML = `
     <div class="in-store-banner">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
-        <button type="button" class="filter-chip" style="background:#FFFFFF; padding:5px 11px; font-size:0.78rem; font-weight:800; box-shadow:0 2px 6px rgba(15,23,42,0.04);" onclick="backToStoreDirectory()">← ${t('返回餐廳列表', 'Restaurants', '店舗一覧', '매장 목록')}</button>
+        ${isSingleStoreLocked
+          ? `<span style="font-size:0.75rem; font-weight:800; color:var(--brand-dark); background:var(--brand-light); padding:4px 10px; border-radius:999px;">📌 ${t('專屬門市掃碼點餐', 'Booth Exclusive Ordering', '店舗専用注文', '매장 전용 주문')}</span>`
+          : `<button type="button" class="filter-chip" style="background:#FFFFFF; padding:5px 11px; font-size:0.78rem; font-weight:800; box-shadow:0 2px 6px rgba(15,23,42,0.04);" onclick="backToStoreDirectory()">← ${t('返回餐廳列表', 'Restaurants', '店舗一覧', '매장 목록')}</button>`}
         <span class="wait-pill ${store.canOrderNow === false ? 'wait-closed' : store.loadState === 'FULL' ? 'wait-full' : store.loadState === 'MODERATE' ? 'wait-mod' : 'wait-free'}">
           ${store.canOrderNow === false ? escapeHtml(store.businessShortPillText || t('僅開放預訂', 'Pre-order only', '予約のみ', '예약 전용')) : t(`約 ${store.avgPrepMinutes} 分取餐`, `Est. ${store.avgPrepMinutes}m`, `約${store.avgPrepMinutes}分`, `약 ${store.avgPrepMinutes}분`)}
         </span>
@@ -6300,7 +6810,16 @@ function updateCartUI() {
     `;
   } else if (promoActive) {
     if (store.promoMode === 'gift' || store.promoMode === 'freebie') {
-      if (subtotal < AI_DISCOUNT_MIN_SUBTOTAL) {
+      const giftKeywords = ['溫泉蛋', '溏心蛋', '滷蛋', '紅茶', '綠茶', '奶茶', '冬瓜茶', '豆漿', '味噌湯', '玉米濃湯', '酸辣湯', '豆腐', '小菜'];
+      const matchedGiftKw = giftKeywords.find(kw => String(store.promoText || '').includes(kw));
+      const isGiftMenuSoldOut = Boolean(matchedGiftKw && (store.menus || []).some(m => String(m.name || '').includes(matchedGiftKw) && m.soldOut));
+      if (isGiftMenuSoldOut) {
+        promoNoticeHtml = `
+          <div style="background:#F8FAFC; border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:0.8rem; font-weight:800; color:var(--text-secondary);">
+            ℹ️ ${t(`今日離峰贈品「${store.promoText}」已贈畢/售罄`, `Today's off-peak freebie is currently sold out`)}
+          </div>
+        `;
+      } else if (subtotal < AI_DISCOUNT_MIN_SUBTOTAL) {
         promoNoticeHtml = `
           <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:0.82rem; font-weight:800; color:#B45309;">
             💡 差 <strong>NT$ ${AI_DISCOUNT_MIN_SUBTOTAL - subtotal}</strong> 即可免費獲贈「${escapeHtml(store.promoText)}」（滿 $${AI_DISCOUNT_MIN_SUBTOTAL} 低消招待）
@@ -6449,6 +6968,10 @@ function updateCartUI() {
     modalTotalEl.innerHTML = tags.length > 0
       ? `<span style="font-size:0.8rem; color:var(--green); margin-right:6px;">(${tags.join(' / ')})</span>NT$ ${finalTotal}`
       : `NT$ ${finalTotal}`;
+  }
+  if (state.lang && state.lang !== 'zh-TW') {
+    applyDomSystemTranslation(document.getElementById('cartModal'));
+    applyDomSystemTranslation(document.getElementById('floatingCartBar'));
   }
 }
 
@@ -7572,6 +8095,7 @@ function renderSingleTicketView() {
       </div>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(box);
 }
 
 function copyOrderUrl(url) {
@@ -7755,14 +8279,16 @@ function renderMerchantView() {
 
   const topSel = document.getElementById('storeTopSwitcher');
   if (topSel) {
-    topSel.innerHTML = state.stores.map(s => `<option value="${escapeHtml(s.id)}" ${s.id === store.id ? 'selected' : ''}>${escapeHtml(s.campus)} — ${escapeHtml(s.name)} ${s.isOpen === false ? '(休息中)' : ''}</option>`).join('');
+    topSel.innerHTML = state.stores.map(s => `<option value="${escapeHtml(s.id)}" ${s.id === store.id ? 'selected' : ''}>${escapeHtml(trTerm(s.campus))} — ${escapeHtml(trTerm(s.name))} ${s.isOpen === false ? `(${t('休息中', 'Closed', '準備中', '휴식중')})` : ''}</option>`).join('');
   }
 
   const openToggleBtn = document.getElementById('headerStoreOpenToggleBtn');
   if (openToggleBtn) {
     const isOpen = store.isOpen !== false;
     openToggleBtn.className = 'store-status-toggle ' + (isOpen ? '' : 'closed');
-    openToggleBtn.innerHTML = isOpen ? '🟢 營業中 (點此切換)' : '🔴 暫停營業 (點此恢復)';
+    openToggleBtn.innerHTML = isOpen
+      ? '🟢 ' + t('營業中 (點此切換)', 'Open (Tap to Pause)', '営業中 (切替)', '영업 중 (전환)')
+      : '🔴 ' + t('暫停營業 (點此恢復)', 'Paused (Tap to Open)', '準備中 (再開)', '휴식 중 (재개)');
   }
 
   updateMerchantHeaderBadgesOnly();
@@ -7775,6 +8301,10 @@ function renderMerchantView() {
     renderMerchantAnalyticsPanel(store);
   } else if (state.storeTabMode === 'settings') {
     renderMerchantSettingsPanel(store);
+  }
+  if (state.lang && state.lang !== 'zh-TW') {
+    applyDomSystemTranslation(document.getElementById('viewStore'));
+    applyDomSystemTranslation(document.querySelector('.app-header'));
   }
 }
 
@@ -7854,10 +8384,70 @@ async function holdCurrentPosOrder() {
   showToast(`⏸️ 已暫存掛單「${heldEntry.label}」(NT$${finalTotal})，可先結帳下一位顧客！`);
 }
 
+// #12 POS 拆單結帳：將點餐單拆出一半或指定份數至獨立掛單分開收款
+async function splitPosCartToHeldOrder() {
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  const totalQty = (state.posCart || []).reduce((s, i) => s + (Number(i.qty) || 1), 0);
+  if (!store || totalQty < 2) {
+    showToast('⚠️ 至少需有 2 份餐點才可拆單結帳');
+    return;
+  }
+  const splitTargetLabel = await showAppPromptModal({
+    title: '✂️ 櫃檯拆單分帳',
+    message: `目前點餐單共 ${totalQty} 份餐點。\n系統將自動拆出後半部餐點至獨立「掛單」供下一位分開結帳，請輸入拆單標籤：`,
+    defaultValue: `拆單分帳 ${getTaipeiTimeHHMM()}`,
+    placeholder: '例如：B位同學分開付',
+    confirmText: '確認拆出獨立掛單'
+  });
+  if (splitTargetLabel === null) return;
+
+  const stayCart = [];
+  const splitCart = [];
+  if (state.posCart.length >= 2) {
+    const mid = Math.ceil(state.posCart.length / 2);
+    state.posCart.forEach((it, idx) => {
+      if (idx < mid) stayCart.push(it);
+      else splitCart.push(it);
+    });
+  } else {
+    const single = state.posCart[0];
+    const stayQty = Math.ceil((single.qty || 2) / 2);
+    const splitQty = (single.qty || 2) - stayQty;
+    stayCart.push({ ...single, qty: stayQty });
+    splitCart.push({ ...single, qty: splitQty });
+  }
+
+  const splitTotal = splitCart.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+  const heldEntry = {
+    holdId: 'SPLIT-' + Date.now().toString(36).toUpperCase(),
+    storeId: store.id,
+    label: splitTargetLabel.trim() || `拆單 ${getTaipeiTimeHHMM()}`,
+    createdAt: getTaipeiTimeHHMMSS(),
+    cart: JSON.parse(JSON.stringify(splitCart)),
+    dineType: state.posDineType,
+    needCutlery: state.posNeedCutlery,
+    timeMode: state.posTimeMode,
+    reserveDate: state.posReserveDate,
+    reserveTime: state.posReserveTime,
+    customerPhone: '',
+    customerNote: state.posCustomerNote,
+    taxId: '',
+    manualDiscount: 0,
+    manualDiscountReason: '',
+    previewTotal: splitTotal
+  };
+  state.posHeldOrders = [heldEntry, ...(state.posHeldOrders || [])].slice(0, 30);
+  savePosHeldOrders(state.posHeldOrders);
+  state.posCart = stayCart;
+  renderPosCashierPanel(store);
+  showToast(`✂️ 已拆出 ${splitCart.reduce((s, i) => s + (i.qty || 1), 0)} 份 (NT$${splitTotal}) 至「掛單：${heldEntry.label}」，可先結目前這筆！`);
+}
+
 function openPosHeldOrdersModal() {
   ensureSharedModalsMounted();
   renderPosHeldOrdersModal();
   document.getElementById('posHeldOrdersModal')?.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('posHeldOrdersModal'));
 }
 
 function closePosHeldOrdersModal() {
@@ -8120,6 +8710,7 @@ function renderPosTwoStepCheckoutModal() {
       </button>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('posTwoStepCheckoutModal'));
 }
 
 function updatePosOptionButtonsOnly(store) {
@@ -8318,6 +8909,7 @@ function renderPosCashNumpadModal() {
       ✅ 確認實收金額 (找零 NT$ ${changeAmount})
     </button>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('posCashNumpadModal'));
 }
 
 function renderPosCashierPanel(store) {
@@ -8406,7 +8998,7 @@ function renderPosCashierPanel(store) {
                       ${isSoldOut ? '🚫 已售罄(點此上架)' : (hasOpts ? '⚙️ 客製 ・ 售罄' : '售罄切換')}
                     </button>
                   </div>
-                  <div class="pos-tile-name">${escapeHtml(m.name)}</div>
+                  <div class="pos-tile-name" data-dish-name="1">${escapeHtml(trDishName(m))}</div>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <span class="pos-tile-price">NT$ ${m.price}</span>
@@ -8428,6 +9020,7 @@ function renderPosCashierPanel(store) {
           </div>
           ${state.posCart.length > 0 ? `
             <div style="display:flex; gap:5px;">
+              ${state.posCart.reduce((s, i) => s + (i.qty || 1), 0) >= 2 ? `<button type="button" onclick="splitPosCartToHeldOrder()" style="border:1px solid #6366F1; background:#EEF2FF; color:#3730A3; padding:4px 8px; border-radius:8px; font-size:0.74rem; font-weight:900;">✂️ 拆單</button>` : ''}
               <button type="button" onclick="holdCurrentPosOrder()" style="border:1px solid #F59E0B; background:#FFFBEB; color:#B45309; padding:4px 9px; border-radius:8px; font-size:0.74rem; font-weight:900;">⏸️ 掛單</button>
               <button type="button" onclick="clearPosCart()" style="border:1px solid #FECACA; background:var(--red-bg); color:var(--red); padding:4px 9px; border-radius:8px; font-size:0.74rem; font-weight:800;">🗑️ 清空</button>
             </div>
@@ -8537,6 +9130,7 @@ function renderPosCashierPanel(store) {
   if (newMenuGrid && prevMenuGridScroll > 0) newMenuGrid.scrollTop = prevMenuGridScroll;
   const newReceiptBody = document.querySelector('#storePanel-pos .pos-receipt-scroll-body');
   if (newReceiptBody && prevReceiptScroll > 0) newReceiptBody.scrollTop = prevReceiptScroll;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(panel);
 }
 
 function generatePreviewNextSeq(storeId, pickupDateStr) {
@@ -8981,6 +9575,9 @@ function openShiftZReportModal() {
   const cashRefundSum = refundedOrders
     .filter(o => String(o.refundMethod || o.paymentMethod).includes('現金') || String(o.refundMethod || o.paymentMethod).includes('付現'))
     .reduce((s, o) => s + (Number(o.refundAmount) || Number(o.finalTotal) || 0), 0);
+  const partialCashRefundSum = paidOrders
+    .filter(o => Number(o.partialRefundTotal) > 0 && (String(o.paymentMethod).includes('現金') || String(o.paymentMethod).includes('付現') || (o.paymentSplit && Number(o.paymentSplit.cash) > 0)))
+    .reduce((s, o) => s + (Number(o.partialRefundTotal) || 0), 0);
 
   // #45 中途零用金支出 (Payout) 與補入 (Pay-in) 納入錢箱應有現金公式
   const pettyEntries = getShiftPettyCashEntries(store.id, todayStr);
@@ -8988,7 +9585,7 @@ function openShiftZReportModal() {
   const pettyCashOutSum = pettyEntries.filter(e => e.type === 'OUT').reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const openingFloat = Math.max(0, Number(state.shiftOpeningFloat) || 0);
-  const expectedTotalCashInDrawer = Math.max(0, openingFloat + cashNetTotal + pettyCashInSum - pettyCashOutSum - cashRefundSum);
+  const expectedTotalCashInDrawer = Math.max(0, openingFloat + cashNetTotal + pettyCashInSum - pettyCashOutSum - cashRefundSum - partialCashRefundSum);
   const actualCountedNum = state.shiftActualCountedCash !== '' ? Math.max(0, Number(state.shiftActualCountedCash) || 0) : expectedTotalCashInDrawer;
   const cashVariance = actualCountedNum - expectedTotalCashInDrawer;
 
@@ -9150,6 +9747,7 @@ function openShiftZReportModal() {
     `;
   }
   document.getElementById('receiptPrintModal')?.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('receiptPrintModal'));
 }
 // ==================== 6.2 廚房控單 (KDS) — 規格拆解看板 + 鏡頭光學掃碼核銷 ====================
 function setKdsDateFilter(dateVal) {
@@ -9354,6 +9952,7 @@ function renderCustomerPickupBoardContent(playChimeOnNew = false) {
       </div>
     `;
   }
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('customerPickupBoardModal'));
 }
 
 /**
@@ -9524,12 +10123,32 @@ async function quickVerifyAndCompleteByCode(rawInput) {
  * 【商業級改造 2】開啟 KDS 平板/手機鏡頭即時光學 QR Code 掃描器
  * 支援原生 BarcodeDetector API 與 jsQR (Canvas 跨平台解碼引擎，完整相容 iOS Safari / iPad / Firefox / 桌面瀏覽器)
  */
+// #22 延遲動態載入 jsQR.min.js（僅在店家開啟 KDS 鏡頭掃碼器時按需載入，學生點餐頁零負擔）
+function ensureJsQrLoaded() {
+  if (typeof jsQR === 'function') return Promise.resolve(true);
+  if (window.__jsQrLoadingPromise) return window.__jsQrLoadingPromise;
+  window.__jsQrLoadingPromise = new Promise(resolve => {
+    try {
+      const script = document.createElement('script');
+      script.src = `${getBaseRootUrl()}jsQR.min.js`;
+      script.async = true;
+      script.onload = () => resolve(typeof jsQR === 'function');
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+  return window.__jsQrLoadingPromise;
+}
+
 async function openKdsCameraScannerModal() {
   if (!isMerchantSessionValidNow()) {
     checkMerchantSecurityGate();
     return;
   }
   ensureSharedModalsMounted();
+  ensureJsQrLoaded();
   const modal = document.getElementById('kdsQrScannerModal');
   const body = document.getElementById('kdsQrScannerBody');
   if (!modal || !body) return;
@@ -9869,6 +10488,7 @@ function openKdsModifyOrderModal(orderId) {
   state.modifyingOrderItemsDraft = JSON.parse(JSON.stringify(Array.isArray(order.structuredItems) ? order.structuredItems : []));
   renderKdsModifyOrderModal();
   document.getElementById('kdsModifyOrderModal')?.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('kdsModifyOrderModal'));
 }
 
 function closeKdsModifyOrderModal() {
@@ -10387,6 +11007,7 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
       </div>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(panel);
 }
 
 async function cancelMerchantOrder(orderId) {
@@ -10677,6 +11298,7 @@ function openReceiptPrintModal(orderId) {
   }
 
   document.getElementById('receiptPrintModal')?.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('receiptPrintModal'));
 }
 
 function closeReceiptPrintModal() {
@@ -10693,6 +11315,7 @@ function openOrderPayModal(orderId, autoCompleteAfterPay = false) {
   state.completeAfterPay = Boolean(autoCompleteAfterPay);
   renderOrderPayModalContent();
   document.getElementById('orderPayModal')?.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('orderPayModal'));
 }
 
 function closeOrderPayModal() {
@@ -11157,8 +11780,14 @@ function renderMerchantAnalyticsPanel(store) {
   let buckets = [];
   let periodOrders = [];
 
+  // #33 營收分析歸屬日期與交班日結單 (Z-Report) 完全對齊：已付款訂單以實際收款日 (paidAtDate) 歸屬，未付款訂單以取餐日歸屬
+  const getOrderAccountingDate = (o) => {
+    if (isOrderConsiderPaid(o) && o.paidAtDate) return normalizeDateStr(o.paidAtDate);
+    return normalizeDateStr(o.pickupDate);
+  };
+
   if (period === 'DAY') {
-    periodOrders = allValidStoreOrders.filter(o => normalizeDateStr(o.pickupDate) === todayStr);
+    periodOrders = allValidStoreOrders.filter(o => getOrderAccountingDate(o) === todayStr);
     buckets = [
       { key: '10', label: '10-11時', match: o => parseOrderHour(o) <= 10 },
       { key: '11', label: '11-12時', match: o => parseOrderHour(o) === 11 },
@@ -11172,24 +11801,24 @@ function renderMerchantAnalyticsPanel(store) {
     periodTitle = `過去 7 日每日真實營收趨勢 (${past7StartStr.slice(5)} ~ ${todayStr.slice(5)})`;
     const dayOffsets = [-6, -5, -4, -3, -2, -1, 0];
     const allowedDates = new Set(dayOffsets.map(off => getDateOffsetFromStr(todayStr, off)));
-    periodOrders = allValidStoreOrders.filter(o => allowedDates.has(normalizeDateStr(o.pickupDate)));
+    periodOrders = allValidStoreOrders.filter(o => allowedDates.has(getOrderAccountingDate(o)));
     buckets = dayOffsets.map(off => {
       const dStr = getDateOffsetFromStr(todayStr, off);
       const shortLabel = off === 0 ? `今日(${dStr.slice(5)})` : dStr.slice(5);
       return {
         key: dStr,
         label: shortLabel,
-        match: o => normalizeDateStr(o.pickupDate) === dStr
+        match: o => getOrderAccountingDate(o) === dStr
       };
     });
   } else {
     periodTitle = '歷史與未來預訂全區間分析';
     periodOrders = allValidStoreOrders;
-    const uniqueDates = [...new Set(allValidStoreOrders.map(o => normalizeDateStr(o.pickupDate)))].sort();
+    const uniqueDates = [...new Set(allValidStoreOrders.map(o => getOrderAccountingDate(o)))].sort();
     buckets = (uniqueDates.length > 0 ? uniqueDates : [todayStr]).map(dStr => ({
       key: dStr,
       label: dStr.slice(5),
-      match: o => normalizeDateStr(o.pickupDate) === dStr
+      match: o => getOrderAccountingDate(o) === dStr
     }));
   }
 
@@ -11495,6 +12124,7 @@ function renderMerchantAnalyticsPanel(store) {
       </div>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(panel);
 }
 
 // ==================== 6.4 店家整合設定中心 ====================
@@ -11580,6 +12210,33 @@ function renderMerchantSettingsPanel(store) {
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
             <h3 style="font-size:0.98rem; font-weight:900;">📋 目前架上菜單（共 ${menus.length} 道，支援每日限量自動扣減售罄與客製加料規則）</h3>
           </div>
+          ${(function () {
+            const modMap = {};
+            menus.forEach(m => {
+              Object.values(m.options || {}).forEach(grp => {
+                (grp && Array.isArray(grp.choices) ? grp.choices : []).forEach(c => {
+                  const cName = String(Array.isArray(c) ? c[0] : c).trim();
+                  if (!cName) return;
+                  if (!modMap[cName]) modMap[cName] = { total: 0, soldOut: 0 };
+                  modMap[cName].total++;
+                  if (Array.isArray(c) && Boolean(c[2])) modMap[cName].soldOut++;
+                });
+              });
+            });
+            const sharedMods = Object.entries(modMap).filter(([, info]) => info.total >= 2).slice(0, 16);
+            if (sharedMods.length === 0) return '';
+            return `
+              <div style="background:#FFFBEB; border:1px solid #FDE68A; border-radius:10px; padding:10px 12px; margin-bottom:12px;">
+                <div style="font-size:0.78rem; font-weight:900; color:#92400E; margin-bottom:6px;">⚡ 批次加料售罄開關（點擊一次即同步全店所有含該加料的主餐）</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                  ${sharedMods.map(([cName, info]) => {
+                    const allOut = info.soldOut >= info.total;
+                    return `<button type="button" onclick="bulkToggleModifierChoiceSoldOut(${escapeJsAttr(cName)})" style="border:1px solid ${allOut ? '#EF4444' : '#D97706'}; background:${allOut ? '#FEE2E2' : '#FFFFFF'}; color:${allOut ? '#B91C1C' : '#92400E'}; padding:4px 10px; border-radius:999px; font-size:0.74rem; font-weight:800;">${allOut ? '🚫 ' : '🟢 '}${escapeHtml(cName)} (${info.total})${allOut ? ' [已售罄]' : ''}</button>`;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          })()}
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(310px, 1fr)); gap:10px;">
             ${menus.map((m, idx) => {
               const optCount = m.options ? Object.keys(m.options).length : 0;
@@ -11594,7 +12251,7 @@ function renderMerchantSettingsPanel(store) {
                       ${dLimit > 0 ? `<span style="font-size:0.68rem; font-weight:900; color:#DC2626; background:#FEE2E2; padding:2px 6px; border-radius:4px;">📦 限量 ${dLimit} 份${m.remainingToday !== null && m.remainingToday !== undefined ? ` (剩${m.remainingToday})` : ''}</span>` : ''}
                       <span style="font-size:0.68rem; color:var(--text-secondary); font-weight:700;">⚙️ ${optCount} 組選項 (ID:${escapeHtml(m.id)})</span>
                     </div>
-                    <div style="font-weight:900; font-size:0.92rem; margin-top:4px; color:var(--text-primary);">${escapeHtml(m.name)}</div>
+                    <div data-dish-name="1" style="font-weight:900; font-size:0.92rem; margin-top:4px; color:var(--text-primary);">${escapeHtml(trDishName(m))}</div>
                   </div>
                   <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
                     <span style="font-size:0.8rem; font-weight:800;">$</span>
@@ -11914,6 +12571,7 @@ function renderMerchantSettingsPanel(store) {
       ` : ''}
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(panel);
 }
 
 function updateMerchantAutoLockMinutes(val) {
@@ -12387,6 +13045,59 @@ async function deleteMenuItem(idx) {
   showToast(`🗑️ 已刪除品項：${removed.name}`);
 }
 
+// #29 全店批次加料售罄切換（一鍵把所有含該加料選項的菜色同步設為售罄或恢復）
+async function bulkToggleModifierChoiceSoldOut(choiceName) {
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (!store || !Array.isArray(store.menus)) return;
+  const target = String(choiceName || '').trim();
+  if (!target) return;
+
+  let matchCount = 0;
+  let soldOutCount = 0;
+  store.menus.forEach(m => {
+    Object.values(m.options || {}).forEach(grp => {
+      (grp && Array.isArray(grp.choices) ? grp.choices : []).forEach(c => {
+        if (String(Array.isArray(c) ? c[0] : c).trim() === target) {
+          matchCount++;
+          if (Array.isArray(c) && Boolean(c[2])) soldOutCount++;
+        }
+      });
+    });
+  });
+  const nextSoldOut = soldOutCount < matchCount;
+  const modifiedItems = [];
+  store.menus.forEach(m => {
+    let touched = false;
+    Object.values(m.options || {}).forEach(grp => {
+      if (!grp || !Array.isArray(grp.choices)) return;
+      grp.choices = grp.choices.map(c => {
+        const n = String(Array.isArray(c) ? c[0] : c).trim();
+        const p = Array.isArray(c) ? Math.max(0, Number(c[1]) || 0) : 0;
+        if (n === target) {
+          touched = true;
+          return nextSoldOut ? [n, p, true] : [n, p];
+        }
+        return c;
+      });
+    });
+    if (touched) modifiedItems.push(m);
+  });
+
+  state.lastLocalStoreConfigUpdateTs = Date.now();
+  saveLocalStores(state.stores);
+  renderMerchantSettingsPanel(store);
+  recordMerchantAuditLog('批次加料售罄切換', `${target} ➔ ${nextSoldOut ? '售罄' : '恢復供應'}（共 ${modifiedItems.length} 道餐點）`);
+  showToast(nextSoldOut ? `🚫 已將全店 ${modifiedItems.length} 道餐點的「${target}」設為售罄！` : `✅ 已恢復全店 ${modifiedItems.length} 道餐點的「${target}」供應！`);
+
+  for (const item of modifiedItems) {
+    try { await syncSingleMenuItemToCloud(store, item); } catch (e) {}
+  }
+}
+
 async function syncSingleMenuItemToCloud(store, item) {
   try {
     const res = await fetch(GAS_URL, {
@@ -12437,6 +13148,7 @@ function openMenuEditModal(menuIdx) {
 
   renderMenuEditModalBody(item);
   document.getElementById('menuEditModal')?.classList.add('open');
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('menuEditModal'));
 }
 
 // #29 常用客製選項範本一鍵套用

@@ -2438,7 +2438,34 @@ select.select-input {
   }
 
   .student-directory-toolbar {
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .student-directory-toolbar .filter-row {
+    width: 100%;
+    overflow-x: visible;
+    flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .student-directory-toolbar .filter-chip {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+  }
+
+  .student-tool-pills {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .student-util-pill {
+    justify-content: center;
+    padding: 7px 10px;
+    font-size: 0.78rem;
   }
 }
 
@@ -2470,6 +2497,13 @@ select.select-input {
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.student-directory-toolbar .filter-row {
+  overflow-x: visible;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .student-tool-pills {

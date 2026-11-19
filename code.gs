@@ -2158,6 +2158,19 @@ function enrichOrderObject(o) {
   merged.finalTotal = Math.max(0, Number(merged.finalTotal) || 0);
   merged.notifyCount = Math.max(0, Number(merged.notifyCount) || 0);
   merged.readyAtTs = Number(merged.readyAtTs || 0);
+  merged.originalOfflinePickupNumber = String(merged.originalOfflinePickupNumber || '').trim();
+  merged.partialRefundTotal = Math.max(0, Number(merged.partialRefundTotal) || 0);
+
+  // #20：現金單逾時未取自動作廢保護（已叫號超過 60 分鐘且仍為未付款現金單）
+  if (
+    merged.status === '可取餐' &&
+    merged.readyAtTs > 0 &&
+    String(merged.paymentStatus || '') !== '已付款' &&
+    (Date.now() - merged.readyAtTs) > 60 * 60 * 1000
+  ) {
+    merged.status = '已取消 (現金單逾時未取自動作廢)';
+    merged.paymentStatus = '已退單作廢';
+  }
 
   merged.verificationCode = generateOrderVerificationCodeOnServer(
     merged.orderId,
@@ -2517,8 +2530,9 @@ function handleOrderSubmission(ss, params) {
   const recentOrders = readSheetTailObjects(orderSheet, 300).map(enrichOrderObject);
   const todayStr = getTodayTaipeiStr();
 
-  // 【#20 伺服器端跨裝置未付款現金單上限攔截】
-  // 即使學生清除 localStorage、換無痕視窗或換手機，只要同一手機號碼或同一裝置在當日已有 >= 2 筆未付款現金單，後端直接拒絕！
+  // 【#20 伺服器端跨裝置未付款現金單上限 + 棄單黑名單攔截】
+  // 即使學生清除 localStorage、換無痕視窗或換手機，只要同一手機號碼或同一裝置在當日已有 >= 2 筆未付款現金單，
+  // 或該手機近期已有 >= 2 筆現金逾時未取 / 棄單作廢紀錄，後端強制拒絕現金單並要求改用 LINE Pay！
   if (!isMerchantPosRequest && isCashPayment) {
     const activeUnpaidCashOrders = recentOrders.filter(o => {
       if (!o || String(o.status || '').indexOf('已取消') >= 0 || o.status === '已完成') return false;
@@ -2531,6 +2545,19 @@ function handleOrderSubmission(ss, params) {
     });
     if (activeUnpaidCashOrders.length >= 2) {
       throw new Error('伺服器查核：您目前已有 2 筆尚未至櫃檯付款領取的現金訂單，為防止棄單，請先完成取餐付款或改用 LINE Pay 線上結帳！');
+    }
+
+    if (rawPhoneDigits) {
+      const noShowCount = recentOrders.filter(o => {
+        if (!o) return false;
+        const stStr = String(o.status || '');
+        if (stStr.indexOf('逾期') < 0 && stStr.indexOf('逾時未取') < 0 && stStr.indexOf('棄單') < 0) return false;
+        const ordPhoneDigits = String(o.customerPhone || '').replace(/\D/g, '');
+        return ordPhoneDigits === rawPhoneDigits;
+      }).length;
+      if (noShowCount >= 2) {
+        throw new Error('系統風控通知：此手機號碼近期累計多筆現金單逾時未取棄單紀錄，已暫停使用「現場付現」功能，請改以 LINE Pay 線上付款點餐。');
+      }
     }
   }
 
@@ -2764,9 +2791,21 @@ function handleOrderSubmission(ss, params) {
   const isPeakReservation = isReservation && isPeakHourSlotOnServer(pickupTimeVal);
   const promoActive = isStoreOpen && !isFullLoad && !isPeakReservation && promoMode !== 'none';
 
-  // #30 離峰贈品強制套用低消門檻 (AI_DISCOUNT_MIN_SUBTOTAL) 並尊重顧客「不要贈品」開關 (params.wantGift !== false)
+  // #30 離峰贈品強制套用低消門檻 (AI_DISCOUNT_MIN_SUBTOTAL)、尊重顧客「不要贈品」開關，並檢查該店贈品對應品項是否已售罄
   const customerWantsGift = params.wantGift !== false;
-  if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL && customerWantsGift) {
+  let giftSoldOut = false;
+  if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText) {
+    const giftKeywords = ['溫泉蛋', '溏心蛋', '滷蛋', '紅茶', '綠茶', '奶茶', '冬瓜茶', '豆漿', '味噌湯', '玉米濃湯', '酸辣湯', '豆腐', '小菜'];
+    const matchedKw = giftKeywords.find(kw => promoText.indexOf(kw) >= 0);
+    if (matchedKw) {
+      const matchedMenu = allMenus.find(m => String(m.name || '').indexOf(matchedKw) >= 0);
+      if (matchedMenu) {
+        const parsedG = parseMenuRowOptionsAndSoldOut(matchedMenu);
+        if (parsedG.isSoldOut) giftSoldOut = true;
+      }
+    }
+  }
+  if (promoActive && (promoMode === 'gift' || promoMode === 'freebie') && promoText && authoritativeSubtotal >= AI_DISCOUNT_MIN_SUBTOTAL && customerWantsGift && !giftSoldOut) {
     verifiedItems.push({
       id: 'GIFT-AI',
       baseName: `${promoText} (贈品)`,
@@ -2844,8 +2883,12 @@ function handleOrderSubmission(ss, params) {
       if (numVal > curSaved) props.setProperty(propKey, String(numVal));
     }
   }
+  let originalOfflinePickupNumber = '';
   if (!pickupNumber) {
     pickupNumber = generateBackendSequentialPickupNumber(ss, storeId, pickupDateVal);
+    if (isMerchantPosRequest && isOfflineResync && /^\d{3,5}$/.test(requestedPosNum) && requestedPosNum !== pickupNumber) {
+      originalOfflinePickupNumber = requestedPosNum;
+    }
   }
 
   const verificationCode = generateOrderVerificationCodeOnServer(incomingOrderId, pickupNumber, authoritativeFinalTotal);
@@ -2905,6 +2948,8 @@ function handleOrderSubmission(ss, params) {
     cashReceived: isMerchantPosRequest ? (Number(params.cashReceived) || 0) : 0,
     changeGiven: isMerchantPosRequest ? (Number(params.changeGiven) || 0) : 0,
     paymentSplit: (isMerchantPosRequest && params.paymentSplit && typeof params.paymentSplit === 'object') ? params.paymentSplit : null,
+    originalOfflinePickupNumber: originalOfflinePickupNumber,
+    giftSoldOutSkipped: Boolean(giftSoldOut),
     notifyCount: 0,
     lineUserId: String(params.lineUserId || ''),
     customerEmail: String(params.customerEmail || ''),
@@ -3136,6 +3181,12 @@ function handleModifyOrderItems(ss, params) {
   rowVals[9] = newFinalTotal;
 
   const modifyReason = String(params.reason || '櫃檯改單/單品作廢').trim();
+  const wasPaid = String(meta.paymentStatus || '') === '已付款';
+  if (wasPaid && newFinalTotal < oldFinalTotal) {
+    const partialDiff = oldFinalTotal - newFinalTotal;
+    meta.partialRefundTotal = Math.max(0, Number(meta.partialRefundTotal) || 0) + partialDiff;
+    meta.refundedAtDate = getTodayTaipeiStr();
+  }
   if (!Array.isArray(meta.statusTimeline)) meta.statusTimeline = [];
   meta.statusTimeline.push({
     ts: Date.now(),
@@ -3278,10 +3329,42 @@ function cancelOrderByIdBatch(ss, params) {
   rowVals[13] = `已取消 (${reason})`;
   if (wasOriginallyPaid || params.wasPaidRefund || Number(params.refundAmount) > 0) {
     const isLinePayOrder = origPayMethod === 'LINE Pay';
-    // #10：明確區分線上 LINE Pay 退刷狀態與現場現金退款，確保日結錢箱現金與行動支付對帳精準不混淆
+    // #10：明確區分線上 LINE Pay 退刷狀態與現場現金退款；若本店有設定 LINE Pay 商家金鑰且為真實交易單號，主動呼叫 LINE Pay v3 Refund API
+    const refundAmt = Math.max(0, Number(params.refundAmount) || Number(rowVals[9]) || 0);
+    let gatewayRefundNote = '';
+    if (isLinePayOrder && meta.transactionId && /^\d{10,24}$/.test(String(meta.transactionId).trim())) {
+      try {
+        const lpCfg = resolveStoreLinePayConfig(orderStoreId);
+        if (lpCfg.hasMerchantCredentials) {
+          const baseUrl = lpCfg.isSandbox ? 'https://sandbox-api-pay.line.me' : 'https://api-pay.line.me';
+          const reqUri = `/v3/payments/${String(meta.transactionId).trim()}/refund`;
+          const bodyStr = JSON.stringify({ refundAmount: refundAmt });
+          const nonce = Utilities.getUuid();
+          const sigBytes = Utilities.computeHmacSha256Signature(lpCfg.channelSecret + reqUri + bodyStr + nonce, lpCfg.channelSecret);
+          const sigB64 = Utilities.base64Encode(sigBytes);
+          const refRes = UrlFetchApp.fetch(baseUrl + reqUri, {
+            method: 'post',
+            contentType: 'application/json',
+            headers: {
+              'X-LINE-ChannelId': lpCfg.channelId,
+              'X-LINE-Authorization-Nonce': nonce,
+              'X-LINE-Authorization': sigB64
+            },
+            payload: bodyStr,
+            muteHttpExceptions: true
+          });
+          const refJson = JSON.parse(refRes.getContentText() || '{}');
+          gatewayRefundNote = refJson.returnCode ? `API:${refJson.returnCode}` : '';
+          meta.refundGatewayCode = String(refJson.returnCode || '');
+          meta.refundGatewayMessage = String(refJson.returnMessage || '');
+        }
+      } catch (e) {
+        meta.refundGatewayMessage = String(e.message || e);
+      }
+    }
     meta.paymentStatus = isLinePayOrder ? '已退款 (LINE Pay退刷)' : '已退款 (櫃檯退現)';
-    meta.refundAmount = Math.max(0, Number(params.refundAmount) || Number(rowVals[9]) || 0);
-    meta.refundMethod = isLinePayOrder ? 'LINE Pay 原路退刷' : String(params.refundMethod || origPayMethod || '現金').trim();
+    meta.refundAmount = refundAmt;
+    meta.refundMethod = isLinePayOrder ? (`LINE Pay 原路退刷${gatewayRefundNote ? ' ' + gatewayRefundNote : ''}`) : String(params.refundMethod || origPayMethod || '現金').trim();
     meta.refundTransactionId = isLinePayOrder
       ? ('REF-' + (meta.transactionId || Utilities.getUuid().slice(0, 8).toUpperCase()))
       : ('CASH-REF-' + Date.now());
