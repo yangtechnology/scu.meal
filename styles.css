@@ -2896,3 +2896,71 @@ select.select-input {
   line-height: 1.25;
   flex-shrink: 0;
 }
+
+/* ==================== v24.0 全域按鈕即時觸控回饋、載入轉圈反灰防連點與暫停營業樣式 ==================== */
+button,
+[role="button"],
+.sync-status {
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease, opacity 0.14s ease, filter 0.14s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:active:not(:disabled):not(.mf-btn-busy),
+[role="button"]:active:not(.mf-btn-busy),
+.sync-status:active,
+.mf-btn-pressed {
+  transform: scale(0.95) !important;
+  filter: brightness(0.9) !important;
+  opacity: 0.85 !important;
+}
+
+.mf-btn-busy,
+button[data-busy="1"] {
+  pointer-events: none !important;
+  opacity: 0.66 !important;
+  filter: grayscale(0.25) !important;
+  cursor: wait !important;
+  transform: scale(0.98) !important;
+}
+
+.mf-btn-spinner {
+  display: inline-block;
+  width: 0.88em;
+  height: 0.88em;
+  min-width: 12px;
+  min-height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: -0.14em;
+  animation: mfBtnSpin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes mfBtnSpin {
+  to { transform: rotate(360deg); }
+}
+
+.wait-pill.wait-paused {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #FCA5A5;
+}
+
+.store-card.store-paused {
+  opacity: 0.76;
+  border-color: #FECACA;
+  background: #FFFBFB;
+}
+
+.store-paused-blocker {
+  background: #FEF2F2;
+  border: 1.5px solid #FCA5A5;
+  color: #991B1B;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.5;
+}

@@ -304,7 +304,7 @@ async function toggleCurrentStoreOpenStatus() {
       showToast(`❌ 營業狀態切換失敗已還原：${(data && data.message) || '權限不足或伺服器拒絕'}`);
       return;
     }
-    showToast(store.isOpen ? `🟢 「${store.name}」已恢復正常營業！` : `🔴 「${store.name}」已設為暫停營業（學生端僅開放預訂）`);
+    showToast(store.isOpen ? `🟢 「${store.name}」已恢復正常營業！` : `⛔ 「${store.name}」已設為暫停營業（已全面停止現場點餐與預訂）`);
   } catch (e) {
     showToast(store.isOpen ? `⚠️ 網路暫時離線，「${store.name}」已先於本機設為營業中` : `⚠️ 網路暫時離線，「${store.name}」已先於本機設為暫停營業`);
   }
@@ -782,7 +782,7 @@ function renderPosTwoStepCheckoutModal() {
         <span style="font-size:0.76rem; font-weight:800; color:var(--brand-dark);">${isReserve ? `📅 預訂 ${state.posReserveDate} ${state.posReserveTime}` : '⚡ 現場立即製作'}</span>
       </div>
       <div style="max-height:110px; overflow-y:auto; font-size:0.8rem; color:var(--text-secondary); border-top:1px dashed var(--border); padding-top:6px;">
-        ${state.posCart.map(i => `<div style="display:flex; justify-content:space-between;"><span>${escapeHtml(i.baseName || i.name)} ×${i.qty || 1}</span><strong>$${i.price * (i.qty || 1)}</strong></div>`).join('')}
+        ${state.posCart.map(i => `<div style="display:flex; justify-content:space-between;"><span data-dish-name="1">${escapeHtml(i.baseName || i.name)} ×${i.qty || 1}</span><strong>$${i.price * (i.qty || 1)}</strong></div>`).join('')}
       </div>
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; padding-top:8px; border-top:1.5px solid var(--border);">
         <span style="font-weight:900; font-size:0.9rem;">應收總計 ${cutleryFee > 0 ? `(餐具+$${cutleryFee})` : ''} ${(discount + manualDiscount) > 0 ? `(折-$${discount + manualDiscount})` : ''}</span>
@@ -1205,7 +1205,7 @@ function renderPosCashierPanel(store) {
               return `
                 <div class="pos-receipt-item" style="padding:9px 8px;">
                   <div style="flex:1; min-width:0;">
-                    <div style="font-weight:900; font-size:0.9rem; color:var(--text-primary);">${escapeHtml(item.baseName || item.name)}</div>
+                    <div data-dish-name="1" style="font-weight:900; font-size:0.9rem; color:var(--text-primary);">${escapeHtml(storeMenu ? trDishName(storeMenu) : (item.baseName || item.name))}</div>
                     ${selStr ? `<div style="font-size:0.74rem; color:var(--brand-dark); font-weight:700;">${escapeHtml(selStr)}</div>` : ''}
                     <div style="font-size:0.82rem; font-weight:950; color:var(--red);">NT$ ${item.price * (item.qty || 1)}</div>
                   </div>
@@ -2045,6 +2045,40 @@ function openCustomerPickupBoardModal() {
   requestMerchantWakeLock();
 }
 
+function getStandaloneTvBoardUrl(storeId) {
+  const cleanId = String(storeId || state.pickupBoardStoreId || state.merchantStoreId || 'S01').trim().toUpperCase();
+  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+    return `${getBaseRootUrl()}board/index.html?store=${encodeURIComponent(cleanId)}`;
+  }
+  return `${getBaseRootUrl()}board/?store=${encodeURIComponent(cleanId)}`;
+}
+
+function openStandaloneTvBoardWindow(storeId) {
+  const url = getStandaloneTvBoardUrl(storeId);
+  const win = window.open(url, '_blank', 'noopener');
+  if (!win) {
+    window.location.href = url;
+  } else {
+    showToast('📺 已開啟麥當勞風格電視全螢幕大看板！可按 Chrome 投放或接電視 HDMI 全螢幕播放');
+  }
+}
+
+function copyStandaloneTvBoardUrl(storeId) {
+  const url = getStandaloneTvBoardUrl(storeId);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('✅ 已複製電視大看板專屬網址！可直接在智慧電視瀏覽器開啟或投放');
+    }).catch(() => showToast('📺 電視看板網址：' + url));
+  } else {
+    showToast('📺 電視看板網址：' + url);
+  }
+}
+
+function togglePickupBoardTvCastGuide() {
+  state.showPickupBoardCastGuide = !state.showPickupBoardCastGuide;
+  renderCustomerPickupBoardContent(false);
+}
+
 function renderCustomerPickupBoardContent(playChimeOnNew = false) {
   const targetStoreId = state.pickupBoardStoreId || state.merchantStoreId || (state.stores[0] && state.stores[0].id) || 'S01';
   const store = state.stores.find(s => s.id === targetStoreId) || state.stores[0];
@@ -2085,6 +2119,10 @@ function renderCustomerPickupBoardContent(playChimeOnNew = false) {
 
   const cookingNumbers = Array.from(cookingNumSet).sort();
   const readyNumbers = Array.from(readyNumSet).sort();
+  const tvShareUrl = getStandaloneTvBoardUrl(store.id);
+  const tvQrSvg = (state.showPickupBoardCastGuide && typeof generateDeterministicQrSvg === 'function')
+    ? generateDeterministicQrSvg(tvShareUrl, 124)
+    : '';
 
   // 檢查是否有新出爐的取餐號碼，若有則在看板端自動發聲叮咚與語音叫號
   if (!state.lastSeenBoardReadyNumbersMap) state.lastSeenBoardReadyNumbersMap = {};
@@ -2108,40 +2146,65 @@ function renderCustomerPickupBoardContent(playChimeOnNew = false) {
   const body = document.getElementById('customerPickupBoardBody');
   if (body) {
     body.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:16px; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:16px; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <div style="display:flex; align-items:center; gap:12px;">
           <span style="font-size:2.4rem;">${getStoreIconDisplay(store)}</span>
           <div>
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              <h2 style="font-size:1.65rem; font-weight:950; color:#FFFFFF; letter-spacing:0.02em; margin:0;">${escapeHtml(store.name)} — 即時取餐叫號看板</h2>
+              <h2 style="font-size:1.55rem; font-weight:950; color:#FFFFFF; letter-spacing:0.02em; margin:0;">${escapeHtml(trTerm(store.name))} — ${t('即時取餐叫號看板', 'Live Pickup Call Board')}</h2>
               <span style="font-size:0.75rem; font-weight:900; background:#065F46; color:#6EE7B7; padding:3px 10px; border-radius:999px; border:1px solid #10B981;">
-                ● LIVE 雲端即時同步中 (<span id="pickupBoardLiveClock">${getTaipeiTimeHHMMSS()}</span>)
+                ● LIVE ${t('雲端即時同步中', 'Cloud Sync')} (<span id="pickupBoardLiveClock">${getTaipeiTimeHHMMSS()}</span>)
               </span>
             </div>
-            <div style="font-size:0.85rem; color:#94A3B8; margin-top:3px;">請留意您的 4 碼取餐流水號，顯示於右側綠區即可憑 QR Code 至櫃檯取餐</div>
+            <div style="font-size:0.84rem; color:#94A3B8; margin-top:3px;">${t('請留意您的取餐號碼，顯示於右側綠區即可至櫃檯取餐；點擊右側按鈕即可免登入投上大電視！', 'Watch for your pickup number on the right green panel. Launch the TV mode on the right to cast!')}</div>
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
           <select class="select-input" style="width:auto; background:#1E293B; color:#FFFFFF; border-color:#475569; padding:7px 12px; font-size:0.82rem; font-weight:800;" onchange="switchPickupBoardStore(this.value)">
-            ${state.stores.map(s => `<option value="${escapeHtml(s.id)}" ${s.id === store.id ? 'selected' : ''}>切換看板店鋪：${escapeHtml(s.name)}</option>`).join('')}
+            ${state.stores.map(s => `<option value="${escapeHtml(s.id)}" ${s.id === store.id ? 'selected' : ''}>${t('切換看板店鋪：', 'Store: ')}${escapeHtml(trTerm(s.name))}</option>`).join('')}
           </select>
-          <button type="button" onclick="ensureAudioContextUnlocked(true); showToast('🔊 已啟用叫號看板語音與叮咚音效！');" style="border:1px solid #10B981; background:#065F46; color:#FFFFFF; padding:8px 14px; border-radius:999px; font-weight:800; font-size:0.82rem; cursor:pointer;">
-            🔊 啟用叫號音效
+          <button type="button" onclick="openStandaloneTvBoardWindow(${escapeJsAttr(store.id)})" style="border:1.5px solid #FF5A1F; background:#FF5A1F; color:#FFFFFF; padding:8px 14px; border-radius:999px; font-weight:900; font-size:0.82rem; cursor:pointer; box-shadow:0 4px 14px rgba(255,90,31,0.35);">
+            📺 ${t('開啟全螢幕電視大看板', 'Open Fullscreen TV Board')}
+          </button>
+          <button type="button" onclick="copyStandaloneTvBoardUrl(${escapeJsAttr(store.id)})" style="border:1px solid #38BDF8; background:#0C4A6E; color:#E0F2FE; padding:8px 13px; border-radius:999px; font-weight:800; font-size:0.82rem; cursor:pointer;">
+            📋 ${t('複製電視網址', 'Copy TV URL')}
+          </button>
+          <button type="button" onclick="togglePickupBoardTvCastGuide()" style="border:1px solid #A855F7; background:#3B0764; color:#F3E8FF; padding:8px 13px; border-radius:999px; font-weight:800; font-size:0.82rem; cursor:pointer;">
+            📡 ${t('投上電視教學 / QR', 'Cast Guide / QR')}
+          </button>
+          <button type="button" onclick="ensureAudioContextUnlocked(true); showToast('🔊 已啟用叫號看板語音與叮咚音效！');" style="border:1px solid #10B981; background:#065F46; color:#FFFFFF; padding:8px 13px; border-radius:999px; font-weight:800; font-size:0.82rem; cursor:pointer;">
+            🔊 ${t('啟用叫號音效', 'Enable Voice')}
           </button>
           <button type="button" onclick="closeCustomerPickupBoardModal()" style="border:1px solid #475569; background:#1E293B; color:#FFFFFF; padding:8px 16px; border-radius:999px; font-weight:800; font-size:0.85rem; cursor:pointer;">
-            ✕ ${state.routeMode === 'board' ? '返回點餐首頁' : '關閉看板'}
+            ✕ ${state.routeMode === 'board' ? t('返回點餐首頁', 'Home') : t('關閉看板', 'Close')}
           </button>
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; min-height:410px;">
+      ${state.showPickupBoardCastGuide ? `
+        <div style="background:#1E293B; border:1.5px solid #38BDF8; border-radius:16px; padding:14px 16px; margin-bottom:16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+          <div style="background:#FFFFFF; padding:6px; border-radius:10px; width:108px; height:108px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            ${tvQrSvg}
+          </div>
+          <div style="flex:1; min-width:240px;">
+            <div style="font-size:0.95rem; font-weight:900; color:#38BDF8; margin-bottom:4px;">📺 ${t('免登入麥當勞風格電視投屏方案（永不過期・每 5 秒同步・防休眠）', 'Zero-Login McDonald-Style TV Casting (5s Live Sync & WakeLock)')}</div>
+            <div style="font-size:0.8rem; color:#CBD5E1; line-height:1.55;">
+              1️⃣ <strong>Chrome 投放 (Chromecast / Google TV)</strong>：點上方「📺 開啟全螢幕電視大看板」→ Chrome 右上角 ⋮ → 投放分頁至電視。<br>
+              2️⃣ <strong>智慧電視 / 電視盒 / HDMI</strong>：掃左側 QR Code 或貼上網址於電視瀏覽器開啟並按全螢幕，POS 出餐立即放大顯示並語音叫號！
+            </div>
+            <div style="margin-top:6px; font-family:monospace; font-size:0.75rem; color:#6EE7B7; word-break:break-all;">${escapeHtml(tvShareUrl)}</div>
+          </div>
+        </div>
+      ` : ''}
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; min-height:390px;">
         <div style="background:#1E293B; border:1.5px solid #334155; border-radius:18px; padding:18px;">
           <div style="font-size:1.15rem; font-weight:900; color:#FBBF24; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;">
-            <span>🍳 廚房準備中 (Preparing)</span>
-            <span style="font-size:0.85rem; background:rgba(251,191,36,0.15); padding:3px 10px; border-radius:999px;">${cookingNumbers.length} 單</span>
+            <span>🍳 ${t('廚房準備中 (Preparing)', 'Preparing')}</span>
+            <span style="font-size:0.85rem; background:rgba(251,191,36,0.15); padding:3px 10px; border-radius:999px;">${cookingNumbers.length} ${t('單', 'orders')}</span>
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(125px, 1fr)); gap:12px;">
-            ${cookingNumbers.length === 0 ? `<div style="grid-column:1/-1; color:#64748B; text-align:center; padding:60px 0; font-weight:700;">目前無準備中單號</div>` : cookingNumbers.map(num => `
+            ${cookingNumbers.length === 0 ? `<div style="grid-column:1/-1; color:#64748B; text-align:center; padding:60px 0; font-weight:700;">${t('目前無準備中單號', 'No orders preparing')}</div>` : cookingNumbers.map(num => `
               <div style="background:#0F172A; border:1.5px solid #475569; border-radius:14px; padding:14px 10px; text-align:center; font-size:1.85rem; font-weight:950; color:#F8FAFC;">
                 #${escapeHtml(num)}
               </div>
@@ -2151,11 +2214,11 @@ function renderCustomerPickupBoardContent(playChimeOnNew = false) {
 
         <div style="background:rgba(16,185,129,0.1); border:2px solid #10B981; border-radius:18px; padding:18px;">
           <div style="font-size:1.15rem; font-weight:900; color:#34D399; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;">
-            <span>🔔 請至櫃檯取餐 (Ready for Pickup)</span>
-            <span style="font-size:0.85rem; background:rgba(16,185,129,0.25); padding:3px 10px; border-radius:999px;">${readyNumbers.length} 單</span>
+            <span>🔔 ${t('請至櫃檯取餐 (Ready for Pickup)', 'Now Serving')}</span>
+            <span style="font-size:0.85rem; background:rgba(16,185,129,0.25); padding:3px 10px; border-radius:999px;">${readyNumbers.length} ${t('單', 'orders')}</span>
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px;">
-            ${readyNumbers.length === 0 ? `<div style="grid-column:1/-1; color:#6EE7B7; opacity:0.65; text-align:center; padding:60px 0; font-weight:700;">請稍候，餐點完成將立即顯示並語音叫號</div>` : readyNumbers.map(num => {
+            ${readyNumbers.length === 0 ? `<div style="grid-column:1/-1; color:#6EE7B7; opacity:0.65; text-align:center; padding:60px 0; font-weight:700;">${t('請稍候，餐點完成將立即顯示並語音叫號', 'Ready numbers will appear here')}</div>` : readyNumbers.map(num => {
               const isNew = newlyCalledNums.includes(num);
               return `
                 <div style="background:#10B981; color:#FFFFFF; border-radius:14px; padding:16px 10px; text-align:center; font-size:2.15rem; font-weight:950; box-shadow:0 8px 24px rgba(16,185,129,0.35); ${isNew ? 'animation:pulse 1s infinite; border:3px solid #FDE047;' : ''}">
@@ -3059,7 +3122,7 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
       return `
         <div class="kds-check-item-row ${isChecked ? 'checked' : ''}" onclick="toggleKdsOrderItemChecked(${escapeJsAttr(o.orderId)}, ${escapeJsAttr(itemKey)})">
           <span class="kds-check-box">${isChecked ? '✅' : '⬜'}</span>
-          <span style="flex:1;"><strong>${escapeHtml(i.baseName || i.name)}</strong> ×${i.qty || 1}${addOnBadge}${sel}${noteTag}</span>
+          <span style="flex:1;"><strong data-dish-name="1">${escapeHtml(i.baseName || i.name)}</strong> ×${i.qty || 1}${addOnBadge}${sel}${noteTag}</span>
         </div>
       `;
     }).join('');
@@ -3253,7 +3316,7 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
             return `
               <div class="batch-item-pill">
                 <div class="batch-item-header">
-                  <span style="font-weight:900; font-size:0.9rem; color:#FFFFFF;">${escapeHtml(bi.name)}</span>
+                  <span data-dish-name="1" style="font-weight:900; font-size:0.9rem; color:#FFFFFF;">${escapeHtml(bi.name)}</span>
                   <span class="batch-qty">共 ×${bi.qty}</span>
                 </div>
                 <div class="batch-spec-list">
@@ -3491,7 +3554,7 @@ function openReceiptPrintModal(orderId) {
             return `
               <div style="border-bottom:1.5px dashed #000; padding-bottom:8px;">
                 <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:1.25rem; font-weight:950;">
-                  <span>${escapeHtml(it.baseName || it.name)}</span>
+                  <span data-dish-name="1">${escapeHtml(it.baseName || it.name)}</span>
                   <span style="font-size:1.45rem;">×${it.qty || 1}</span>
                 </div>
                 ${selText ? `<div style="font-size:1.02rem; font-weight:900; margin-top:4px; padding-left:6px;">▶ ${escapeHtml(selText)}</div>` : ''}
@@ -3523,7 +3586,7 @@ function openReceiptPrintModal(orderId) {
                 <span style="font-size:1.4rem; font-weight:950;">#${escapeHtml(o.pickupNumber)}</span>
                 <span style="font-size:0.78rem; font-weight:900;">${escapeHtml(o.dineType || '外帶')} (${sIdx + 1}/${totalStickers})</span>
               </div>
-              <div style="font-size:1.1rem; font-weight:950; margin-bottom:3px;">${escapeHtml(it.baseName || it.name)}</div>
+              <div data-dish-name="1" style="font-size:1.1rem; font-weight:950; margin-bottom:3px;">${escapeHtml(it.baseName || it.name)}</div>
               <div style="font-size:0.86rem; font-weight:800;">規格：${escapeHtml(selText)}</div>
               ${it.itemNote ? `<div style="font-size:0.84rem; font-weight:950; margin-top:2px;">📝 單品：${escapeHtml(it.itemNote)}</div>` : ''}
               ${o.customerNote ? `<div style="font-size:0.82rem; font-weight:900; margin-top:3px;">備註：${escapeHtml(o.customerNote)}</div>` : ''}
@@ -3572,7 +3635,7 @@ function openReceiptPrintModal(orderId) {
             return `
               <div style="margin-bottom:6px;">
                 <div style="display:flex; justify-content:space-between; font-weight:900;">
-                  <span style="flex:1; padding-right:8px;">${escapeHtml(it.baseName || it.name)} x${it.qty || 1}</span>
+                  <span data-dish-name="1" style="flex:1; padding-right:8px;">${escapeHtml(it.baseName || it.name)} x${it.qty || 1}</span>
                   <span>$${it.price * (it.qty || 1)}</span>
                 </div>
                 ${sel}
@@ -4375,7 +4438,7 @@ function renderMerchantAnalyticsPanel(store) {
             <svg width="155" height="155" viewBox="0 0 42 42" style="overflow:visible;">
               <circle r="15.915" cx="21" cy="21" fill="transparent" stroke="#F1F5F9" stroke-width="6.5"></circle>
               ${donutCircles}
-              <text id="donutCenterTitle" x="21" y="18.5" text-anchor="middle" font-size="3.3" font-weight="900" fill="#0F172A">${escapeHtml(topPie.name.slice(0, 7))}</text>
+              <text data-dish-name="1" id="donutCenterTitle" x="21" y="18.5" text-anchor="middle" font-size="3.3" font-weight="900" fill="#0F172A">${escapeHtml(topPie.name.slice(0, 7))}</text>
               <text id="donutCenterVal" x="21" y="23.8" text-anchor="middle" font-size="4.6" font-weight="900" fill="${topPie.color}">${topPie.pct}%</text>
               <text id="donutCenterSub" x="21" y="27.5" text-anchor="middle" font-size="2.6" font-weight="800" fill="#64748B">${topPie.qty}份 / $${topPie.rev}</text>
             </svg>
@@ -4387,7 +4450,7 @@ function renderMerchantAnalyticsPanel(store) {
                      onclick="filterAnalyticsOrdersByKey('ITEM', ${escapeJsAttr(p.name)}, ${escapeJsAttr('餐點包含：' + p.name)})">
                   <div style="display:flex; align-items:center; gap:6px;">
                     <span style="width:10px; height:10px; border-radius:3px; background:${p.color}; display:inline-block;"></span>
-                    <span style="font-weight:800; font-size:0.8rem; color:var(--text-primary);">${escapeHtml(p.name)}</span>
+                    <span data-dish-name="1" style="font-weight:800; font-size:0.8rem; color:var(--text-primary);">${escapeHtml(p.name)}</span>
                   </div>
                   <span style="font-weight:900; font-size:0.78rem; color:var(--text-secondary);">${p.qty}份 ($${p.rev} / ${p.pct}%)</span>
                 </div>
@@ -4428,7 +4491,7 @@ function renderMerchantAnalyticsPanel(store) {
           <div style="display:flex; flex-direction:column; gap:8px; font-size:0.82rem; color:#1E293B; line-height:1.5;">
             <div style="background:#FFFFFF; padding:8px 12px; border-radius:10px; border-left:4px solid #4F46E5;">
               <strong>🥇 本區間人氣王備料建議：</strong><br>
-              銷量第一名為「<strong>${escapeHtml(topPie.name)}</strong>」（售出 <strong>${topPie.qty} 份 / NT$ ${topPie.rev}</strong>，佔比 ${topPie.pct}%）。
+              銷量第一名為「<strong data-dish-name="1">${escapeHtml(topPie.name)}</strong>」（售出 <strong>${topPie.qty} 份 / NT$ ${topPie.rev}</strong>，佔比 ${topPie.pct}%）。
             </div>
             <div style="background:#FFFFFF; padding:8px 12px; border-radius:10px; border-left:4px solid #10B981;">
               <strong>📅 未來預訂排程與配額隔離保護：</strong><br>
@@ -4464,7 +4527,7 @@ function renderMerchantAnalyticsPanel(store) {
                     #${escapeHtml(o.pickupNumber)} (🛡️${escapeHtml(verDisplay)}) ・ ${escapeHtml(normalizeDateStr(o.pickupDate))} ${escapeHtml(normalizeTimeStr(o.pickupTime))}
                     <span style="font-size:0.7rem; color:var(--brand-dark);">(${escapeHtml(o.status)} / ${escapeHtml(o.paymentStatus)})</span>
                   </div>
-                  <div style="color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(summary)}</div>
+                  <div data-dish-name="1" style="color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(summary)}</div>
                 </div>
                 <div style="font-weight:950; color:var(--red); white-space:nowrap;">NT$ ${o.finalTotal}</div>
               </div>
@@ -4630,9 +4693,12 @@ function renderMerchantSettingsPanel(store) {
             <div>
               <label class="field-label">🏪 本店目前營業狀態</label>
               <select id="cfgStoreIsOpen" class="select-input">
-                <option value="true" ${store.isOpen !== false ? 'selected' : ''}>🟢 正常營業中 (開放立即製作與預訂)</option>
-                <option value="false" ${store.isOpen === false ? 'selected' : ''}>🔴 暫停營業 / 備料中 (僅開放預訂取餐)</option>
+                <option value="true" ${store.isOpen !== false ? 'selected' : ''}>🟢 正常營業中 (營業時間開放立即製作，打烊後自動開放預訂)</option>
+                <option value="false" ${store.isOpen === false ? 'selected' : ''}>⛔ 暫停營業（全面停止現場點餐與預訂）</option>
               </select>
+              <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px; line-height:1.4;">
+                💡 「已打烊」會依營業時間自動切換並開放預訂；「暫停營業」則會完全關閉點餐與預訂。
+              </div>
             </div>
 
             <div>
@@ -4692,7 +4758,7 @@ function renderMerchantSettingsPanel(store) {
               <label class="field-label">🎁 指定贈品品項（滿額贈送專用・售罄自動停贈）</label>
               <select id="cfgGiftMenuItemId" class="select-input">
                 <option value="">（不指定特定品項，依文案顯示）</option>
-                ${menus.map(m => `<option value="${escapeHtml(m.id)}" ${String(store.giftMenuItemId || '') === String(m.id) ? 'selected' : ''}>${escapeHtml(m.name)} (NT$${m.price})${m.soldOut ? ' [售罄]' : ''}</option>`).join('')}
+                ${menus.map(m => `<option data-dish-name="1" value="${escapeHtml(m.id)}" ${String(store.giftMenuItemId || '') === String(m.id) ? 'selected' : ''}>${escapeHtml(trDishName(m))} (NT$${m.price})${m.soldOut ? ' [Out]' : ''}</option>`).join('')}
               </select>
             </div>
 
@@ -5868,6 +5934,7 @@ function renderMenuEditModalBody(item) {
       </div>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('menuEditModal'));
 }
 
 function syncTempModalInputsBeforeRerender() {
@@ -6202,6 +6269,7 @@ function renderScannedCandidatesTable(usedEngine = '智慧解析引擎') {
       </div>
     </div>
   `;
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(previewBox);
 }
 
 function commitScannedMenusToStore() {

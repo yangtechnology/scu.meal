@@ -1,0 +1,21 @@
+{
+  "name": "MealFlow 電視即時叫號大看板",
+  "short_name": "MealFlow TV",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#090D16",
+  "theme_color": "#090D16",
+  "icons": [
+    {
+      "src": "../logo-icon.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "../logo-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

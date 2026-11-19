@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#090D16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>MealFlow TV — 即時取餐叫號大看板</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/jpeg" href="../logo-icon.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-canvas: #090D16;
+      --bg-panel: #111827;
+      --bg-card-prep: #1E293B;
+      --border-subtle: rgba(148, 163, 184, 0.2);
+      --brand: #FF5A1F;
+      --amber: #F59E0B;
+      --green: #10B981;
+      --green-bright: #22C55E;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg-canvas);
+      color: var(--text-main);
+      font-family: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .tv-shell {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+      width: 100vw;
+      padding: clamp(12px, 1.8vw, 24px);
+      gap: clamp(12px, 1.5vw, 20px);
+    }
+
+    /* 頂部資訊列 */
+    .tv-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      background: linear-gradient(135deg, #111827 0%, #1E293B 100%);
+      border: 1.5px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: clamp(10px, 1.2vw, 18px) clamp(16px, 2vw, 28px);
+      flex-wrap: wrap;
+    }
+
+    .tv-brand-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .tv-logo-badge {
+      width: clamp(46px, 4.2vw, 64px);
+      height: clamp(46px, 4.2vw, 64px);
+      border-radius: 16px;
+      background: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      font-size: 2rem;
+    }
+    .tv-logo-badge img { width: 100%; height: 100%; object-fit: cover; }
+
+    .tv-store-title {
+      font-size: clamp(1.35rem, 2.5vw, 2.5rem);
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      line-height: 1.15;
+      color: #FFFFFF;
+    }
+
+    .tv-store-sub {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+      font-size: clamp(0.82rem, 1.15vw, 1.1rem);
+      color: var(--text-muted);
+      font-weight: 700;
+      flex-wrap: wrap;
+    }
+
+    .tv-live-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: clamp(0.75rem, 1vw, 0.95rem);
+      font-weight: 900;
+      background: rgba(16, 185, 129, 0.16);
+      color: #6EE7B7;
+      border: 1px solid rgba(16, 185, 129, 0.5);
+    }
+    .tv-live-pill.offline {
+      background: rgba(239, 68, 68, 0.2);
+      color: #FCA5A5;
+      border-color: rgba(239, 68, 68, 0.55);
+    }
+    .tv-live-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #34D399;
+      box-shadow: 0 0 10px #34D399;
+      animation: livePulse 1.5s infinite;
+    }
+    .tv-live-pill.offline .tv-live-dot { background: #EF4444; box-shadow: 0 0 10px #EF4444; }
+
+    .tv-header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .tv-clock {
+      font-size: clamp(1.4rem, 2.4vw, 2.4rem);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em;
+      color: #F8FAFC;
+      background: #090D16;
+      padding: 6px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .tv-ctrl-btn, .tv-ctrl-select {
+      appearance: none;
+      border: 1.5px solid #334155;
+      background: #1E293B;
+      color: #F8FAFC;
+      padding: 9px 14px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.08s ease, background 0.15s ease, opacity 0.15s ease;
+      font-family: inherit;
+    }
+    .tv-ctrl-btn:hover, .tv-ctrl-select:hover { background: #334155; }
+    .tv-ctrl-btn:active { transform: scale(0.95); opacity: 0.82; }
+    .tv-ctrl-btn.active {
+      background: #065F46;
+      border-color: #10B981;
+      color: #FFFFFF;
+    }
+    .tv-ctrl-btn.primary {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #FFFFFF;
+    }
+
+    /* 主雙欄叫號舞台（麥當勞 / 速食店大螢幕比例） */
+    .tv-stage {
+      display: grid;
+      grid-template-columns: 40% 1fr;
+      gap: clamp(14px, 1.8vw, 24px);
+      min-height: 0;
+    }
+
+    .tv-col {
+      display: flex;
+      flex-direction: column;
+      border-radius: 26px;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .tv-col-prep {
+      background: var(--bg-panel);
+      border: 2px solid #334155;
+    }
+
+    .tv-col-ready {
+      background: linear-gradient(180deg, #06281E 0%, #091B17 100%);
+      border: 3px solid var(--green);
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.15);
+    }
+
+    .tv-col-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: clamp(14px, 1.5vw, 22px) clamp(18px, 2vw, 28px);
+      font-weight: 900;
+    }
+    .tv-col-prep .tv-col-head {
+      background: linear-gradient(90deg, #1E293B 0%, #172033 100%);
+      border-bottom: 2px solid #334155;
+      color: #FBBF24;
+    }
+    .tv-col-ready .tv-col-head {
+      background: linear-gradient(90deg, #059669 0%, #047857 100%);
+      color: #FFFFFF;
+    }
+
+    .tv-col-title {
+      font-size: clamp(1.35rem, 2.3vw, 2.4rem);
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .tv-col-title-en {
+      font-size: clamp(0.95rem, 1.35vw, 1.35rem);
+      opacity: 0.88;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .tv-count-badge {
+      font-size: clamp(1rem, 1.5vw, 1.45rem);
+      font-weight: 900;
+      padding: 4px 16px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #FFFFFF;
+    }
+
+    .tv-col-body {
+      flex: 1;
+      padding: clamp(14px, 1.8vw, 24px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(12px, 1.5vw, 20px);
+    }
+
+    /* 製作中號碼格 */
+    .prep-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(clamp(130px, 13vw, 210px), 1fr));
+      gap: clamp(10px, 1.2vw, 16px);
+      align-content: start;
+    }
+
+    .prep-num-card {
+      background: var(--bg-card-prep);
+      border: 2px solid #475569;
+      border-radius: 18px;
+      padding: clamp(14px, 1.6vw, 24px) 10px;
+      text-align: center;
+      font-size: clamp(2.1rem, 3.8vw, 4.4rem);
+      font-weight: 900;
+      color: #F8FAFC;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+    }
+
+    /* 請取餐最新焦點大卡（麥當勞特寫叫號） */
+    .ready-spotlight {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      border: 4px solid #FDE047;
+      border-radius: 24px;
+      padding: clamp(16px, 2.2vw, 32px) clamp(20px, 2.5vw, 36px);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 14px 40px rgba(16, 185, 129, 0.45);
+      position: relative;
+      overflow: hidden;
+    }
+    .ready-spotlight.flash-new {
+      animation: spotlightFlash 1.1s ease-in-out 4;
+    }
+
+    .spotlight-label {
+      font-size: clamp(1.05rem, 1.6vw, 1.65rem);
+      font-weight: 900;
+      color: #FEF08A;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .spotlight-sub {
+      font-size: clamp(0.95rem, 1.3vw, 1.3rem);
+      color: #ECFDF5;
+      font-weight: 700;
+    }
+    .spotlight-number {
+      font-size: clamp(4.2rem, 8.8vw, 9.6rem);
+      font-weight: 900;
+      line-height: 1;
+      color: #FFFFFF;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+      letter-spacing: 0.02em;
+    }
+
+    /* 其他待領取餐號碼格 */
+    .ready-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(clamp(165px, 16vw, 250px), 1fr));
+      gap: clamp(12px, 1.3vw, 18px);
+      align-content: start;
+    }
+
+    .ready-num-card {
+      background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+      border: 2px solid #6EE7B7;
+      border-radius: 20px;
+      padding: clamp(16px, 1.8vw, 26px) 12px;
+      text-align: center;
+      font-size: clamp(2.8rem, 4.8vw, 5.4rem);
+      font-weight: 900;
+      color: #FFFFFF;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+      letter-spacing: 0.02em;
+    }
+    .ready-num-card.is-new {
+      border: 4px solid #FDE047;
+      animation: spotlightFlash 1s ease-in-out 4;
+    }
+
+    .tv-empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: var(--text-muted);
+      gap: 10px;
+      padding: 24px;
+    }
+    .tv-empty-icon { font-size: clamp(2.5rem, 4.5vw, 4.5rem); opacity: 0.65; }
+    .tv-empty-text { font-size: clamp(1.1rem, 1.6vw, 1.6rem); font-weight: 800; }
+
+    /* 底部資訊與手機掃碼點餐條 */
+    .tv-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      background: #111827;
+      border: 1.5px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 10px 20px;
+    }
+
+    .tv-footer-notice {
+      font-size: clamp(0.95rem, 1.35vw, 1.35rem);
+      font-weight: 800;
+      color: #E2E8F0;
+      line-height: 1.4;
+    }
+    .tv-footer-meta {
+      font-size: clamp(0.8rem, 1vw, 0.98rem);
+      color: var(--text-muted);
+      margin-top: 3px;
+      font-weight: 700;
+    }
+
+    .tv-qr-dock {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #1E293B;
+      border: 1.5px solid #334155;
+      border-radius: 16px;
+      padding: 8px 14px 8px 10px;
+      flex-shrink: 0;
+    }
+    .tv-qr-box {
+      width: 78px;
+      height: 78px;
+      background: #FFFFFF;
+      border-radius: 10px;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tv-qr-box svg { width: 100%; height: 100%; }
+
+    /* 自動播放音訊解鎖提示條 */
+    .tv-audio-unlock-bar {
+      position: fixed;
+      bottom: 112px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 90, 31, 0.96);
+      color: #FFFFFF;
+      padding: 12px 24px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 900;
+      box-shadow: 0 12px 32px rgba(255, 90, 31, 0.45);
+      cursor: pointer;
+      z-index: 50;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 投屏指南彈窗 */
+    .tv-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.84);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+    }
+    .tv-modal-overlay.open { display: flex; }
+    .tv-modal-box {
+      width: 100%;
+      max-width: 640px;
+      background: #111827;
+      border: 1.5px solid #334155;
+      border-radius: 22px;
+      padding: 24px;
+      color: #F8FAFC;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+    }
+
+    /* 全螢幕時自動隱藏控制按鈕只留極簡狀態（滑鼠移動時自動浮現） */
+    body.tv-kiosk-clean .tv-controls-hideable { opacity: 0.15; transition: opacity 0.3s; }
+    body.tv-kiosk-clean:hover .tv-controls-hideable { opacity: 1; }
+
+    @keyframes livePulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.55; }
+    }
+    @keyframes spotlightFlash {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(253, 224, 71, 0.85), 0 14px 40px rgba(16, 185, 129, 0.45); transform: scale(1); }
+      50% { box-shadow: 0 0 0 16px rgba(253, 224, 71, 0), 0 18px 52px rgba(253, 224, 71, 0.55); transform: scale(1.015); }
+    }
+
+    @media (max-width: 900px) {
+      html, body { overflow: auto; }
+      .tv-shell { height: auto; min-height: 100vh; }
+      .tv-stage { grid-template-columns: 1fr; }
+      .tv-footer { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+  <div class="tv-shell">
+    <!-- 頂部橫幅 -->
+    <header class="tv-header">
+      <div class="tv-brand-left">
+        <div class="tv-logo-badge" id="tvStoreIcon">
+          <img src="../logo-icon.jpg" alt="MealFlow">
+        </div>
+        <div>
+          <div class="tv-store-title" id="tvStoreName">MealFlow 載入中...</div>
+          <div class="tv-store-sub">
+            <span id="tvStoreCampus">即時取餐叫號系統</span>
+            <span class="tv-live-pill" id="tvSyncPill">
+              <span class="tv-live-dot"></span>
+              <span id="tvSyncText">連線同步中...</span>
+            </span>
+            <span id="tvStoreStatusBadge" style="display:none; padding:3px 10px; border-radius:999px; font-weight:900; font-size:0.85rem;"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tv-header-right">
+        <div class="tv-clock" id="tvLiveClock">--:--:--</div>
+        <div class="tv-controls-hideable" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <select id="tvStoreSelect" class="tv-ctrl-select" onchange="switchTvStore(this.value)" title="切換店鋪"></select>
+          <select id="tvLangSelect" class="tv-ctrl-select" onchange="setTvLang(this.value)" title="顯示語言">
+            <option value="bilingual">🌐 中英雙語</option>
+            <option value="zh-TW">🌐 繁體中文</option>
+            <option value="en">🌐 English</option>
+            <option value="ja">🌐 日本語</option>
+            <option value="ko">🌐 한국어</option>
+          </select>
+          <button type="button" id="tvSoundBtn" class="tv-ctrl-btn active" onclick="toggleTvSound()">🔊 語音叫號：開</button>
+          <button type="button" class="tv-ctrl-btn" onclick="unlockTvAudio(false); announceNumbersByVoice(['A001'], (tvState.store && tvState.store.name) || 'MealFlow');" title="測試叫號叮咚與語音播報">🔔 試播音效</button>
+          <button type="button" class="tv-ctrl-btn" onclick="openCastGuideModal()">📺 投上電視</button>
+          <button type="button" id="tvFullscreenBtn" class="tv-ctrl-btn primary" onclick="toggleTvFullscreen()">⛶ 全螢幕</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主雙欄麥當勞風格叫號舞台 -->
+    <main class="tv-stage">
+      <!-- 左側：製作中 -->
+      <section class="tv-col tv-col-prep">
+        <div class="tv-col-head">
+          <div class="tv-col-title">
+            <span id="tvPrepTitle">🍳 製作中</span>
+            <span class="tv-col-title-en" id="tvPrepSub">PREPARING</span>
+          </div>
+          <span class="tv-count-badge" id="tvPrepCount">0</span>
+        </div>
+        <div class="tv-col-body" id="tvPrepBody">
+          <div class="tv-empty-state">
+            <div class="tv-empty-icon">🍳</div>
+            <div class="tv-empty-text">正在同步廚房備餐進度...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右側：請取餐 -->
+      <section class="tv-col tv-col-ready">
+        <div class="tv-col-head">
+          <div class="tv-col-title">
+            <span id="tvReadyTitle">🔔 請至櫃檯取餐</span>
+            <span class="tv-col-title-en" id="tvReadySub">NOW SERVING</span>
+          </div>
+          <span class="tv-count-badge" id="tvReadyCount">0</span>
+        </div>
+        <div class="tv-col-body" id="tvReadyBody">
+          <div class="tv-empty-state">
+            <div class="tv-empty-icon">🔔</div>
+            <div class="tv-empty-text">餐點完成後將立即放大顯示並語音叫號</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部提示與掃碼點餐 QR -->
+    <footer class="tv-footer">
+      <div>
+        <div class="tv-footer-notice" id="tvFooterMain">請留意您的取餐號碼，顯示於右側綠區請攜帶手機憑證或收據至櫃檯取餐</div>
+        <div class="tv-footer-meta" id="tvFooterMeta">MealFlow 智慧雲端叫號看板・每 5 秒自動同步・免登入防休眠</div>
+      </div>
+      <div class="tv-qr-dock">
+        <div class="tv-qr-box" id="tvOrderQrBox"></div>
+        <div>
+          <div style="font-size:1rem; font-weight:900; color:#FFFFFF;" id="tvQrTitle">📱 手機掃碼免排隊</div>
+          <div style="font-size:0.82rem; color:#94A3B8; font-weight:700; margin-top:2px;" id="tvQrSub">Scan to Order Online</div>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 音訊自動解鎖提示 -->
+  <button type="button" id="tvAudioUnlockBar" class="tv-audio-unlock-bar" onclick="unlockTvAudioAndFullscreen()">
+    🔊 點擊畫面啟用電視叫號叮咚與語音播報
+  </button>
+
+  <!-- 投屏至電視指南彈窗 -->
+  <div id="tvCastModal" class="tv-modal-overlay" onclick="if(event.target===this) closeCastGuideModal()">
+    <div class="tv-modal-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.3rem; font-weight:900;">📺 將叫號看板投上電視（麥當勞大螢幕模式）</h3>
+        <button type="button" class="tv-ctrl-btn" onclick="closeCastGuideModal()">✕ 關閉</button>
+      </div>
+      <p style="font-size:0.9rem; color:#CBD5E1; line-height:1.6; margin-bottom:14px;">
+        本頁面為<strong>免登入、永不過期、自動防休眠</strong>的專用電視顯示頁面，可使用以下任一方式直接投放到店內電視：
+      </p>
+      <div style="display:grid; gap:10px; margin-bottom:16px; font-size:0.88rem; line-height:1.55;">
+        <div style="background:#1E293B; padding:12px 14px; border-radius:12px; border:1px solid #334155;">
+          <strong style="color:#34D399;">方式 1：Chrome 瀏覽器一鍵投放 (Chromecast / Google TV)</strong><br>
+          在電腦或 Android 平板用 Chrome 開啟此網址 → 點右上角 ⋮ → 選擇「投放 (Cast)」→ 選店內電視，再按右上角「⛶ 全螢幕」。
+        </div>
+        <div style="background:#1E293B; padding:12px 14px; border-radius:12px; border:1px solid #334155;">
+          <strong style="color:#60A5FA;">方式 2：Apple AirPlay / HDMI 直連電視</strong><br>
+          使用 iPad / Mac 透過 AirPlay 螢幕鏡像，或直接用 HDMI 線連接舊筆電／電視盒開啟此頁全螢幕，POS 改單 5 秒內自動同步。
+        </div>
+        <div style="background:#1E293B; padding:12px 14px; border-radius:12px; border:1px solid #334155;">
+          <strong style="color:#FBBF24;">方式 3：智慧電視內建瀏覽器直接開啟</strong><br>
+          複製下方專屬電視網址，或用手機／電視掃描 QR Code 直接開啟，加入書籤後每日開機一鍵進入。
+        </div>
+      </div>
+      <div style="display:flex; gap:12px; align-items:center; background:#090D16; padding:12px; border-radius:14px; border:1px solid #334155;">
+        <div id="tvCastUrlQr" style="width:92px; height:92px; background:#FFFFFF; border-radius:8px; padding:4px; flex-shrink:0;"></div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:0.78rem; color:#94A3B8; font-weight:800; margin-bottom:4px;">本店專屬電視看板網址：</div>
+          <input type="text" id="tvBoardUrlInput" readonly style="width:100%; background:#1E293B; color:#34D399; border:1px solid #475569; border-radius:8px; padding:8px 10px; font-family:monospace; font-size:0.82rem; font-weight:700; margin-bottom:8px;">
+          <button type="button" id="tvCopyUrlBtn" class="tv-ctrl-btn primary" style="width:100%;" onclick="copyTvBoardUrl()">📋 複製電視看板網址</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../i18n.js?v=24.0"></script>
+  <script src="./qr.js?v=24.0"></script>
+  <script>
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzN2e0bi-jQG5RvGBpZYu5190f2JfX-6P1C8DxUy2aPyrrpbJpBl0oaTwYFRhAyBl8/exec';
+    const TV_POLL_INTERVAL_MS = 5000;
+
+    const tvState = {
+      storeId: (new URLSearchParams(window.location.search).get('store') || localStorage.getItem('mealflow_tv_store_id') || 'S01').trim().toUpperCase(),
+      lang: localStorage.getItem('mealflow_tv_lang') || 'bilingual',
+      soundEnabled: localStorage.getItem('mealflow_tv_sound') !== '0',
+      audioUnlocked: false,
+      audioCtx: null,
+      wakeLock: null,
+      store: null,
+      storesList: [],
+      preparingNumbers: [],
+      readyNumbers: [],
+      latestCalledNumber: '',
+      completedCount: 0,
+      seenReadySignatureMap: {},
+      hasInitialSync: false,
+      lastSyncTs: 0,
+      serverOffsetMs: 0,
+      pollTimer: null
+    };
+
+    const TV_I18N = {
+      bilingual: {
+        prepTitle: '🍳 製作中', prepSub: 'PREPARING',
+        readyTitle: '🔔 請至櫃檯取餐', readySub: 'NOW SERVING',
+        spotlightLabel: '⭐ 最新叫號・請取餐 / NOW CALLING',
+        spotlightSub: '請攜帶憑證至櫃檯領取餐點・Please collect at counter',
+        emptyPrep: '目前無製作中訂單 / No orders preparing',
+        emptyReady: '餐點完成後將立即放大顯示並語音叫號 / Ready numbers appear here',
+        footerMain: '請留意您的取餐號碼，顯示於右側綠區請攜帶手機憑證或收據至櫃檯取餐 | Watch for your number on the right',
+        qrTitle: '📱 手機掃碼點餐', qrSub: 'Scan to Order Online',
+        synced: 'LIVE 即時同步', syncing: '同步中...', offline: '連線重試中...',
+        paused: '⛔ 暫停營業中', closed: '🌙 已打烊（開放預訂）', open: '🟢 營業中',
+        soundOn: '🔊 語音叫號：開', soundOff: '🔇 語音叫號：關',
+        fullscreen: '⛶ 全螢幕', exitFullscreen: '↙ 退出全螢幕'
+      },
+      'zh-TW': {
+        prepTitle: '🍳 製作中', prepSub: '請稍候',
+        readyTitle: '🔔 請至櫃檯取餐', readySub: '餐點已備妥',
+        spotlightLabel: '⭐ 最新叫號・請取餐',
+        spotlightSub: '請攜帶手機取餐憑證或紙本收據至櫃檯領取',
+        emptyPrep: '目前無製作中訂單',
+        emptyReady: '請稍候，餐點完成後將立即顯示並語音叫號',
+        footerMain: '請留意您的取餐號碼，顯示於右側綠區即可至櫃檯取餐',
+        qrTitle: '📱 手機掃碼免排隊', qrSub: '掃描立即線上點餐',
+        synced: 'LIVE 即時同步', syncing: '同步中...', offline: '連線重試中...',
+        paused: '⛔ 暫停營業中', closed: '🌙 已打烊（開放預訂）', open: '🟢 營業中',
+        soundOn: '🔊 語音叫號：開', soundOff: '🔇 語音叫號：關',
+        fullscreen: '⛶ 全螢幕', exitFullscreen: '↙ 退出全螢幕'
+      },
+      en: {
+        prepTitle: '🍳 PREPARING', prepSub: 'IN KITCHEN',
+        readyTitle: '🔔 NOW SERVING', readySub: 'READY FOR PICKUP',
+        spotlightLabel: '⭐ NOW CALLING — PLEASE COLLECT',
+        spotlightSub: 'Please show your pickup ticket at the counter',
+        emptyPrep: 'No orders currently preparing',
+        emptyReady: 'Ready order numbers will appear here',
+        footerMain: 'Please watch for your order number on the right and collect at the counter',
+        qrTitle: '📱 Scan to Order', qrSub: 'Skip the line on your phone',
+        synced: 'LIVE SYNCED', syncing: 'Syncing...', offline: 'Reconnecting...',
+        paused: '⛔ PAUSED', closed: '🌙 CLOSED (Pre-order open)', open: '🟢 OPEN',
+        soundOn: '🔊 Voice: ON', soundOff: '🔇 Voice: OFF',
+        fullscreen: '⛶ Fullscreen', exitFullscreen: '↙ Exit Fullscreen'
+      },
+      ja: {
+        prepTitle: '🍳 調理中', prepSub: 'PREPARING',
+        readyTitle: '🔔 お呼び出し中', readySub: 'NOW SERVING',
+        spotlightLabel: '⭐ ただいまのお呼び出し番号',
+        spotlightSub: 'カウンターまでお越しください',
+        emptyPrep: '現在調理中のご注文はありません',
+        emptyReady: '出来上がり次第こちらに表示されます',
+        footerMain: '右側の緑枠に番号が表示されましたら、カウンターへお越しください',
+        qrTitle: '📱 スマホ注文', qrSub: '並ばずオンライン注文',
+        synced: 'LIVE 同期中', syncing: '同期中...', offline: '再接続中...',
+        paused: '⛔ 営業休止中', closed: '🌙 営業終了（予約可）', open: '🟢 営業中',
+        soundOn: '🔊 音声呼出：ON', soundOff: '🔇 音声呼出：OFF',
+        fullscreen: '⛶ 全画面', exitFullscreen: '↙ 全画面終了'
+      },
+      ko: {
+        prepTitle: '🍳 준비 중', prepSub: 'PREPARING',
+        readyTitle: '🔔 픽업해 주세요', readySub: 'NOW SERVING',
+        spotlightLabel: '⭐ 현재 호출 번호',
+        spotlightSub: '카운터에서 음식을 픽업해 주세요',
+        emptyPrep: '현재 준비 중인 주문이 없습니다',
+        emptyReady: '준비가 완료되면 여기에 표시됩니다',
+        footerMain: '오른쪽 초록 영역에 번호가 표시되면 카운터에서 픽업해 주세요',
+        qrTitle: '📱 QR 모바일 주문', qrSub: '줄 서지 않고 바로 주문',
+        synced: 'LIVE 동기화됨', syncing: '동기화 중...', offline: '재연결 중...',
+        paused: '⛔ 영업 중지', closed: '🌙 영업 종료 (예약 가능)', open: '🟢 영업 중',
+        soundOn: '🔊 음성 호출: 켜짐', soundOff: '🔇 음성 호출: 꺼짐',
+        fullscreen: '⛶ 전체화면', exitFullscreen: '↙ 전체화면 종료'
+      }
+    };
+
+    function tvText(key) {
+      const pack = TV_I18N[tvState.lang] || TV_I18N.bilingual;
+      return pack[key] || TV_I18N.bilingual[key] || '';
+    }
+
+    function escapeHtmlTv(s) {
+      return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function getTaipeiClockStr() {
+      try {
+        const now = new Date(Date.now() + (tvState.serverOffsetMs || 0));
+        return new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        }).format(now);
+      } catch (e) {
+        return new Date().toTimeString().slice(0, 8);
+      }
+    }
+
+    function unlockTvAudio(playTestTone) {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx && !tvState.audioCtx) tvState.audioCtx = new Ctx();
+        if (tvState.audioCtx && tvState.audioCtx.state === 'suspended') {
+          tvState.audioCtx.resume();
+        }
+        tvState.audioUnlocked = true;
+        const bar = document.getElementById('tvAudioUnlockBar');
+        if (bar) bar.style.display = 'none';
+        if (playTestTone) playMcDonaldsChime();
+      } catch (e) {}
+    }
+
+    function unlockTvAudioAndFullscreen() {
+      unlockTvAudio(true);
+      requestTvWakeLock();
+    }
+
+    function playMcDonaldsChime() {
+      if (!tvState.soundEnabled) return;
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        if (!tvState.audioCtx) tvState.audioCtx = new Ctx();
+        const ctx = tvState.audioCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+        const now = ctx.currentTime;
+        const notes = [659.25, 880.0, 1046.5]; // E5 -> A5 -> C6 清脆機場/麥當勞叮咚和弦
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+          gain.gain.setValueAtTime(0.001, now + idx * 0.14);
+          gain.gain.exponentialRampToValueAtTime(0.28, now + idx * 0.14 + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.45);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.14);
+          osc.stop(now + idx * 0.14 + 0.48);
+        });
+      } catch (e) {}
+    }
+
+    function announceNumbersByVoice(numbers, storeName) {
+      if (!tvState.soundEnabled || !numbers || numbers.length === 0) return;
+      playMcDonaldsChime();
+      try {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        const spokenList = numbers.map(n => String(n).replace(/^#/, '')).join('、');
+        if (tvState.lang === 'en') {
+          const u = new SpeechSynthesisUtterance(`Order number ${spokenList}, please pick up at the counter.`);
+          u.lang = 'en-US'; u.rate = 0.96;
+          window.speechSynthesis.speak(u);
+        } else if (tvState.lang === 'ja') {
+          const u = new SpeechSynthesisUtterance(`番号 ${spokenList} のお客様、お待たせいたしました。カウンターまでお越しください。`);
+          u.lang = 'ja-JP'; u.rate = 0.98;
+          window.speechSynthesis.speak(u);
+        } else if (tvState.lang === 'ko') {
+          const u = new SpeechSynthesisUtterance(`${spokenList}번 고객님, 주문하신 음식이 준비되었습니다.`);
+          u.lang = 'ko-KR'; u.rate = 0.98;
+          window.speechSynthesis.speak(u);
+        } else {
+          const zhText = `請 ${spokenList} 號顧客，至 ${storeName || ''} 櫃檯取餐`;
+          const uZh = new SpeechSynthesisUtterance(zhText);
+          uZh.lang = 'zh-TW'; uZh.rate = 0.96;
+          window.speechSynthesis.speak(uZh);
+          if (tvState.lang === 'bilingual') {
+            const uEn = new SpeechSynthesisUtterance(`Number ${spokenList}, please pick up your order.`);
+            uEn.lang = 'en-US'; uEn.rate = 0.96;
+            window.speechSynthesis.speak(uEn);
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function requestTvWakeLock() {
+      try {
+        if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+          tvState.wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (e) {}
+    }
+
+    function getOrderPageUrlForStore(storeId) {
+      try {
+        const base = window.location.href.split('?')[0].replace(/\/board\/?(index\.html)?$/i, '/');
+        return `${base}order/?store=${encodeURIComponent(storeId || 'S01')}`;
+      } catch (e) {
+        return '../order/?store=' + encodeURIComponent(storeId || 'S01');
+      }
+    }
+
+    function getCurrentBoardShareUrl() {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set('store', tvState.storeId);
+        return u.toString();
+      } catch (e) {
+        return window.location.href;
+      }
+    }
+
+    function setTvSyncUi(stateType, text) {
+      const pill = document.getElementById('tvSyncPill');
+      const lbl = document.getElementById('tvSyncText');
+      if (pill) pill.classList.toggle('offline', stateType === 'offline');
+      if (lbl) lbl.textContent = text;
+    }
+
+    function renderTvBoard(newlyCalledSet) {
+      const store = tvState.store || { id: tvState.storeId, name: tvState.storeId, campus: '', isOpen: true, canOrderNow: true, canPreOrder: true };
+      const storeDisplayName = (typeof trTerm === 'function' && tvState.lang !== 'zh-TW' && tvState.lang !== 'bilingual')
+        ? trTerm(store.name)
+        : store.name;
+
+      document.getElementById('tvStoreName').textContent = storeDisplayName || 'MealFlow';
+      document.getElementById('tvStoreCampus').textContent = store.campus
+        ? `${store.campus}・${store.openTime || '10:30'}~${store.closeTime || '19:30'}`
+        : 'MealFlow Live Pickup Board';
+
+      const iconEl = document.getElementById('tvStoreIcon');
+      if (iconEl) {
+        if (store.icon && /^https?:\/\/|^data:image\//i.test(store.icon)) {
+          iconEl.innerHTML = `<img src="${escapeHtmlTv(store.icon)}" alt="Store">`;
+        } else if (store.icon) {
+          iconEl.textContent = store.icon;
+        }
+      }
+
+      const statusBadge = document.getElementById('tvStoreStatusBadge');
+      if (statusBadge) {
+        statusBadge.style.display = 'inline-block';
+        if (store.isOpen === false || store.canPreOrder === false) {
+          statusBadge.textContent = tvText('paused');
+          statusBadge.style.background = 'rgba(239,68,68,0.22)';
+          statusBadge.style.color = '#FCA5A5';
+        } else if (store.canOrderNow === false) {
+          statusBadge.textContent = tvText('closed');
+          statusBadge.style.background = 'rgba(99,102,241,0.24)';
+          statusBadge.style.color = '#C7D2FE';
+        } else {
+          statusBadge.textContent = tvText('open');
+          statusBadge.style.background = 'rgba(16,185,129,0.2)';
+          statusBadge.style.color = '#6EE7B7';
+        }
+      }
+
+      // 更新靜態標題語系
+      document.getElementById('tvPrepTitle').textContent = tvText('prepTitle');
+      document.getElementById('tvPrepSub').textContent = tvText('prepSub');
+      document.getElementById('tvReadyTitle').textContent = tvText('readyTitle');
+      document.getElementById('tvReadySub').textContent = tvText('readySub');
+      document.getElementById('tvFooterMain').textContent = tvText('footerMain');
+      document.getElementById('tvQrTitle').textContent = tvText('qrTitle');
+      document.getElementById('tvQrSub').textContent = tvText('qrSub');
+
+      const soundBtn = document.getElementById('tvSoundBtn');
+      if (soundBtn) {
+        soundBtn.classList.toggle('active', tvState.soundEnabled);
+        soundBtn.textContent = tvState.soundEnabled ? tvText('soundOn') : tvText('soundOff');
+      }
+
+      const sel = document.getElementById('tvStoreSelect');
+      if (sel && Array.isArray(tvState.storesList) && tvState.storesList.length > 0) {
+        sel.innerHTML = tvState.storesList.map(s =>
+          `<option value="${escapeHtmlTv(s.id)}" ${s.id === tvState.storeId ? 'selected' : ''}>${escapeHtmlTv(s.campus ? s.campus + ' - ' : '')}${escapeHtmlTv(s.name)}</option>`
+        ).join('');
+      }
+
+      const langSel = document.getElementById('tvLangSelect');
+      if (langSel) langSel.value = tvState.lang;
+
+      // 製作中欄位
+      const prepArr = Array.isArray(tvState.preparingNumbers) ? tvState.preparingNumbers : [];
+      document.getElementById('tvPrepCount').textContent = String(prepArr.length);
+      const prepBody = document.getElementById('tvPrepBody');
+      if (prepArr.length === 0) {
+        prepBody.innerHTML = `
+          <div class="tv-empty-state">
+            <div class="tv-empty-icon">🍳</div>
+            <div class="tv-empty-text">${escapeHtmlTv(tvText('emptyPrep'))}</div>
+          </div>
+        `;
+      } else {
+        prepBody.innerHTML = `<div class="prep-grid">${prepArr.map(num => `<div class="prep-num-card">${escapeHtmlTv(num)}</div>`).join('')}</div>`;
+      }
+
+      // 請取餐欄位（最新叫號放大特寫 + 其餘待領號碼格）
+      const readyList = Array.isArray(tvState.readyNumbers) ? tvState.readyNumbers : [];
+      document.getElementById('tvReadyCount').textContent = String(readyList.length);
+      const readyBody = document.getElementById('tvReadyBody');
+      if (readyList.length === 0) {
+        readyBody.innerHTML = `
+          <div class="tv-empty-state">
+            <div class="tv-empty-icon">🔔</div>
+            <div class="tv-empty-text">${escapeHtmlTv(tvText('emptyReady'))}</div>
+          </div>
+        `;
+      } else {
+        const spotlight = readyList[0];
+        const rest = readyList.slice(1);
+        const isSpotNew = newlyCalledSet && newlyCalledSet.has(spotlight.pickupNumber);
+        const spotHtml = `
+          <div class="ready-spotlight ${isSpotNew ? 'flash-new' : ''}">
+            <div>
+              <div class="spotlight-label">${escapeHtmlTv(tvText('spotlightLabel'))}</div>
+              <div class="spotlight-sub">${escapeHtmlTv(tvText('spotlightSub'))}</div>
+            </div>
+            <div class="spotlight-number">${escapeHtmlTv(spotlight.pickupNumber)}</div>
+          </div>
+        `;
+        const restHtml = rest.length > 0 ? `
+          <div class="ready-grid">
+            ${rest.map(item => {
+              const isN = newlyCalledSet && newlyCalledSet.has(item.pickupNumber);
+              return `<div class="ready-num-card ${isN ? 'is-new' : ''}">${escapeHtmlTv(item.pickupNumber)}</div>`;
+            }).join('')}
+          </div>
+        ` : '';
+        readyBody.innerHTML = spotHtml + restHtml;
+      }
+
+      // 更新掃碼點餐 QR
+      const qrBox = document.getElementById('tvOrderQrBox');
+      if (qrBox && typeof generateDeterministicQrSvg === 'function') {
+        const orderUrl = getOrderPageUrlForStore(store.id);
+        if (qrBox.dataset.qrUrl !== orderUrl) {
+          qrBox.dataset.qrUrl = orderUrl;
+          qrBox.innerHTML = generateDeterministicQrSvg(orderUrl, 120);
+        }
+      }
+
+      const footerMeta = document.getElementById('tvFooterMeta');
+      if (footerMeta && tvState.lastSyncTs) {
+        const syncClock = getTaipeiClockStr();
+        footerMeta.textContent = `MealFlow TV • Store ${store.id} • Last Sync ${syncClock} • Today Completed: ${tvState.completedCount || 0}`;
+      }
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function pollPickupBoard(forceRefresh = false) {
+      try {
+        let data = null;
+        // 優先使用專屬極速公開端點 getPickupBoard
+        try {
+          const res = await fetchWithTimeout(GAS_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'getPickupBoard', storeId: tvState.storeId, forceRefresh })
+          }, 12000);
+          data = await res.json();
+        } catch (postErr) {
+          // 備援走 GET 請求
+          const getUrl = `${GAS_URL}?action=getPickupBoard&storeId=${encodeURIComponent(tvState.storeId)}${forceRefresh ? '&forceRefresh=1' : ''}`;
+          const resGet = await fetchWithTimeout(getUrl, { method: 'GET', mode: 'cors' }, 12000);
+          data = await resGet.json();
+        }
+
+        // 若後端尚未重新部署 getPickupBoard，自動相容降級使用 initBundle 的 storeQueueProgressMap！
+        if (!data || !data.success || !data.store) {
+          const fallbackRes = await fetchWithTimeout(GAS_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'initBundle', forceRefresh })
+          }, 14000);
+          const fb = await fallbackRes.json();
+          const b = (fb && fb.bundle) ? fb.bundle : fb;
+          if (fb && fb.success && b && Array.isArray(b.stores)) {
+            const st = b.stores.find(s => String(s.id).toUpperCase() === tvState.storeId) || b.stores[0];
+            const qm = (b.storeQueueProgressMap && st && b.storeQueueProgressMap[st.id]) || {};
+            data = {
+              success: true,
+              store: st,
+              storesList: b.stores.map(s => ({ id: s.id, name: s.name, campus: s.campus, icon: s.icon || '' })),
+              preparingNumbers: Array.isArray(qm.cookingNumbers) ? qm.cookingNumbers : [],
+              readyNumbers: Array.isArray(qm.readyDetails)
+                ? qm.readyDetails
+                : (Array.isArray(qm.readyNumbers) ? qm.readyNumbers.map(n => ({ pickupNumber: String(n), readyAtTs: 0, notifyCount: 1 })) : []),
+              latestCalledNumber: qm.latestCalledNumber || '',
+              completedCount: Number(qm.completedCount || 0),
+              serverTimeTs: b.serverTimeTs || Date.now()
+            };
+          }
+        }
+
+        if (data && data.success && data.store) {
+          tvState.store = data.store;
+          tvState.storeId = String(data.store.id || tvState.storeId).toUpperCase();
+          tvState.storesList = Array.isArray(data.storesList) ? data.storesList : tvState.storesList;
+          tvState.preparingNumbers = Array.isArray(data.preparingNumbers) ? data.preparingNumbers : [];
+          tvState.readyNumbers = Array.isArray(data.readyNumbers) ? data.readyNumbers : [];
+          tvState.latestCalledNumber = data.latestCalledNumber || '';
+          tvState.completedCount = Number(data.completedCount || 0);
+          tvState.lastSyncTs = Date.now();
+          if (data.serverTimeTs && Number(data.serverTimeTs) > 1700000000000) {
+            tvState.serverOffsetMs = Number(data.serverTimeTs) - Date.now();
+          }
+
+          // 偵測新呼叫或再次呼叫的取餐號碼
+          const newlyCalled = [];
+          const nextSigMap = {};
+          tvState.readyNumbers.forEach(item => {
+            const num = String(item.pickupNumber || item).trim();
+            const sig = `${Number(item.notifyCount || 1)}_${Number(item.lastCalledAtTs || item.readyAtTs || 0)}`;
+            nextSigMap[num] = sig;
+            if (tvState.hasInitialSync && tvState.seenReadySignatureMap[num] !== sig) {
+              newlyCalled.push(num);
+            }
+          });
+          tvState.seenReadySignatureMap = nextSigMap;
+          tvState.hasInitialSync = true;
+
+          setTvSyncUi('online', tvText('synced'));
+          renderTvBoard(new Set(newlyCalled));
+
+          if (newlyCalled.length > 0) {
+            announceNumbersByVoice(newlyCalled, tvState.store.name);
+          }
+        } else {
+          setTvSyncUi('offline', tvText('offline'));
+        }
+      } catch (err) {
+        setTvSyncUi('offline', tvText('offline'));
+      } finally {
+        if (tvState.pollTimer) clearTimeout(tvState.pollTimer);
+        tvState.pollTimer = setTimeout(() => pollPickupBoard(false), TV_POLL_INTERVAL_MS);
+      }
+    }
+
+    function switchTvStore(newStoreId) {
+      tvState.storeId = String(newStoreId || 'S01').trim().toUpperCase();
+      tvState.hasInitialSync = false;
+      tvState.seenReadySignatureMap = {};
+      try {
+        localStorage.setItem('mealflow_tv_store_id', tvState.storeId);
+        const u = new URL(window.location.href);
+        u.searchParams.set('store', tvState.storeId);
+        window.history.replaceState({}, '', u.toString());
+      } catch (e) {}
+      setTvSyncUi('syncing', tvText('syncing'));
+      pollPickupBoard(true);
+    }
+
+    function setTvLang(nextLang) {
+      tvState.lang = nextLang || 'bilingual';
+      try { localStorage.setItem('mealflow_tv_lang', tvState.lang); } catch (e) {}
+      renderTvBoard(new Set());
+    }
+
+    function toggleTvSound() {
+      tvState.soundEnabled = !tvState.soundEnabled;
+      try { localStorage.setItem('mealflow_tv_sound', tvState.soundEnabled ? '1' : '0'); } catch (e) {}
+      if (tvState.soundEnabled) unlockTvAudio(true);
+      renderTvBoard(new Set());
+    }
+
+    function toggleTvFullscreen() {
+      const btn = document.getElementById('tvFullscreenBtn');
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+        document.body.classList.add('tv-kiosk-clean');
+        if (btn) btn.textContent = tvText('exitFullscreen');
+      } else {
+        document.exitFullscreen?.().catch(() => {});
+        document.body.classList.remove('tv-kiosk-clean');
+        if (btn) btn.textContent = tvText('fullscreen');
+      }
+      unlockTvAudio(false);
+    }
+
+    function openCastGuideModal() {
+      const url = getCurrentBoardShareUrl();
+      const inp = document.getElementById('tvBoardUrlInput');
+      if (inp) inp.value = url;
+      const qrEl = document.getElementById('tvCastUrlQr');
+      if (qrEl && typeof generateDeterministicQrSvg === 'function') {
+        qrEl.innerHTML = generateDeterministicQrSvg(url, 120);
+      }
+      document.getElementById('tvCastModal')?.classList.add('open');
+    }
+
+    function closeCastGuideModal() {
+      document.getElementById('tvCastModal')?.classList.remove('open');
+    }
+
+    function copyTvBoardUrl() {
+      const url = getCurrentBoardShareUrl();
+      const btn = document.getElementById('tvCopyUrlBtn');
+      const done = () => {
+        if (btn) {
+          btn.textContent = '✅ 已複製電視看板網址！';
+          setTimeout(() => { btn.textContent = '📋 複製電視看板網址'; }, 2200);
+        }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => {
+          const inp = document.getElementById('tvBoardUrlInput');
+          if (inp) { inp.select(); document.execCommand('copy'); done(); }
+        });
+      } else {
+        const inp = document.getElementById('tvBoardUrlInput');
+        if (inp) { inp.select(); document.execCommand('copy'); done(); }
+      }
+    }
+
+    document.addEventListener('fullscreenchange', () => {
+      const isFs = Boolean(document.fullscreenElement);
+      document.body.classList.toggle('tv-kiosk-clean', isFs);
+      const btn = document.getElementById('tvFullscreenBtn');
+      if (btn) btn.textContent = isFs ? tvText('exitFullscreen') : tvText('fullscreen');
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        requestTvWakeLock();
+        pollPickupBoard(true);
+      }
+    });
+
+    document.addEventListener('pointerdown', () => {
+      if (!tvState.audioUnlocked) unlockTvAudio(false);
+    }, { once: true, passive: true });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('tvLiveClock').textContent = getTaipeiClockStr();
+      setInterval(() => {
+        const el = document.getElementById('tvLiveClock');
+        if (el) el.textContent = getTaipeiClockStr();
+      }, 1000);
+      if (tvState.soundEnabled) {
+        const bar = document.getElementById('tvAudioUnlockBar');
+        if (bar) bar.style.display = 'inline-flex';
+      }
+      requestTvWakeLock();
+      pollPickupBoard(true);
+    });
+  </script>
+</body>
+</html>

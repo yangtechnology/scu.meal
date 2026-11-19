@@ -35,23 +35,60 @@ function escapeHtmlOnServer(str) {
 
 // ==================== HTTP 路由入口 (讀寫分離架構) ====================
 function doGet(e) {
-  const params = (e && e.parameter) ? e.parameter : {};
-  if (params.action === 'getOrder' && params.orderId) {
-    const ss = SpreadsheetApp.openById(SHEET_ID);
-    const hasMerchantAuth = isMerchantRequestValid(params, '');
-    const providedVerCode = String(params.v || params.verificationCode || '').trim().toUpperCase();
-    const clientDeviceId = String(params.clientDeviceId || '').trim();
+  try {
+    const params = (e && e.parameter) ? e.parameter : {};
+    const action = String(params.action || '').trim();
+
+    if (action === 'getOrder' && params.orderId) {
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      const hasMerchantAuth = isMerchantRequestValid(params, '');
+      const providedVerCode = String(params.v || params.verificationCode || '').trim().toUpperCase();
+      const clientDeviceId = String(params.clientDeviceId || '').trim();
+      return jsonResponse({
+        success: true,
+        order: findOrderById(ss, params.orderId, hasMerchantAuth, providedVerCode, clientDeviceId)
+      });
+    }
+
+    if (action === 'getPickupBoard') {
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      ensureDatabaseInitialized(ss, false);
+      const boardRes = getPublicPickupBoard(ss, {
+        storeId: params.storeId || params.store || '',
+        forceRefresh: params.forceRefresh === '1' || params.forceRefresh === 'true'
+      });
+      return jsonResponse({ success: true, ...boardRes });
+    }
+
+    if (action === 'initBundle') {
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      ensureDatabaseInitialized(ss, false);
+      maybeRunBackgroundMaintenance(ss);
+      const myOrderIds = params.myOrderIds
+        ? String(params.myOrderIds).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+      const bundleRes = getInitBundle(ss, {
+        campus: params.campus || '',
+        myOrderIds: myOrderIds,
+        clientDeviceId: params.clientDeviceId || '',
+        merchantAuthToken: params.merchantAuthToken || '',
+        storeId: params.storeId || '',
+        forceRefresh: params.forceRefresh === '1' || params.forceRefresh === 'true'
+      });
+      return jsonResponse({ success: true, ...bundleRes });
+    }
+
     return jsonResponse({
       success: true,
-      order: findOrderById(ss, params.orderId, hasMerchantAuth, providedVerCode, clientDeviceId)
+      service: BRAND_NAME + ' 雲端引擎',
+      status: 'ONLINE'
+    });
+  } catch (err) {
+    return jsonResponse({
+      success: false,
+      message: err && err.message ? err.message : String(err)
     });
   }
-
-  return jsonResponse({
-    success: true,
-    service: BRAND_NAME + ' 雲端引擎',
-    status: 'ONLINE'
-  });
 }
 
 function doPost(e) {
@@ -66,6 +103,7 @@ function doPost(e) {
     // 唯讀或非競爭型請求不搶用全域寫入鎖，大幅提升中午尖峰吞吐量
     const READ_ONLY_ACTIONS = {
       'initBundle': true,
+      'getPickupBoard': true,
       'getOrder': true,
       'lookupOrders': true,
       'askAiConcierge': true,
@@ -94,7 +132,13 @@ function doPost(e) {
     try {
       autoPromoteAndCleanOrdersBatch(ss);
       const writeResult = dispatchAction(ss, action, params);
-      invalidatePublicBundleCache();
+      const affectedStoreId = String(
+        (params && params.storeId) ||
+        (writeResult && writeResult.storeId) ||
+        (writeResult && writeResult.order && writeResult.order.storeId) ||
+        ''
+      ).trim().toUpperCase();
+      invalidatePublicBundleCache(affectedStoreId);
       return jsonResponse({ success: true, ...writeResult });
     } finally {
       lock.releaseLock();
@@ -112,6 +156,8 @@ function dispatchAction(ss, action, params) {
     // 公開端點與安全驗證查詢端點
     case 'initBundle':
       return getInitBundle(ss, params);
+    case 'getPickupBoard':
+      return getPublicPickupBoard(ss, params);
     case 'getOrder':
       return {
         order: findOrderById(
@@ -870,10 +916,14 @@ function ensureDatabaseInitialized(ss, forceCheck) {
   props.setProperty('DB_INIT_VER', DB_SCHEMA_VERSION);
 }
 
-function invalidatePublicBundleCache() {
+function invalidatePublicBundleCache(storeId) {
   try {
     const cache = CacheService.getScriptCache();
-    if (cache) cache.remove('PUBLIC_BUNDLE_SNAP_V23');
+    if (cache) {
+      cache.remove('PUBLIC_BUNDLE_SNAP_V23');
+      cache.remove('PICKUP_BOARD_SNAP_ALL');
+      if (storeId) cache.remove('PICKUP_BOARD_SNAP_' + String(storeId).trim());
+    }
   } catch (e) {}
 }
 
@@ -894,11 +944,28 @@ function sheetToObjects(sheet) {
 
   const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   const headers = values[0].map(h => String(h || '').trim());
+  const isMenusSheet = sheet.getName() === 'Menus';
   const list = [];
 
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
-    if (row[0] === '' || row[0] === null || row[0] === undefined) continue;
+    const firstCellEmpty = (row[0] === '' || row[0] === null || row[0] === undefined);
+    if (firstCellEmpty) {
+      // 容錯：若店長直接在 Google Sheets Menus 分頁手動新增菜品但忘記填 A 欄 id，自動依 storeId + name 推導穩定 ID
+      if (isMenusSheet) {
+        const objTmp = {};
+        for (let c = 0; c < headers.length; c++) {
+          if (headers[c]) objTmp[headers[c]] = row[c];
+        }
+        const sid = String(objTmp.storeId || '').trim();
+        const nm = String(objTmp.name || '').trim();
+        if (sid && nm) {
+          objTmp.id = generateStableMenuItemIdOnServer(sid, nm);
+          list.push(objTmp);
+        }
+      }
+      continue;
+    }
     const obj = {};
     for (let c = 0; c < headers.length; c++) {
       if (headers[c]) obj[headers[c]] = row[c];
@@ -908,10 +975,10 @@ function sheetToObjects(sheet) {
   return list;
 }
 
-// ==================== #11 中午尖峰架構優化：Stores 與 Menus 記憶體快取層 ====================
-function getCachedStoresAndMenus(ss) {
+// ==================== #11 中午尖峰架構優化：Stores 與 Menus 記憶體快取層（支援強制重載與 15 秒即時同步） ====================
+function getCachedStoresAndMenus(ss, forceRefresh) {
   const cache = CacheService.getScriptCache();
-  if (cache) {
+  if (cache && !forceRefresh) {
     try {
       const cachedRaw = cache.get('CACHE_STORES_MENUS_V18');
       if (cachedRaw) {
@@ -926,7 +993,11 @@ function getCachedStoresAndMenus(ss) {
   const menus = sheetToObjects(ss.getSheetByName('Menus'));
   if (cache) {
     try {
-      cache.put('CACHE_STORES_MENUS_V18', JSON.stringify({ stores: stores, menus: menus }), 120);
+      // 縮短為 15 秒快取：兼顧尖峰降載，並確保於 Google Sheets 直接修改菜單／店鋪後 15 秒內（或點擊「同步雲端」立即）回傳前端
+      const serialized = JSON.stringify({ stores: stores, menus: menus });
+      if (serialized.length < 95000) {
+        cache.put('CACHE_STORES_MENUS_V18', serialized, 15);
+      }
     } catch (e) {}
   }
   return { stores: stores, menus: menus };
@@ -938,11 +1009,12 @@ function invalidateStoresMenusCache() {
     try {
       cache.remove('CACHE_STORES_MENUS_V18');
       cache.remove('PUBLIC_BUNDLE_SNAP_V23');
+      cache.remove('PICKUP_BOARD_SNAP_ALL');
     } catch (e) {}
   }
 }
 
-// ==================== #21 伺服器端營業時間、午休時段與公休日判定 ====================
+// ==================== #21 & v24 伺服器端營業時間、午休時段、公休日與「暫停營業禁止預訂」嚴格區分 ====================
 function parseTimeStrToMinsOnServer(tStr, fallbackMins) {
   const m = String(tStr || '').trim().match(/^(\d{1,2}):(\d{2})/);
   if (!m) return fallbackMins;
@@ -950,8 +1022,14 @@ function parseTimeStrToMinsOnServer(tStr, fallbackMins) {
 }
 
 function evaluateStoreBusinessHoursOnServer(customMeta, isManualOpen) {
+  // v24 嚴格區分：「暫停營業 (isManualOpen === false)」全面禁止立即點餐與預訂；「已打烊 / 午休 / 公休」才開放預訂
   if (isManualOpen === false) {
-    return { canOrderNow: false, reasonCode: 'MANUAL_CLOSED', statusLabel: '本店目前暫停營業（僅開放預訂取餐）' };
+    return {
+      canOrderNow: false,
+      canPreOrder: false,
+      reasonCode: 'MANUAL_CLOSED',
+      statusLabel: '本店目前暫停營業中（暫停現場點餐與預訂服務）'
+    };
   }
   const now = new Date();
   const todayStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
@@ -965,7 +1043,7 @@ function evaluateStoreBusinessHoursOnServer(customMeta, isManualOpen) {
     ? rawClosed.map(Number)
     : String(rawClosed || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
   if (closedArr.indexOf(dayOfWeek) >= 0) {
-    return { canOrderNow: false, reasonCode: 'CLOSED_DAY', statusLabel: '今日為本店固定公休日（開放預訂其他營業日）' };
+    return { canOrderNow: false, canPreOrder: true, reasonCode: 'CLOSED_DAY', statusLabel: '今日為本店固定公休日（開放預訂其他營業日）' };
   }
 
   const openTimeStr = String((customMeta && customMeta.openTime) || '10:30').trim();
@@ -974,10 +1052,10 @@ function evaluateStoreBusinessHoursOnServer(customMeta, isManualOpen) {
   const closeMins = parseTimeStrToMinsOnServer(closeTimeStr, 19 * 60 + 30);
 
   if (nowMins < openMins) {
-    return { canOrderNow: false, reasonCode: 'BEFORE_OPEN', statusLabel: `尚未開門（營業時間 ${openTimeStr}~${closeTimeStr}，可先預訂）` };
+    return { canOrderNow: false, canPreOrder: true, reasonCode: 'BEFORE_OPEN', statusLabel: `尚未開門（營業時間 ${openTimeStr}~${closeTimeStr}，可先預訂）` };
   }
   if (nowMins > closeMins) {
-    return { canOrderNow: false, reasonCode: 'AFTER_CLOSE', statusLabel: `今日已打烊（營業時間 ${openTimeStr}~${closeTimeStr}，可預訂明日）` };
+    return { canOrderNow: false, canPreOrder: true, reasonCode: 'AFTER_CLOSE', statusLabel: `今日已打烊（營業時間 ${openTimeStr}~${closeTimeStr}，開放預訂明日取餐）` };
   }
 
   const breakStartStr = String((customMeta && customMeta.breakStartTime) || '').trim();
@@ -986,11 +1064,11 @@ function evaluateStoreBusinessHoursOnServer(customMeta, isManualOpen) {
     const bStart = parseTimeStrToMinsOnServer(breakStartStr, -1);
     const bEnd = parseTimeStrToMinsOnServer(breakEndStr, -1);
     if (bStart >= 0 && bEnd > bStart && nowMins >= bStart && nowMins < bEnd) {
-      return { canOrderNow: false, reasonCode: 'ON_BREAK', statusLabel: `目前為午休備料時段（${breakStartStr}~${breakEndStr}，可預訂午休後取餐）` };
+      return { canOrderNow: false, canPreOrder: true, reasonCode: 'ON_BREAK', statusLabel: `目前為午休時段（${breakStartStr}~${breakEndStr}，可預訂午休後取餐）` };
     }
   }
 
-  return { canOrderNow: true, reasonCode: 'OPEN', statusLabel: '正常營業中' };
+  return { canOrderNow: true, canPreOrder: true, reasonCode: 'OPEN', statusLabel: '正常營業中' };
 }
 
 function readSheetTailObjects(sheet, maxTailRows) {
@@ -2010,29 +2088,139 @@ function buildStoreQueueProgressMap(ordersList) {
     const sid = String(o.storeId || '');
     if (!sid) return;
     if (!map[sid]) {
-      map[sid] = { readyNumbers: [], cookingOrderIds: [], latestCalledNumber: '' };
+      map[sid] = { readyNumbers: [], readyDetails: [], cookingNumbers: [], cookingOrderIds: [], latestCalledNumber: '', completedCount: 0 };
     }
-    if (o.status === '可取餐') {
-      map[sid].readyNumbers.push(String(o.pickupNumber));
-      if (!map[sid].latestCalledNumber) map[sid].latestCalledNumber = String(o.pickupNumber);
+    const pNum = String(o.pickupNumber || '').trim();
+    if (o.status === '可取餐' && pNum) {
+      map[sid].readyNumbers.push(pNum);
+      map[sid].readyDetails.push({
+        pickupNumber: pNum,
+        readyAtTs: Number(o.readyAtTs || o.createdAtTs || 0),
+        lastCalledAtTs: Number(o.lastCalledAtTs || o.readyAtTs || o.createdAtTs || 0),
+        notifyCount: Math.max(1, Number(o.notifyCount) || 1)
+      });
+      if (!map[sid].latestCalledNumber) map[sid].latestCalledNumber = pNum;
     } else if (o.status === '製作中') {
+      if (pNum) map[sid].cookingNumbers.push(pNum);
       map[sid].cookingOrderIds.push(String(o.orderId));
+    } else if (o.status === '已完成') {
+      map[sid].completedCount += 1;
     }
   });
   Object.keys(map).forEach(sid => {
     map[sid].cookingOrderIds.reverse(); // 由先下單到後下單排序
+    map[sid].cookingNumbers.reverse();
+    map[sid].readyDetails.sort((a, b) => (b.lastCalledAtTs - a.lastCalledAtTs) || (b.notifyCount - a.notifyCount));
+    if (map[sid].readyDetails.length > 0) {
+      map[sid].latestCalledNumber = map[sid].readyDetails[0].pickupNumber;
+    }
   });
   return map;
 }
 
+/**
+ * v24 麥當勞風格電視投屏大看板專屬公開唯讀端點（零登入、永不過期、絕不外洩任何顧客個資）
+ */
+function getPublicPickupBoard(ss, params) {
+  const requestedStoreId = String((params && (params.storeId || params.store)) || '').trim().toUpperCase();
+  const forceRefresh = Boolean(params && params.forceRefresh);
+  const cacheKey = 'PICKUP_BOARD_SNAP_' + (requestedStoreId || 'ALL');
+
+  if (!forceRefresh) {
+    try {
+      const c = CacheService.getScriptCache();
+      const hit = c ? c.get(cacheKey) : null;
+      if (hit) {
+        const parsed = JSON.parse(hit);
+        if (parsed && parsed.store) {
+          parsed.serverTimeTs = Date.now();
+          parsed.serverTime = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
+          return parsed;
+        }
+      }
+    } catch (e) {}
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  let openStateMap = {};
+  let customStoreMetaMap = {};
+  let deletedStoreIdsMap = {};
+  try { openStateMap = JSON.parse(props.getProperty('STORE_OPEN_STATES') || '{}'); } catch (e) {}
+  try { customStoreMetaMap = JSON.parse(props.getProperty('STORE_CUSTOM_META') || '{}'); } catch (e) {}
+  try { deletedStoreIdsMap = JSON.parse(props.getProperty('DELETED_STORE_IDS') || '{}'); } catch (e) {}
+
+  const cachedSM = getCachedStoresAndMenus(ss, forceRefresh);
+  const stores = (cachedSM.stores || []).filter(s => s && s.id && !deletedStoreIdsMap[String(s.id)]);
+  const targetStoreRow = stores.find(s => String(s.id).toUpperCase() === requestedStoreId) || stores[0];
+  if (!targetStoreRow) {
+    throw new Error('查無店鋪資料');
+  }
+
+  const targetId = String(targetStoreRow.id);
+  const customMeta = customStoreMetaMap[targetId] || {};
+  const isOpen = openStateMap[targetId] !== undefined ? Boolean(openStateMap[targetId]) : true;
+  const bizStatus = evaluateStoreBusinessHoursOnServer(customMeta, isOpen);
+
+  const orderSheet = ss.getSheetByName('Orders');
+  const rawTailOrders = readSheetTailObjects(orderSheet, 800)
+    .reverse()
+    .map(enrichOrderObject)
+    .filter(o => o && !isCorruptedOrMockOrderOnServer(o));
+
+  const qMap = buildStoreQueueProgressMap(rawTailOrders);
+  const qStats = recomputeAllStoreQueuesInMemory(ss, rawTailOrders, false);
+  const myQueue = qMap[targetId] || { readyNumbers: [], readyDetails: [], cookingNumbers: [], latestCalledNumber: '', completedCount: 0 };
+  const myStat = qStats[targetId] || {};
+
+  const nowObj = new Date();
+  const payload = {
+    store: {
+      id: targetId,
+      name: String(targetStoreRow.name || ''),
+      campus: String(targetStoreRow.campus || ''),
+      category: String(targetStoreRow.category || ''),
+      icon: String(customMeta.icon || targetStoreRow.icon || ''),
+      isOpen: isOpen,
+      canOrderNow: bizStatus.canOrderNow,
+      canPreOrder: bizStatus.canPreOrder,
+      businessStatusReason: bizStatus.reasonCode,
+      businessStatusLabel: bizStatus.statusLabel,
+      openTime: String(customMeta.openTime || targetStoreRow.openTime || '10:30'),
+      closeTime: String(customMeta.closeTime || targetStoreRow.closeTime || '19:30'),
+      avgPrepMinutes: Number(myStat.avgPrepMinutes || targetStoreRow.avgPrepMinutes || 5)
+    },
+    storesList: stores.map(s => ({
+      id: String(s.id),
+      name: String(s.name || ''),
+      campus: String(s.campus || ''),
+      icon: String((customStoreMetaMap[String(s.id)] && customStoreMetaMap[String(s.id)].icon) || s.icon || '')
+    })),
+    preparingNumbers: Array.from(new Set(myQueue.cookingNumbers || [])),
+    readyNumbers: myQueue.readyDetails || [],
+    latestCalledNumber: myQueue.latestCalledNumber || '',
+    completedCount: myQueue.completedCount || 0,
+    serverTime: Utilities.formatDate(nowObj, 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss'),
+    serverTimeTs: nowObj.getTime()
+  };
+
+  try {
+    const c = CacheService.getScriptCache();
+    const raw = JSON.stringify(payload);
+    if (c && raw.length < 80000) c.put(cacheKey, raw, 3);
+  } catch (e) {}
+
+  return payload;
+}
+
 function getInitBundle(ss, params, persistQueueUpdate = false) {
   const session = parseVerifiedMerchantSession(params);
+  const forceRefresh = Boolean(params && params.forceRefresh);
   const requestedIdsCheck = Array.isArray(params && params.myOrderIds)
     ? params.myOrderIds.map(id => String(id || '').trim()).filter(Boolean)
     : [];
 
-  // 四-1 效能優化：純公開點餐瀏覽（無私人訂單與非店家端）共享 5 秒 CacheService 快照，大幅減少尖峰重複掃描 2,500 列試算表
-  if (!session && requestedIdsCheck.length === 0 && !persistQueueUpdate) {
+  // 四-1 效能優化：純公開點餐瀏覽共享 5 秒 CacheService 快照；點擊手動同步 (forceRefresh) 時直接繞過快取即時讀取試算表
+  if (!session && requestedIdsCheck.length === 0 && !persistQueueUpdate && !forceRefresh) {
     try {
       const pubCache = CacheService.getScriptCache();
       const cachedPubRaw = pubCache ? pubCache.get('PUBLIC_BUNDLE_SNAP_V23') : null;
@@ -2106,8 +2294,8 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     }
   }
 
-  // #11：使用 CacheService 快取之 Stores 與 Menus，降低中午尖峰 60% 以上試算表讀取次數
-  const cachedSM = getCachedStoresAndMenus(ss);
+  // #11：使用 CacheService 快取之 Stores 與 Menus（支援 forceRefresh 即時穿透讀取試算表）
+  const cachedSM = getCachedStoresAndMenus(ss, forceRefresh);
   const stores = (cachedSM.stores || [])
     .filter(s => s && s.id && !deletedStoreIdsMap[String(s.id)]);
   const menus = cachedSM.menus || [];
@@ -2222,6 +2410,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
       staffList: getStoreStaffList(storeIdStr),
       isOpen: isOpen,
       canOrderNow: bizStatus.canOrderNow,
+      canPreOrder: bizStatus.canPreOrder,
       businessStatusReason: bizStatus.reasonCode,
       businessStatusLabel: bizStatus.statusLabel,
       maxCapacityPer15Min: maxCap,
@@ -2797,6 +2986,11 @@ function handleOrderSubmission(ss, params) {
   const isCashPayment = paymentMethod.indexOf('付現') >= 0 || paymentMethod.indexOf('現金') >= 0;
   const rawPhoneDigits = String(params.customerPhone || '').replace(/\D/g, '');
 
+  // v24 優先擋下「暫停營業 (isStoreOpen === false)」之所有線上立即單與預訂單（不浪費速率限制配額）
+  if (!isStoreOpen && !isMerchantPosRequest) {
+    throw new Error(`「${storeRow.name}」目前為「暫停營業」狀態，暫停現場點餐與所有預訂服務，請稍後再試或改選其他櫃位。`);
+  }
+
   // 【#20 防惡意棄單與匿名假單轟炸】非櫃檯 POS 之線上點餐執行嚴格伺服器端檢核
   if (!isMerchantPosRequest) {
     // 1. 現金單或預訂單強制要求台灣手機號碼格式 (09開頭共10碼)
@@ -2825,10 +3019,6 @@ function handleOrderSubmission(ss, params) {
       cache.put(phoneKey, String(phoneHits + 1), 60);
       cache.put(storeBurstKey, String(burstHits + 1), 20);
     }
-  }
-
-  if (!isStoreOpen && !isReservation && !isMerchantPosRequest) {
-    throw new Error(`「${storeRow.name}」目前暫停立即出餐，請改選「預訂取餐」模式！`);
   }
 
   const maxCap = Math.max(5, Number(storeRow.maxCapacityPer15Min) || 20);
@@ -2888,10 +3078,15 @@ function handleOrderSubmission(ss, params) {
     }
   }
 
-  // #21：若非預訂單（即學生選擇「立即製作」），後端嚴格檢查當前時間是否落在 openTime~closeTime 且非午休時段、非公休日
-  if (!isReservation && !isMerchantPosRequest) {
+  // v24 嚴格區分「暫停營業」與「已打烊」：
+  // 1. 「暫停營業 (isStoreOpen === false)」：全面禁止學生端送出立即單與預訂單！
+  // 2. 「已打烊 / 午休 / 公休 (isStoreOpen === true 且非立即營業時段)」：禁止立即製作，但允許預訂未來營業時段！
+  if (!isMerchantPosRequest) {
     const bizCheck = evaluateStoreBusinessHoursOnServer(storeCustomMeta, isStoreOpen);
-    if (!bizCheck.canOrderNow) {
+    if (!bizCheck.canPreOrder) {
+      throw new Error(`「${storeRow.name}」目前為「暫停營業」狀態，暫停現場點餐與所有預訂服務，請稍後再試或改選其他櫃位。`);
+    }
+    if (!isReservation && !bizCheck.canOrderNow) {
       throw new Error(`「${storeRow.name}」${bizCheck.statusLabel}，目前無法選擇「立即製作」，請切換為「📅 預訂取餐」！`);
     }
   }
@@ -3486,6 +3681,7 @@ function updateOrderStateBatch(ss, params) {
     if (!isRecall) {
       meta.notifyCount = (Number(meta.notifyCount) || 0) + 1;
       if (!meta.readyAtTs) meta.readyAtTs = Date.now();
+      meta.lastCalledAtTs = Date.now();
     }
   }
   if (nextStatus === '製作中' && !meta.cookingStartedAtTs) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mealflow-pwa-v23';
+const CACHE_NAME = 'mealflow-pwa-v24';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -6,10 +6,14 @@ const APP_SHELL_ASSETS = [
   './order/index.html',
   './store/',
   './store/index.html',
-  './styles.css?v=23.0',
-  './i18n.js?v=23.0',
-  './app.js?v=23.0',
-  './merchant.js?v=23.0',
+  './board/',
+  './board/index.html',
+  './board/qr.js?v=24.0',
+  './board/manifest.json',
+  './styles.css?v=24.0',
+  './i18n.js?v=24.0',
+  './app.js?v=24.0',
+  './merchant.js?v=24.0',
   './jsQR.min.js',
   './logo-icon.jpg',
   './logo-text.png',
