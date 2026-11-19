@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mealflow-pwa-v20';
+const CACHE_NAME = 'mealflow-pwa-v21';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',

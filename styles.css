@@ -2353,6 +2353,239 @@ select.select-input {
     flex: 1;
     height: 46px;
   }
+
+  /* #5 手機版極簡化頂部導覽列與店內橫幅，讓第一屏立刻看到餐點 */
+  .app-header {
+    padding: 7px 12px;
+  }
+
+  .header-inner {
+    gap: 6px;
+  }
+
+  .brand-logo-icon-img {
+    width: 28px;
+    height: 28px;
+  }
+
+  .brand-logo-text-img {
+    height: 20px;
+  }
+
+  .role-badge {
+    display: none !important;
+  }
+
+  .sync-status {
+    padding: 3px 7px;
+    font-size: 0.68rem;
+  }
+
+  #syncText {
+    display: none;
+  }
+
+  .btn-my-orders,
+  .btn-line,
+  .header-lang-select {
+    padding: 4px 8px !important;
+    font-size: 0.72rem !important;
+  }
+
+  .campus-btn {
+    padding: 4px 9px;
+    font-size: 0.74rem;
+  }
+
+  .container,
+  .page-container {
+    padding: 10px 12px;
+  }
+
+  .in-store-banner {
+    padding: 12px 14px;
+    border-radius: 16px;
+    margin-bottom: 10px;
+  }
+
+  .in-store-banner .store-avatar-lg {
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 1.55rem !important;
+    border-radius: 12px !important;
+  }
+
+  .in-store-banner h2 {
+    font-size: 1.12rem !important;
+  }
+
+  .category-group-title {
+    margin: 14px 0 8px;
+    font-size: 0.98rem;
+  }
+
+  .menu-item-card {
+    padding: 11px 12px;
+    gap: 11px;
+    border-radius: 14px;
+  }
+
+  .menu-img-box {
+    width: 68px;
+    height: 68px;
+    border-radius: 12px;
+    font-size: 1.7rem;
+  }
+
+  .student-directory-toolbar {
+    gap: 6px;
+  }
+}
+
+/* ==================== #3 #4 #5 學生端精簡工具列、多語選擇器與品牌化對話框 ==================== */
+.header-lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #FFFFFF;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.header-lang-select:hover,
+.header-lang-select:focus {
+  border-color: var(--brand);
+}
+
+.student-directory-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.student-tool-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.student-util-pill {
+  border: 1.5px solid var(--border);
+  background: #FFFFFF;
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.student-util-pill:hover {
+  border-color: var(--brand);
+  color: var(--brand-dark);
+  background: var(--brand-light);
+}
+
+.student-util-pill.advisor {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-color: #0F172A;
+}
+
+.student-util-pill.advisor:hover {
+  background: #1E293B;
+  color: #FFFFFF;
+}
+
+.store-cart-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #FFF3EE;
+  color: var(--brand-dark);
+  border: 1px solid #FDBA74;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.item-note-inline-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #F8FAFC;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.item-note-inline-input:focus {
+  border-color: var(--brand);
+  background: #FFFFFF;
+}
+
+.alert-mode-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 5px;
+  margin: 10px 0;
+}
+
+.alert-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 7px 6px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  transition: all 0.15s ease;
+}
+
+.alert-mode-btn.active {
+  background: #FFFFFF;
+  color: var(--brand-dark);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+/* 嚴格 Modal 層級排序：收銀鍵盤永遠高於兩段式結帳，自訂品牌對話框永遠位於最頂層 */
+#posTwoStepCheckoutModal {
+  z-index: 1100;
+}
+
+#posCashNumpadModal {
+  z-index: 1300;
+}
+
+#appCustomDialogModal {
+  z-index: 1600;
+}
+
+.app-dialog-card {
+  max-width: 420px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  animation: fadeIn 0.16s ease;
 }
 
 /* ==================== 🖨️ 80mm 熱感應出單機專用列印排版 (@media print) ==================== */

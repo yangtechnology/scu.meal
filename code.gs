@@ -1822,14 +1822,17 @@ function parseMenuRowOptionsAndSoldOut(menuRowObj) {
   let parsedOptions = {};
   let legacySoldOut = false;
   let dailyLimit = 0;
+  let nameEn = '';
   if (menuRowObj.optionsJson) {
     try {
       const rawObj = JSON.parse(menuRowObj.optionsJson);
       if (rawObj && typeof rawObj === 'object' && !Array.isArray(rawObj)) {
         legacySoldOut = Boolean(rawObj.__soldOut);
         dailyLimit = Math.max(0, parseInt(rawObj.__dailyLimit || 0, 10) || 0);
+        nameEn = String(rawObj.__nameEn || '').trim();
         delete rawObj.__soldOut;
         delete rawObj.__dailyLimit;
+        delete rawObj.__nameEn;
         parsedOptions = rawObj;
       }
     } catch (e) {}
@@ -1838,7 +1841,7 @@ function parseMenuRowOptionsAndSoldOut(menuRowObj) {
     ? (menuRowObj.soldOut === true || String(menuRowObj.soldOut).toLowerCase() === 'true')
     : legacySoldOut;
 
-  return { parsedOptions, isSoldOut: explicitSoldOut, dailyLimit: dailyLimit };
+  return { parsedOptions, isSoldOut: explicitSoldOut, dailyLimit: dailyLimit, nameEn: nameEn };
 }
 
 function isCorruptedOrMockOrderOnServer(o) {
@@ -1948,7 +1951,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
     const storeMenus = menus
       .filter(m => String(m.storeId) === storeIdStr)
       .map(m => {
-        const { parsedOptions, isSoldOut, dailyLimit } = parseMenuRowOptionsAndSoldOut(m);
+        const { parsedOptions, isSoldOut, dailyLimit, nameEn } = parseMenuRowOptionsAndSoldOut(m);
         let rawTag = String(m.tag || '').trim();
         let rawCat = String(m.category || '招牌主餐').trim();
         let rawImg = String(m.image || '').trim();
@@ -1976,6 +1979,7 @@ function getInitBundle(ss, params, persistQueueUpdate = false) {
           id: mId,
           storeId: String(m.storeId),
           name: mName,
+          nameEn: nameEn || '',
           price: Number(m.price) || 0,
           tag: rawTag,
           category: rawCat || '招牌主餐',
@@ -3433,6 +3437,9 @@ function saveStoreMenusAtomic(ss, params) {
       const dailyLimitVal = Math.max(0, parseInt(m.dailyLimit || 0, 10) || 0);
       if (dailyLimitVal > 0) cleanOpts['__dailyLimit'] = dailyLimitVal;
       else delete cleanOpts['__dailyLimit'];
+      const nameEnVal = String(m.nameEn || '').trim().slice(0, 80);
+      if (nameEnVal) cleanOpts['__nameEn'] = nameEnVal;
+      else delete cleanOpts['__nameEn'];
 
       return [
         itemId,
@@ -3506,6 +3513,9 @@ function upsertSingleMenuItemOnServer(ss, params) {
   const dailyLimitVal = Math.max(0, parseInt(item.dailyLimit || 0, 10) || 0);
   if (dailyLimitVal > 0) cleanOpts['__dailyLimit'] = dailyLimitVal;
   else delete cleanOpts['__dailyLimit'];
+  const nameEnVal = String(item.nameEn || '').trim().slice(0, 80);
+  if (nameEnVal) cleanOpts['__nameEn'] = nameEnVal;
+  else delete cleanOpts['__nameEn'];
 
   const rowValues = [
     menuId,
