@@ -1431,10 +1431,93 @@ select.select-input {
 }
 
 .pos-receipt-controls {
+  position: relative;
   padding: 8px 12px;
   background: #FAFBFC;
   border-top: 1px dashed var(--border);
   flex-shrink: 0;
+  z-index: 25;
+}
+
+/* B9：POS 進階選項「向上展開」浮層，一鍵點擊即完整呈現於眼前，免往下滑動 */
+.pos-extra-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+  z-index: 45;
+  background: #FFFFFF;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 -14px 34px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.08);
+  max-height: min(56vh, 410px);
+  overflow-y: auto;
+  animation: posPopUpIn 0.14s ease-out;
+}
+
+@keyframes posPopUpIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* B10 & B13：單品快捷折扣與售完選擇大按鈕格線 */
+.pos-quick-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pos-quick-choice-btn {
+  border: 1.5px solid var(--border);
+  background: #FFFFFF;
+  color: var(--text-primary);
+  border-radius: 12px;
+  padding: 11px 10px;
+  font-size: 0.86rem;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: all 0.14s ease;
+}
+
+.pos-quick-choice-btn:hover {
+  border-color: var(--brand);
+  background: #FFF7ED;
+}
+
+.pos-quick-choice-btn.active {
+  border-color: var(--brand);
+  background: #FFF3EE;
+  color: var(--brand-dark);
+  box-shadow: 0 0 0 2px rgba(255, 90, 31, 0.16);
+}
+
+.weekly-hours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.weekly-day-card {
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weekly-day-card.closed-day {
+  background: #FEF2F2;
+  border-color: #FECACA;
 }
 
 .pos-receipt-footer {
@@ -2705,23 +2788,31 @@ select.select-input {
   }
 }
 
-/* ==================== v23.0 專業點餐與收銀互動樣式（三-1 / 三-4 / 二-3 / 二-4） ==================== */
+/* ==================== v23.0 專業點餐與收銀互動樣式（三-1 / 三-4 / 二-3 / 二-4 / B6 動態舒適間距） ==================== */
 .sticky-menu-cat-bar {
   position: sticky;
-  top: 64px;
+  top: calc(var(--app-header-h, 74px) + 12px);
   z-index: 45;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px);
+  margin-top: 6px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(12px);
   padding: 10px 12px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+@media (max-width: 640px) {
+  .sticky-menu-cat-bar {
+    top: calc(var(--app-header-h, 102px) + 10px);
+    padding: 9px 10px;
+  }
 }
 
 .sticky-menu-cat-tabs {

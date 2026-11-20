@@ -1,8 +1,7 @@
 // =========================================================================
-// MealFlow v25.0 — 潔淨高效 PWA Service Worker
-// 三-2：徹底移除易遭瀏覽器強殺的 5 分鐘遞迴 setTimeout 輪詢迴圈；專注離線快取、Web Push 與通知點擊導航
+// MealFlow v26.0 — 潔淨高效 PWA Service Worker（徹底防止舊版 JS/CSS 快取回退）
 // =========================================================================
-const CACHE_NAME = 'mealflow-pwa-v25';
+const CACHE_NAME = 'mealflow-pwa-v26';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -12,12 +11,12 @@ const APP_SHELL_ASSETS = [
   './store/index.html',
   './board/',
   './board/index.html',
-  './board/qr.js?v=25.0',
+  './board/qr.js?v=26.0',
   './board/manifest.json',
-  './styles.css?v=25.0',
-  './i18n.js?v=25.0',
-  './app.js?v=25.0',
-  './merchant.js?v=25.0',
+  './styles.css?v=26.0',
+  './i18n.js?v=26.0',
+  './app.js?v=26.0',
+  './merchant.js?v=26.0',
   './jsQR.min.js',
   './logo-icon.jpg',
   './logo-text.png',
@@ -141,9 +140,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First + 版本號容錯快取比對 (ignoreSearch: true)
+  // B12：HTML / JS / CSS 強制 Network-First + no-cache 繞過瀏覽器舊 HTTP 快取；
+  // 離線回退時對 .js / .css 僅比對精確版本號（禁用 ignoreSearch），徹底杜絕載回舊版畫面！
+  const isCodeOrDoc = req.mode === 'navigate' || /\.(html|js|css)$/i.test(url.pathname);
+  const netReq = (isCodeOrDoc && url.origin === self.location.origin)
+    ? new Request(req, { cache: 'no-cache' })
+    : req;
+
   event.respondWith(
-    fetch(req)
+    fetch(netReq)
       .then((networkRes) => {
         if (networkRes && networkRes.status === 200 && url.origin === self.location.origin) {
           const clone = networkRes.clone();
@@ -151,10 +156,13 @@ self.addEventListener('fetch', (event) => {
         }
         return networkRes;
       })
-      .catch(() =>
-        caches.match(req)
+      .catch(() => {
+        if (/\.(js|css)$/i.test(url.pathname)) {
+          return caches.match(req);
+        }
+        return caches.match(req)
           .then((exact) => exact || caches.match(req, { ignoreSearch: true }))
-          .then((cached) => cached || caches.match('./index.html'))
-      )
+          .then((cached) => cached || caches.match('./index.html'));
+      })
   );
 });

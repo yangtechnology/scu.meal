@@ -1,0 +1,22 @@
+{
+  "gas_url": "https://script.google.com/macros/s/AKfycbzN2e0bi-jQG5RvGBpZYu5190f2JfX-6P1C8DxUy2aPyrrpbJpBl0oaTwYFRhAyBl8/exec",
+  "store_id": "S01",
+  "store_name": "趙班長海苔飯捲",
+  "printer_key": "請至店家POS設定頁_推播與硬體分頁_複製貼上此金鑰",
+  "windows_printer_name": "XP-80C",
+  "poll_interval_seconds": 4,
+  "front_categories": [
+    "飯捲類",
+    "飲料類",
+    "飲品類"
+  ],
+  "beep_enabled": true,
+  "beep_count": 2,
+  "auto_cut": true,
+  "open_cash_drawer": false,
+  "paper_width_px": 576,
+  "print_customer_slip": true,
+  "print_front_slip": true,
+  "print_back_slip": true,
+  "print_qr_on_customer_slip": true
+}
