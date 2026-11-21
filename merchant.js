@@ -4037,6 +4037,9 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
   if (!store || !panel) return;
 
   const storeOrders = state.orders.filter(o => o.storeId === store.id);
+  if (typeof checkAndAutoPrint === 'function') {
+    checkAndAutoPrint(storeOrders.filter(o => o.status !== '已完成' && !String(o.status).includes('已取消')));
+  }
   const todayStr = getTodayDateStr();
   const tomorrowStr = getFutureDateStr(1);
 
@@ -8571,4 +8574,63 @@ async function saveLineMessagingConfig() {
     }
     renderMerchantSettingsPanel(store);
   }, t('⏳ 儲存金流設定中...', '⏳ Saving...'));
+}
+// ==================== XP 自動列印引擎 (搭配 auto_print.vbs) ====================
+const AUTO_PRINT_ENABLED = new URLSearchParams(location.search).get('autoprint') === '1';
+const PRINTED_KEY = 'mealflow_printed_orders';
+let printedIds = new Set(JSON.parse(localStorage.getItem(PRINTED_KEY) || '[]'));
+let isFirstLoad = true;
+let printQueue = [];
+let isPrinting = false;
+
+function checkAndAutoPrint(orders) {
+  if (!AUTO_PRINT_ENABLED) return;
+
+  // 1. 第一次載入：把現有舊單全部標記為已看過，不觸發列印
+  if (isFirstLoad) {
+    orders.forEach(o => printedIds.add(o.orderId));
+    localStorage.setItem(PRINTED_KEY, JSON.stringify([...printedIds].slice(-300))); // 最多存300筆防爆
+    isFirstLoad = false;
+    return;
+  }
+
+  // 2. 找出還沒印過的新訂單，丟進排隊佇列
+  let hasNew = false;
+  orders.forEach(order => {
+    if (!printedIds.has(order.orderId)) {
+      printedIds.add(order.orderId);
+      printQueue.push(order);
+      hasNew = true;
+    }
+  });
+
+  if (hasNew) {
+    // 確保存檔並啟動佇列
+    localStorage.setItem(PRINTED_KEY, JSON.stringify([...printedIds].slice(-300)));
+    processPrintQueue();
+  }
+}
+
+function processPrintQueue() {
+  if (isPrinting || printQueue.length === 0) return;
+  isPrinting = true;
+
+  const nextOrder = printQueue.shift();
+
+  // 呼叫 MealFlow 內建的預覽 Modal，強制轉為 80mm 顧客聯模式
+  if (typeof openReceiptPrintModal === 'function') {
+    openReceiptPrintModal(nextOrder.orderId, 'CUSTOMER');
+  }
+
+  // 等待 0.5 秒讓網頁 DOM 渲染出小票畫面
+  setTimeout(() => {
+    window.print(); // 觸發 XP 列印視窗，由 vbs 接手按 Enter
+    
+    // 等 2.5 秒讓印表機吐紙與 vbs 消化完，再關閉畫面印下一張
+    setTimeout(() => {
+      if (typeof closeReceiptPrintModal === 'function') closeReceiptPrintModal();
+      isPrinting = false;
+      processPrintQueue();
+    }, 2500);
+  }, 500);
 }
