@@ -1795,6 +1795,7 @@ function calcCurrentPosTotals(store) {
   const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
   const subtotal = state.posCart.reduce((sum, i) => sum + (Number(i.price) || 0) * (i.qty || 1), 0);
   const cutleryFee = (subtotal > 0 && state.posNeedCutlery) ? storeCutleryPrice : 0;
+  const takeoutFee = (subtotal > 0 && state.posDineType === '外帶自取') ? 1 : 0;
   const isReserve = state.posTimeMode === 'RESERVE';
   const promoActive = isStorePromoActive(store, isReserve, state.posReserveTime);
   const promoDiscount = (subtotal >= AI_DISCOUNT_MIN_SUBTOTAL && promoActive && store.promoMode === 'discount')
@@ -1812,8 +1813,8 @@ function calcCurrentPosTotals(store) {
   const afterDisc = Math.max(0, subtotal - discount - percentDiscount - manualDiscount);
   const svcRate = Math.max(0, Math.min(20, Number(state.posServiceFeeRate) || 0));
   const serviceFee = svcRate > 0 ? Math.round(afterDisc * (svcRate / 100)) : 0;
-  const finalTotal = Math.max(0, afterDisc + cutleryFee + serviceFee);
-  return { storeCutleryPrice, subtotal, cutleryFee, promoActive, promoDiscount, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal };
+  const finalTotal = Math.max(0, afterDisc + cutleryFee + takeoutFee + serviceFee);
+  return { storeCutleryPrice, subtotal, cutleryFee, takeoutFee, promoActive, promoDiscount, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal };
 }
 
 function renderPosCashNumpadModal() {
