@@ -1896,7 +1896,7 @@ function renderPosCashierPanel(store) {
     : menus.filter(m => (m.category || '主廚推薦') === state.posSelectedCategory);
   const activeMult = Math.max(1, Number(state.posQtyMultiplier) || 1);
 
-  const { storeCutleryPrice, subtotal, cutleryFee, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal } = calcCurrentPosTotals(store);
+  const { storeCutleryPrice, subtotal, cutleryFee, takeoutFee, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal } = calcCurrentPosTotals(store);
   const totalDiscountSum = discount + percentDiscount + manualDiscount;
 
   const isReserve = state.posTimeMode === 'RESERVE';
@@ -2119,7 +2119,7 @@ function renderPosCashierPanel(store) {
 
           <div style="display:grid; grid-template-columns:1fr 1fr 1.2fr; gap:6px; margin-bottom:6px;">
             <button type="button" class="pos-chip-btn ${state.posDineType === '內用自取' ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in', '店内', '매장')}</button>
-            <button type="button" class="pos-chip-btn ${state.posDineType === '外帶自取' ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posDineType', '外帶自取')">🛍️ ${t('外帶自取', 'Takeout', '持帰', '포장')}</button>
+            <button type="button" class="pos-chip-btn ${state.posDineType === '外帶自取' ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posDineType', '外帶自取')">🛍️ ${t('外帶自取 (+$1)', 'Takeout (+$1)', '持帰 (+$1)', '포장 (+$1)')}</button>
             <button type="button" class="pos-chip-btn ${state.posNeedCutlery ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posNeedCutlery', !state.posNeedCutlery)">
               🥢 ${t('餐具', 'Cutlery', '箸', '수저')}(${storeCutleryPrice > 0 ? `+$${storeCutleryPrice}` : '$0'})
             </button>
@@ -2142,6 +2142,7 @@ function renderPosCashierPanel(store) {
           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
             <span style="font-size:0.82rem; font-weight:900;">
               ${t('應收總計', 'Total Due', '合計金額', '총 결제액')}
+              ${takeoutFee > 0 ? ` (${t('外帶', 'Takeout')}+$1)` : ''}
               ${cutleryFee > 0 ? ` (${t('餐具', 'Cutlery')}+$${cutleryFee})` : ''}
               ${serviceFee > 0 ? ` (+10% $${serviceFee})` : ''}
               ${totalDiscountSum > 0 ? `<span style="color:var(--green);"> (-$${totalDiscountSum})</span>` : ''}
@@ -2226,7 +2227,7 @@ async function submitMerchantPosOrder(opts = {}) {
   if (posBtn) posBtn.disabled = true;
 
   try {
-    const { subtotal, cutleryFee, promoActive, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal } = calcCurrentPosTotals(store);
+    const { subtotal, cutleryFee, takeoutFee, promoActive, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal } = calcCurrentPosTotals(store);
     const totalManualDisc = percentDiscount + manualDiscount;
     const discountReasons = [];
     if (comboDiscount > 0 && Array.isArray(comboAppliedRules)) {
@@ -2349,6 +2350,7 @@ async function submitMerchantPosOrder(opts = {}) {
       structuredItems,
       subtotal,
       cutleryFee,
+      takeoutFee,
       needCutlery: state.posNeedCutlery,
       discount,
       manualDiscount: totalManualDisc,

@@ -1962,28 +1962,54 @@ function recomputeAllStoreQueuesInMemory(ss, recentOrdersEnriched, persistToShee
 }
 
 function generateBackendSequentialPickupNumber(ss, storeId, pickupDateStr, channelPrefix) {
-  // 一-4 核心修正：POS 現場單 (A001+) 與線上學生單 (B001+) 採用完全分離之號碼命名空間，徹底杜絕離線補單撞號被迫改號！
   const prefix = (channelPrefix === 'A' || channelPrefix === 'B') ? channelPrefix : 'B';
   const targetDate = normalizeSheetDateStr(pickupDateStr);
   const props = PropertiesService.getScriptProperties();
-  const propKey = `SEQ_${storeId}_${targetDate}_${prefix}`;
-  let maxSeq = parseInt(props.getProperty(propKey) || '0', 10) || 0;
 
+  // 線上單 (B)：改成 101 ~ 200 循環（200 完接回 101）
+  if (prefix === 'B') {
+    const countKey = `SEQ_CNT_${storeId}_${targetDate}_101_200`;
+    let curCount = parseInt(props.getProperty(countKey) || '0', 10) || 0;
+
+    // 備援：以今日該店 101~200 的訂單總筆數校準，避免循環回 101 後被舊的 200 卡住
+    const tailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 600).map(enrichOrderObject);
+    let todayOnlineCount = 0;
+    tailOrders.forEach(o => {
+      if (String(o.storeId) === String(storeId) && normalizeSheetDateStr(o.pickupDate) === targetDate) {
+        const num = parseInt(String(o.pickupNumber || '').trim(), 10);
+        if (!isNaN(num) && num >= 101 && num <= 200) {
+          todayOnlineCount++;
+        }
+      }
+    });
+    if (todayOnlineCount > curCount) curCount = todayOnlineCount;
+
+    const nextCount = curCount + 1;
+    props.setProperty(countKey, String(nextCount));
+    const cycledNum = 101 + ((nextCount - 1) % 100); // 1→101, 100→200, 101→101
+    return String(cycledNum);
+  }
+
+  // 現場 POS 單 (A)：改成 001 ~ 100 循環（100 完接回 001）
+  const countKey = `SEQ_CNT_${storeId}_${targetDate}_001_100`;
+  let curCount = parseInt(props.getProperty(countKey) || '0', 10) || 0;
   const tailOrders = readSheetTailObjects(ss.getSheetByName('Orders'), 600).map(enrichOrderObject);
-  const prefixRe = new RegExp('^' + prefix + '(\\d{3,4})$', 'i');
+  let todayPosCount = 0;
   tailOrders.forEach(o => {
     if (String(o.storeId) === String(storeId) && normalizeSheetDateStr(o.pickupDate) === targetDate) {
-      const m = String(o.pickupNumber || '').trim().match(prefixRe);
-      if (m) {
-        const val = parseInt(m[1], 10);
-        if (val > maxSeq && val < 9999) maxSeq = val;
+      const rawNum = String(o.pickupNumber || '').trim();
+      if (/^\d{3}$/.test(rawNum)) {
+        const num = parseInt(rawNum, 10);
+        if (num >= 1 && num <= 100) todayPosCount++;
       }
     }
   });
+  if (todayPosCount > curCount) curCount = todayPosCount;
 
-  const nextSeq = maxSeq + 1;
-  props.setProperty(propKey, String(nextSeq));
-  return prefix + String(nextSeq).padStart(3, '0');
+  const nextCount = curCount + 1;
+  props.setProperty(countKey, String(nextCount));
+  const cycledNum = 1 + ((nextCount - 1) % 100); // 1→001, 100→100, 101→001
+  return String(cycledNum).padStart(3, '0');
 }
 
 // ==================== 5. 【資安修補 #15】雙重驗證跨裝置訂單查詢與防枚舉多重限流 ====================
@@ -2026,7 +2052,7 @@ function lookupOrdersAcrossDevices(ss, params) {
 
   const isFullOrderId = rawQ.indexOf('ORD-') === 0 && rawQ.length >= 10;
   const isSixCharHmacCode = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/.test(rawQ);
-  const isFourDigitPickup = /^([AB]\d{3,4}|\d{4,5})$/.test(rawQ);
+  const isFourDigitPickup = /^([AB]\d{3,4}|\d{3,5})$/.test(rawQ);
 
   // 未授權之公開查詢：嚴格要求「6 碼 HMAC 防偽碼」或「取餐號 + 手機末 3 碼雙重吻合」（若用 ORD 單號亦須搭配手機末 3 碼或防偽碼）
   if (!hasMerchantAuth && !isSixCharHmacCode) {
@@ -4073,6 +4099,14 @@ function handleOrderSubmission(ss, params) {
 
   // 冪等性保護：若該 orderId 已存在，直接回傳既有權威訂單（經最小權限脫敏）
   const isMerchantPosRequest = isMerchantRequestValid(params, storeId);
+  const clientReqId = String(params.clientRequestId || '').trim().slice(0, 64);
+  const reqCache = CacheService.getScriptCache();
+  if (clientReqId && reqCache) {
+    const cachedOrderJson = reqCache.get('ORD_REQ_' + clientReqId);
+    if (cachedOrderJson) {
+      return { order: sanitizeOrderForClientOutput(JSON.parse(cachedOrderJson), isMerchantPosRequest, true) };
+    }
+  }
   const existingLocated = locateOrderRowById(orderSheet, incomingOrderId);
   if (existingLocated) {
     const existingOrder = rowArrayToOrderObject(existingLocated.rowValues);
@@ -4602,12 +4636,14 @@ function handleOrderSubmission(ss, params) {
   const serviceFeeRate = (isMerchantPosRequest && Number(params.serviceFeeRate) > 0)
     ? Math.min(20, Math.max(0, Number(params.serviceFeeRate) || 0))
     : 0;
-  const netBeforeService = Math.max(0, authoritativeSubtotal + cutleryFee - authoritativeDiscount - manualDiscount);
+  // A9：學餐僅區分「內用自取 / 外帶自取」，外帶加收 1 元
+  const dineType = String(params.dineType || '外帶自取').trim();
+  const takeoutFee = (authoritativeSubtotal > 0 && dineType.indexOf('外帶') >= 0) ? 1 : 0;
+
+  const netBeforeService = Math.max(0, authoritativeSubtotal + cutleryFee + takeoutFee - authoritativeDiscount - manualDiscount);
   const serviceFee = serviceFeeRate > 0 ? Math.round(netBeforeService * (serviceFeeRate / 100)) : 0;
   const authoritativeFinalTotal = Math.max(0, netBeforeService + serviceFee);
 
-  // A9：學餐僅區分「內用自取 / 外帶自取」，無桌號
-  const dineType = String(params.dineType || '外帶自取').trim();
   const isDineInPostPay = Boolean(!isMerchantPosRequest && dineType === '內用自取' && storeCustomMeta.allowDineInPostPay && params.paymentMethod === '內用餐後結帳');
 
   const isLargeCashReserve = isReservation && authoritativeFinalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && isCashPayment;
@@ -4635,24 +4671,15 @@ function handleOrderSubmission(ss, params) {
     paymentStatus = '待櫃檯繳費';
   }
 
-  // 一-4：POS 現場單 (A001+) 與線上學生單 (B001+) 通道完全分流，離線 POS 單號 Axxx 絕不與線上單 Bxxx 撞號！
+  // POS 現場單 (001~100 循環) 與線上學生單 (101~200 循環)
   const channelPrefix = isMerchantPosRequest ? 'A' : 'B';
   let pickupNumber = '';
-  const requestedPosNum = String(params.pickupNumber || '').trim().toUpperCase();
-  const isOfflineResync = Boolean(params.isOfflineSync || params.isOfflinePending);
-  if (isMerchantPosRequest && isOfflineResync && /^[A]?\d{3,5}$/.test(requestedPosNum)) {
-    const normalizedOfflineNum = requestedPosNum.startsWith('A') ? requestedPosNum : ('A' + requestedPosNum.slice(-3).padStart(3, '0'));
-    const isTaken = recentOrders.some(o =>
-      o && String(o.storeId) === storeId &&
-      normalizeSheetDateStr(o.pickupDate) === pickupDateVal &&
-      String(o.pickupNumber || '').toUpperCase() === normalizedOfflineNum
-    );
-    if (!isTaken) {
-      pickupNumber = normalizedOfflineNum;
-      const propKey = `SEQ_${storeId}_${pickupDateVal}_A`;
-      const curSaved = parseInt(props.getProperty(propKey) || '0', 10);
-      const numVal = parseInt(normalizedOfflineNum.replace(/\D/g, ''), 10) || 0;
-      if (numVal > curSaved) props.setProperty(propKey, String(numVal));
+  const requestedPosNum = String(params.pickupNumber || '').trim();
+  const isOfflineResync = Boolean(params.isOfflineSync);
+  if (isMerchantPosRequest && isOfflineResync && /^\d{3}$/.test(requestedPosNum)) {
+    const nVal = parseInt(requestedPosNum, 10);
+    if (nVal >= 1 && nVal <= 100) {
+      pickupNumber = requestedPosNum;
     }
   }
   let originalOfflinePickupNumber = '';
@@ -4798,6 +4825,10 @@ function handleOrderSubmission(ss, params) {
     : `🟢 訂單 #${pickupNumber} 已成立 (${initialStatus})`;
   const pushBody = `【${storeRow.name}】${pickupTimeSlot}，應付 NT$${authoritativeFinalTotal} (${paymentMethod})，防偽核銷碼：${verificationCode}。`;
   dispatchOrderNotificationOnServer(ss, savedOrderObj, pushTitle, pushBody, initialStatus);
+
+  if (clientReqId && reqCache) {
+    try { reqCache.put('ORD_REQ_' + clientReqId, JSON.stringify(savedOrderObj), 600); } catch (e) {}
+  }
 
   return {
     order: sanitizeOrderForClientOutput(savedOrderObj, isMerchantPosRequest, true)
@@ -7377,18 +7408,31 @@ function handleGetPendingPrintJobs(ss, params) {
     : [];
 
   const nowMs = Date.now();
-  const maxAgeMs = 12 * 3600 * 1000; // 僅撈取最近 12 小時內之未列印單，避免重啟把數天前舊單全部印出
+  const maxAgeMs = 12 * 3600 * 1000;
   const jobs = [];
   for (let i = 0; i < recent.length; i++) {
     const o = recent[i];
     if (String(o.storeId || '').toUpperCase() !== storeId) continue;
-    const st = String(o.status || '');
+    const st = String(o.status || '').trim();
     if (st === '待付款 (LINE Pay 授權中)' || st.indexOf('已取消') >= 0 || st === '已退單' || st === '已完成') continue;
-    if (String(o.printStatus || '').toUpperCase() === 'PRINTED') continue;
+
+    // 1. 已進製作中 / 可取餐 → 三台正常出單（不反黑）
+    // 2. 尚未進製作中的預訂單（不限狀態字樣）→ 只印櫃檯反黑聯
+    let printMode = '';
+    if (st === '製作中' || st === '可取餐') {
+      if (String(o.printStatus || '').toUpperCase() === 'PRINTED') continue;
+      printMode = 'NORMAL';
+    } else if (o.isReservation || st.indexOf('預訂') >= 0 || st.indexOf('預約') >= 0 || st.indexOf('排程') >= 0) {
+      if (props.getProperty('PREPRINT_' + o.orderId)) continue;
+      printMode = 'PREORDER_COUNTER_ONLY';
+    } else {
+      continue;
+    }
+
     const pDate = normalizeSheetDateStr(o.pickupDate || todayStr);
     const createdTs = Number(o.createdAtTs) || 0;
     if (pDate < todayStr) continue;
-    if (createdTs > 0 && (nowMs - createdTs) > maxAgeMs && String(o.printStatus || '').toUpperCase() !== 'PENDING') continue;
+    if (!o.isReservation && createdTs > 0 && (nowMs - createdTs) > maxAgeMs && String(o.printStatus || '').toUpperCase() !== 'PENDING') continue;
 
     const rawItems = extractOrderStructuredItemsOnServer(o);
     const enrichedItems = rawItems.map(it => {
@@ -7430,6 +7474,7 @@ function handleGetPendingPrintJobs(ss, params) {
       customerNote: o.customerNote || '',
       createdAt: o.createdAt || '',
       reprintRequestedAtTs: Number(o.reprintRequestedAtTs) || 0,
+      printMode: printMode,
       items: enrichedItems
     });
   }
@@ -7447,8 +7492,16 @@ function handleGetPendingPrintJobs(ss, params) {
 function handleAckPrintJob(ss, params) {
   const storeId = String(params.storeId || 'S01').trim().toUpperCase();
   const orderId = String(params.orderId || '').trim();
+  const printMode = String(params.printMode || 'NORMAL').trim().toUpperCase();
   assertPrinterBridgeAuthorized(params, storeId);
   if (!orderId) throw new Error('缺少訂單編號 (orderId)');
+
+  // 預訂單第一階段（只印櫃檯反黑聯）：只記在 Properties，不動試算表 printStatus，確保前 20 分鐘能出第二次單
+  if (printMode === 'PREORDER_COUNTER_ONLY') {
+    const nowTs = Date.now();
+    PropertiesService.getScriptProperties().setProperty('PREPRINT_' + orderId, String(nowTs));
+    return { acked: true, storeId: storeId, orderId: orderId, printMode: printMode, printedAtTs: nowTs };
+  }
 
   const orderSheet = ss.getSheetByName('Orders');
   const located = locateOrderRowById(orderSheet, orderId);
@@ -7463,7 +7516,7 @@ function handleAckPrintJob(ss, params) {
   meta.printedAtTs = Date.now();
   rowVals[16] = JSON.stringify(meta);
   orderSheet.getRange(located.sheetRowIndex, 17).setValue(rowVals[16]);
-  return { acked: true, storeId: storeId, orderId: orderId, printedAtTs: meta.printedAtTs };
+  return { acked: true, storeId: storeId, orderId: orderId, printMode: printMode, printedAtTs: meta.printedAtTs };
 }
 
 function handleRequeuePrintJob(ss, params) {
