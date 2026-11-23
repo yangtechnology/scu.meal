@@ -454,6 +454,7 @@ function switchMerchantStore(storeId) {
     const targetStore = state.stores.find(s => s.id === storeId);
     showToast(`🛠️ ${t(`開發者已切換至「${targetStore ? targetStore.name : storeId}」`, `Developer switched to "${targetStore ? trTerm(targetStore.name) : storeId}"`)}`);
     renderMerchantView();
+    if (typeof syncMealFlowRealtimeSubscriptions === 'function') syncMealFlowRealtimeSubscriptions();
     syncCloud(false);
     return;
   }

@@ -13,16 +13,19 @@ const BRAND_CONFIG = {
   merchantTitle: 'MealFlow 特約商店'
 };
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzN2e0bi-jQG5RvGBpZYu5190f2JfX-6P1C8DxUy2aPyrrpbJpBl0oaTwYFRhAyBl8/exec';
+const GAS_URL = (window.MEALFLOW_REALTIME_CONFIG && typeof window.MEALFLOW_REALTIME_CONFIG.resolveApiUrl === 'function')
+  ? window.MEALFLOW_REALTIME_CONFIG.resolveApiUrl()
+  : 'https://script.google.com/macros/s/AKfycbzN2e0bi-jQG5RvGBpZYu5190f2JfX-6P1C8DxUy2aPyrrpbJpBl0oaTwYFRhAyBl8/exec';
 const DEFAULT_LINE_CLIENT_ID = localStorage.getItem('mealflow_system_line_client_id') || '2012260287';
 const AI_DISCOUNT_MIN_SUBTOTAL = 60; // 離峰現金折抵最低消費門檻 (NT$ 60，不含免洗餐具費)
 const LARGE_ORDER_DEPOSIT_THRESHOLD = 500; // 大額預訂團單門檻 (≥ NT$ 500 須線上支付或提前至櫃檯付訂確認)
 
-// 四-1：商業級單一節流輪詢常數（配合後端 5s CacheService 快照，徹底消除 GAS 並發雪崩與高耗電）
-const POLL_INTERVAL_ACTIVE_WATCH_MS = 12000; // 學生有進行中訂單 / KDS / 叫號看板前景輪詢：12 秒
-const POLL_INTERVAL_FOREGROUND_MS = 25000;   // 一般點餐頁瀏覽前景輪詢：25 秒
-const POLL_INTERVAL_BACKGROUND_MS = 45000;   // 背景分頁輪詢上限（隱藏時優先交由 Web Push / SW 推播）
-const POLL_MAX_BACKOFF_MS = 60000;           // 異常退避上限：60 秒
+// 四-1：商業級單一節流輪詢常數（啟用 Firestore 即時推播時，自動降速為 60 秒斷線保底）
+const POLL_INTERVAL_ACTIVE_WATCH_MS = 12000;     // 學生有進行中訂單 / KDS / 叫號看板前景輪詢（GAS 模式）：12 秒
+const POLL_INTERVAL_REALTIME_FALLBACK_MS = 60000; // 啟用 Firestore onSnapshot 即時監聽時之保底輪詢：60 秒
+const POLL_INTERVAL_FOREGROUND_MS = 25000;       // 一般點餐頁瀏覽前景輪詢：25 秒
+const POLL_INTERVAL_BACKGROUND_MS = 45000;       // 背景分頁輪詢上限（隱藏時優先交由 Web Push / SW 推播）
+const POLL_MAX_BACKOFF_MS = 60000;               // 異常退避上限：60 秒
 
 const STORE_ICONS = {
   'S01': '🍙', 'S02': '🍱', 'S03': '🥟', 'S04': '🍗',
@@ -4075,7 +4078,13 @@ function scheduleAdaptiveCloudPoll() {
   }
 
   const isFastWatch = shouldKeepBackgroundRuntimeAwake();
-  const baseDelay = isFastWatch ? POLL_INTERVAL_ACTIVE_WATCH_MS : POLL_INTERVAL_FOREGROUND_MS;
+  const hasActiveFirestoreWatch = Boolean(
+    window.__mfRealtimeState &&
+    (window.__mfRealtimeState.studentUnsub || window.__mfRealtimeState.merchantUnsub)
+  );
+  const baseDelay = hasActiveFirestoreWatch
+    ? POLL_INTERVAL_REALTIME_FALLBACK_MS
+    : (isFastWatch ? POLL_INTERVAL_ACTIVE_WATCH_MS : POLL_INTERVAL_FOREGROUND_MS);
   const backoffFactor = Math.pow(1.5, Math.min(4, state.pollFailureCount || 0));
   const jitter = Math.floor(Math.random() * 800);
   const nextDelay = Math.min(POLL_MAX_BACKOFF_MS, Math.round(baseDelay * backoffFactor) + jitter);
@@ -5033,6 +5042,9 @@ function applyRouteView() {
     applyDomSystemTranslation(document.body);
   }
   syncWatchedOrdersToServiceWorker(false);
+  if (typeof syncMealFlowRealtimeSubscriptions === 'function') {
+    syncMealFlowRealtimeSubscriptions();
+  }
   scheduleAdaptiveCloudPoll();
 }
 
@@ -5457,6 +5469,9 @@ function lockMerchantSession(customToastMsg = '') {
     sessionStorage.removeItem('mealflow_merchant_staff_role');
     sessionStorage.removeItem('mealflow_merchant_staff_name');
   } catch (e) {}
+  if (typeof stopMerchantLiveOrdersFirestoreWatch === 'function') {
+    stopMerchantLiveOrdersFirestoreWatch();
+  }
 
   // #16：主動通知伺服器端撤銷該 Session Token (Revoke Nonce)，防止登出後舊 Token 仍可被重放使用
   if (tokenToRevoke && tokenToRevoke.includes('.')) {
@@ -8687,5 +8702,226 @@ function copyOrderUrl(url) {
     navigator.clipboard.writeText(url).then(() => showToast('✅ 已複製專屬訂單網址！'));
   } else {
     showToast('訂單網址：' + url);
+  }
+}
+
+// ==================== 階段 3：Firebase Firestore 0.5 秒即時推播監聽引擎 ====================
+window.__mfRealtimeState = {
+  db: null,
+  studentUnsub: null,
+  studentWatchedOrderId: '',
+  merchantUnsub: null,
+  merchantWatchedStoreId: ''
+};
+
+function initMealFlowFirestore() {
+  if (window.__mfRealtimeState.db) return window.__mfRealtimeState.db;
+  const cfg = window.MEALFLOW_REALTIME_CONFIG;
+  if (!cfg || !cfg.isFirebaseConfigured || !cfg.isFirebaseConfigured()) return null;
+  if (!cfg.isCloudflareMode || !cfg.isCloudflareMode()) return null;
+  if (typeof firebase === 'undefined' || typeof firebase.firestore !== 'function') return null;
+
+  try {
+    if (!firebase.apps || firebase.apps.length === 0) {
+      firebase.initializeApp(cfg.FIREBASE_CONFIG);
+    }
+    window.__mfRealtimeState.db = firebase.firestore();
+    return window.__mfRealtimeState.db;
+  } catch (err) {
+    console.warn('[MealFlow Firestore] init skipped:', err);
+    return null;
+  }
+}
+
+function stopStudentOrderFirestoreWatch() {
+  const rt = window.__mfRealtimeState;
+  if (rt.studentUnsub) {
+    try { rt.studentUnsub(); } catch (e) {}
+    rt.studentUnsub = null;
+  }
+  rt.studentWatchedOrderId = '';
+}
+
+function startStudentOrderFirestoreWatch(orderId) {
+  const cleanId = String(orderId || '').trim();
+  const rt = window.__mfRealtimeState;
+  if (!cleanId) {
+    stopStudentOrderFirestoreWatch();
+    return;
+  }
+  if (rt.studentWatchedOrderId === cleanId && rt.studentUnsub) return;
+
+  stopStudentOrderFirestoreWatch();
+  const db = initMealFlowFirestore();
+  if (!db) return;
+
+  rt.studentWatchedOrderId = cleanId;
+  rt.studentUnsub = db.collection('order_status').doc(cleanId).onSnapshot(
+    (snap) => {
+      if (!snap || !snap.exists) return;
+      const d = snap.data() || {};
+      const idx = state.orders.findIndex(o => String(o.orderId) === cleanId);
+      if (idx >= 0) {
+        const cur = state.orders[idx];
+        const nextStatus = d.status || cur.status;
+        const nextNotify = Number(d.notifyCount ?? cur.notifyCount ?? 0);
+        const changed = (
+          cur.status !== nextStatus ||
+          cur.paymentStatus !== (d.paymentStatus || cur.paymentStatus) ||
+          Number(cur.notifyCount || 0) !== nextNotify
+        );
+        state.orders[idx] = {
+          ...cur,
+          status: nextStatus,
+          paymentStatus: d.paymentStatus || cur.paymentStatus,
+          notifyCount: nextNotify,
+          readyAtTs: Number(d.readyAtTs || cur.readyAtTs || 0),
+          lastCalledAtTs: Number(d.lastCalledAtTs || cur.lastCalledAtTs || 0)
+        };
+        saveCachedOrders(state.orders);
+        checkAndAlertWatchedStudentOrders();
+        updateHeaderMyOrdersBadge();
+        if (changed) {
+          if (state.routeMode === 'ticket' && state.trackingOrderId === cleanId) {
+            renderSingleTicketView();
+          } else if (state.routeMode === 'order') {
+            renderStudentOrderExperience();
+          }
+        }
+      } else {
+        // 本機尚未快取此訂單明細時，立即補查完整訂單
+        if (typeof tryAutoFetchMissingOrderById === 'function') {
+          tryAutoFetchMissingOrderById(cleanId);
+        }
+      }
+    },
+    (err) => {
+      console.warn('[MealFlow Firestore] order_status listener error:', err);
+    }
+  );
+}
+
+function stopMerchantLiveOrdersFirestoreWatch() {
+  const rt = window.__mfRealtimeState;
+  if (rt.merchantUnsub) {
+    try { rt.merchantUnsub(); } catch (e) {}
+    rt.merchantUnsub = null;
+  }
+  rt.merchantWatchedStoreId = '';
+}
+
+function startMerchantLiveOrdersFirestoreWatch(storeId) {
+  const cleanStore = String(storeId || '').trim().toUpperCase();
+  const rt = window.__mfRealtimeState;
+  if (!cleanStore) {
+    stopMerchantLiveOrdersFirestoreWatch();
+    return;
+  }
+  if (rt.merchantWatchedStoreId === cleanStore && rt.merchantUnsub) return;
+
+  stopMerchantLiveOrdersFirestoreWatch();
+  const db = initMealFlowFirestore();
+  if (!db) return;
+
+  rt.merchantWatchedStoreId = cleanStore;
+  let initialSnapshotDone = false;
+
+  rt.merchantUnsub = db.collection('live_orders').doc(cleanStore).collection('active').onSnapshot(
+    (snap) => {
+      if (!snap) return;
+      let anyChanged = false;
+
+      snap.docChanges().forEach((change) => {
+        const docData = change.doc.data() || {};
+        const oid = String(docData.orderId || change.doc.id || '').trim();
+        if (!oid) return;
+
+        if (change.type === 'removed') {
+          // 訂單已完成或取消被移出 live_orders；下一次保底 syncCloud 會同步最終歷史狀態
+          anyChanged = true;
+          return;
+        }
+
+        let structuredItems = [];
+        try {
+          structuredItems = Array.isArray(docData.structuredItems)
+            ? docData.structuredItems
+            : JSON.parse(docData.itemsJson || '[]');
+        } catch (e) {}
+
+        const incomingOrder = {
+          ...docData,
+          orderId: oid,
+          structuredItems
+        };
+
+        const idx = state.orders.findIndex(o => String(o.orderId) === oid);
+        if (idx >= 0) {
+          state.orders[idx] = { ...state.orders[idx], ...incomingOrder };
+        } else {
+          state.orders.unshift(incomingOrder);
+        }
+        anyChanged = true;
+
+        if (initialSnapshotDone && state.routeMode === 'store' && state.isMerchantUnlocked) {
+          if (!state.knownStoreOrderIds.has(oid)) {
+            state.knownStoreOrderIds.add(oid);
+            if (String(incomingOrder.storeId).toUpperCase() === cleanStore && incomingOrder.status === '製作中') {
+              if (typeof announceNewKdsOrder === 'function') {
+                announceNewKdsOrder(incomingOrder);
+              }
+            }
+          }
+        } else {
+          state.knownStoreOrderIds.add(oid);
+        }
+      });
+
+      initialSnapshotDone = true;
+      if (!anyChanged) return;
+
+      saveCachedOrders(state.orders);
+      if (typeof updateMerchantHeaderBadgesOnly === 'function') {
+        updateMerchantHeaderBadgesOnly();
+      }
+      if (typeof refreshCustomerPickupBoardIfOpen === 'function') {
+        refreshCustomerPickupBoardIfOpen(true);
+      }
+      if (state.routeMode === 'store' && state.isMerchantUnlocked && state.storeTabMode === 'kds') {
+        const storeObj = state.stores.find(s => String(s.id).toUpperCase() === cleanStore);
+        if (typeof renderMerchantOrdersOnly === 'function') {
+          renderMerchantOrdersOnly(storeObj);
+        }
+      }
+    },
+    (err) => {
+      console.warn('[MealFlow Firestore] live_orders listener error:', err);
+    }
+  );
+}
+
+function syncMealFlowRealtimeSubscriptions() {
+  const cfg = window.MEALFLOW_REALTIME_CONFIG;
+  if (!cfg || !cfg.isCloudflareMode || !cfg.isCloudflareMode() || !cfg.isFirebaseConfigured || !cfg.isFirebaseConfigured()) {
+    stopStudentOrderFirestoreWatch();
+    stopMerchantLiveOrdersFirestoreWatch();
+    return;
+  }
+
+  // 1. 學生憑證頁 / 追蹤單：監聽單一 order_status/{orderId}
+  const activeStudentOrderId = state.routeMode === 'ticket'
+    ? state.trackingOrderId
+    : (state.routeMode === 'order' ? (state.myCreatedOrderId || '') : '');
+  if (activeStudentOrderId) {
+    startStudentOrderFirestoreWatch(activeStudentOrderId);
+  } else {
+    stopStudentOrderFirestoreWatch();
+  }
+
+  // 2. 店家後台解鎖後（或店內看板模式）：監聽 live_orders/{storeId}/active
+  if ((state.routeMode === 'store' && isMerchantSessionValidNow()) || state.routeMode === 'board') {
+    startMerchantLiveOrdersFirestoreWatch(state.merchantStoreId || 'S01');
+  } else {
+    stopMerchantLiveOrdersFirestoreWatch();
   }
 }

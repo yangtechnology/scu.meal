@@ -136,7 +136,16 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.hostname.includes('script.google.com') || url.hostname.includes('script.googleusercontent.com')) {
+  if (
+    url.hostname.includes('script.google.com') ||
+    url.hostname.includes('script.googleusercontent.com') ||
+    url.hostname.endsWith('.workers.dev') ||
+    url.hostname === 'api.yangtechnology.com' ||
+    url.hostname === '127.0.0.1' ||
+    url.hostname === 'localhost' ||
+    url.hostname.includes('firestore.googleapis.com') ||
+    url.hostname.includes('firebaseio.com')
+  ) {
     return;
   }
 
