@@ -1900,70 +1900,36 @@ function generateDeterministicQrSvg(dataString, targetSize = 188) {
  */
 function generateMerchantPosOfflinePickupNumber(storeId, pickupDateStr) {
   const targetDate = normalizeDateStr(pickupDateStr);
-  const storageKey = `mealflow_pos_seq_A_${storeId}_${targetDate}`;
-  let maxSeq = 0;
-
+  const storageKey = `mealflow_pos_seq_cycle_${storeId}_${targetDate}`;
+  let curCount = 0;
   try {
-    const savedSeq = parseInt(localStorage.getItem(storageKey) || '0', 10);
-    if (savedSeq > maxSeq) maxSeq = savedSeq;
+    curCount = parseInt(localStorage.getItem(storageKey) || '0', 10) || 0;
   } catch (e) {}
-
-  state.orders.forEach(o => {
-    if (o.storeId === storeId && normalizeDateStr(o.pickupDate) === targetDate) {
-      const m = String(o.pickupNumber || '').toUpperCase().match(/^A(\d{1,4})$/);
-      if (m) {
-        const val = parseInt(m[1], 10);
-        if (val > maxSeq) maxSeq = val;
-      }
-    }
-  });
-
-  const nextSeq = maxSeq + 1;
+  const nextNum = (curCount % 100) + 1;
   try {
-    localStorage.setItem(storageKey, String(nextSeq));
+    localStorage.setItem(storageKey, String(nextNum));
   } catch (e) {}
-  return 'A' + String(nextSeq).padStart(3, '0');
+  return String(nextNum).padStart(3, '0');
 }
 
 function previewNextMerchantPosPickupNumber(storeId, pickupDateStr) {
   const targetDate = normalizeDateStr(pickupDateStr);
-  const storageKey = `mealflow_pos_seq_A_${storeId}_${targetDate}`;
-  let maxSeq = 0;
+  const storageKey = `mealflow_pos_seq_cycle_${storeId}_${targetDate}`;
+  let curCount = 0;
   try {
-    const savedSeq = parseInt(localStorage.getItem(storageKey) || '0', 10);
-    if (savedSeq > maxSeq) maxSeq = savedSeq;
+    curCount = parseInt(localStorage.getItem(storageKey) || '0', 10) || 0;
   } catch (e) {}
-  state.orders.forEach(o => {
-    if (o.storeId === storeId && normalizeDateStr(o.pickupDate) === targetDate) {
-      const m = String(o.pickupNumber || '').toUpperCase().match(/^A(\d{1,4})$/);
-      if (m) {
-        const val = parseInt(m[1], 10);
-        if (val > maxSeq) maxSeq = val;
-      }
-    }
-  });
-  return 'A' + String(maxSeq + 1).padStart(3, '0');
+  const nextNum = (curCount % 100) + 1;
+  return String(nextNum).padStart(3, '0');
 }
 
 function syncLocalSeqWithAuthoritativeNumber(storeId, pickupDateStr, authNumStr) {
   const targetDate = normalizeDateStr(pickupDateStr);
-  const cleanStr = String(authNumStr || '').trim().toUpperCase();
-  const aMatch = cleanStr.match(/^A(\d{1,4})$/);
-  if (aMatch) {
-    const numVal = parseInt(aMatch[1], 10);
-    const storageKey = `mealflow_pos_seq_A_${storeId}_${targetDate}`;
+  const numVal = parseInt(String(authNumStr || '').replace(/\D/g, ''), 10);
+  if (!isNaN(numVal) && numVal >= 1 && numVal <= 100) {
+    const storageKey = `mealflow_pos_seq_cycle_${storeId}_${targetDate}`;
     try {
-      const cur = parseInt(localStorage.getItem(storageKey) || '0', 10);
-      if (numVal > cur) localStorage.setItem(storageKey, String(numVal));
-    } catch (e) {}
-    return;
-  }
-  const storageKey = `mealflow_seq_${storeId}_${targetDate}`;
-  const numVal = parseInt(cleanStr.replace(/\D/g, ''), 10);
-  if (!isNaN(numVal) && numVal > 0) {
-    try {
-      const cur = parseInt(localStorage.getItem(storageKey) || '0', 10);
-      if (numVal > cur) localStorage.setItem(storageKey, String(numVal));
+      localStorage.setItem(storageKey, String(numVal));
     } catch (e) {}
   }
 }
@@ -7034,6 +7000,7 @@ function editCartItemOptions(index, isPos = false) {
 }
 
 function changeCartItemQty(index, delta) {
+  state.currentCartRequestId = null;
   if (!state.cartItems[index]) return;
   state.cartItems[index].qty = (state.cartItems[index].qty || 1) + delta;
   if (state.cartItems[index].qty <= 0) {
@@ -7044,6 +7011,7 @@ function changeCartItemQty(index, delta) {
 }
 
 function removeCartItem(index) {
+  state.currentCartRequestId = null;
   state.cartItems.splice(index, 1);
   state.checkoutErrorBannerMsg = '';
   updateCartUI();
@@ -7296,6 +7264,7 @@ function updateCartUI() {
   const totalCount = state.cartItems.reduce((sum, i) => sum + (i.qty || 1), 0);
   const subtotal = state.cartItems.reduce((sum, i) => sum + i.price * (i.qty || 1), 0);
   const cutleryFee = (subtotal > 0 && state.checkoutNeedCutlery) ? storeCutleryPrice : 0;
+  const takeoutFee = (subtotal > 0 && state.checkoutDineType === '外帶自取') ? 1 : 0;
 
   const isStorePausedCart = Boolean(store && (store.isOpen === false || store.canPreOrder === false));
   if (store && !isStorePausedCart && store.canOrderNow === false && state.checkoutTimeMode === 'NOW') {
@@ -7337,7 +7306,7 @@ function updateCartUI() {
   );
 
   const discount = Math.min(subtotal, evalPromo.promoDiscount + (evalPromo.comboDiscount || 0) + evalPromo.couponDiscount);
-  const finalTotal = Math.max(0, subtotal + cutleryFee - discount);
+  const finalTotal = Math.max(0, subtotal + cutleryFee + takeoutFee - discount);
   const isLargeOrderReserve = isReserve && finalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD;
 
   const viewCartBtn = document.getElementById('viewCartBtn');
@@ -7505,7 +7474,7 @@ function updateCartUI() {
 
       <label class="field-label">🍽️ ${t('用餐方式（學餐自取）', 'Dining Mode (Food Court Self-Pickup)', '受取方法', '식사 방식 (자율 픽업)')}</label>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-        <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取', 'Takeout Pickup', 'テイクアウト', '포장 픽업')}</button>
+        <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="state.currentCartRequestId=null; setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取 (+$1)', 'Takeout (+$1)', 'テイクアウト (+$1)', '포장 (+$1)')}</button>
         <button type="button" class="filter-chip ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in Pickup', '店内飲食', '매장 식사')}</button>
       </div>
 
@@ -7623,6 +7592,7 @@ function updateCartUI() {
   const modalTotalEl = document.getElementById('cartModalTotal');
   if (modalTotalEl) {
     const tags = [];
+    if (takeoutFee > 0) tags.push(t('外帶+$1', 'Takeout +$1', 'テイクアウト+$1', '포장 +$1'));
     if (cutleryFee > 0) tags.push(t(`含免洗餐具+$${cutleryFee}`, `Cutlery +$${cutleryFee}`, `カトラリー+$${cutleryFee}`, `수저 +$${cutleryFee}`));
     if (discount > 0) tags.push(t(`優惠折抵-$${discount}`, `Promo -$${discount}`, `割引-$${discount}`, `할인 -$${discount}`));
     modalTotalEl.innerHTML = tags.length > 0
@@ -7631,10 +7601,15 @@ function updateCartUI() {
   }
   const finalSubmitBtn = document.getElementById('finalSubmitOrderBtn');
   if (finalSubmitBtn) {
-    finalSubmitBtn.disabled = isStorePausedCart;
-    finalSubmitBtn.innerText = isStorePausedCart
-      ? t('⛔ 本店暫停營業中（暫停點餐與預訂）', '⛔ Store Paused (Ordering Unavailable)', '⛔ 営業休止中（注文・予約停止）', '⛔ 영업 중지 중 (주문・예약 불가)')
-      : t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
+    if (state.isStudentSubmittingOrder) {
+      finalSubmitBtn.disabled = true;
+      finalSubmitBtn.innerText = t('⏳ 訂單傳送中，請勿重複點擊...', '⏳ Submitting order, please wait...', '⏳ 送信中です。連打しないでください...', '⏳ 주문 전송 중입니다...');
+    } else {
+      finalSubmitBtn.disabled = isStorePausedCart;
+      finalSubmitBtn.innerText = isStorePausedCart
+        ? t('⛔ 本店暫停營業中（暫停點餐與預訂）', '⛔ Store Paused (Ordering Unavailable)', '⛔ 営業休止中（注文・予約停止）', '⛔ 영업 중지 중 (주문・예약 불가)')
+        : t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
+    }
   }
   if (state.lang && state.lang !== 'zh-TW') {
     applyDomSystemTranslation(document.getElementById('cartModal'));
@@ -7643,10 +7618,10 @@ function updateCartUI() {
 }
 
 async function submitStudentCartOrder() {
+  if (state.isStudentSubmittingOrder) return; // 硬鎖：連點直接無視
   let store = state.stores.find(s => s.id === state.selectedStoreId);
   if (!store || state.cartItems.length === 0) return;
 
-  // #1 關鍵修正：必須在使用者點擊「確認餐點並送出訂單」手勢當下（任何 await 之前）同步解鎖音訊與請求通知權限，否則 iOS Safari / Android Chrome 會在 await 後丟失 User Gesture！
   ensureAudioContextUnlocked(false);
   updateBackgroundSilentAudioKeepAlive();
   try {
@@ -7656,432 +7631,185 @@ async function submitStudentCartOrder() {
   } catch (e) {}
 
   state.checkoutErrorBannerMsg = '';
-
   if (navigator.onLine === false) {
-    state.checkoutErrorBannerMsg = '偵測到您目前處於離線或飛航模式。為確保交易安全與廚房即時接單，線上點餐必須保持網路連線，請恢復網路後再試！';
+    state.checkoutErrorBannerMsg = '偵測到您目前處於離線模式，請恢復網路連線後再送出訂單！';
     updateCartUI();
-    showToast('🚫 網路已中斷，無法進行線上結帳！');
     return;
   }
 
-  // 防濫用與頻率限制 (B2)：防止短時間重複連點或腳本洗單
-  if (state.lastStudentSubmitTs && (Date.now() - state.lastStudentSubmitTs) < 6000) {
-    showToast('⏳ 訂單剛送出處理中，請勿短時間重複點擊！');
-    return;
+  state.isStudentSubmittingOrder = true;
+  state.lastStudentSubmitTs = Date.now();
+  if (!state.currentCartRequestId) {
+    state.currentCartRequestId = 'REQ_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   }
 
-  // #43 & B11：結帳前即時購物車有效性與菜單變更同步檢查（保持按鈕平滑 Loading，不再中途閃爍恢復）
   const btn = document.getElementById('finalSubmitOrderBtn');
-  const restoreSubmitBtn = () => {
-    if (!btn) return;
-    btn.classList.remove('btn-is-busy');
-    btn.disabled = false;
-    btn.innerText = t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
+  const unlockSubmitBtnOnError = () => {
+    state.isStudentSubmittingOrder = false;
+    state.lastStudentSubmitTs = 0;
+    if (btn) {
+      btn.classList.remove('btn-is-busy');
+      btn.disabled = false;
+      btn.innerText = t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
+    }
   };
-  if (btn) {
-    btn.classList.add('btn-is-busy');
-    btn.disabled = true;
-    btn.innerText = t('⏳ 正在核對菜單與送出訂單...', '⏳ Verifying menu & submitting...', '⏳ メニュー確認・注文送信中...', '⏳ 메뉴 확인 및 주문 전송 중...');
-  }
-  if (Date.now() - (state.lastCloudSyncDoneTs || 0) > 3500) {
-    try {
-      await syncCloud(false);
-    } catch (e) {}
-    store = state.stores.find(s => s.id === state.selectedStoreId) || store;
-  }
-
-  // B14：若店家未開通線上 LINE Pay，自動改以現場付款處理
-  if (store.enableOnlineLinePay !== true && state.checkoutPayMethod === 'LINE Pay') {
-    state.checkoutPayMethod = '現場櫃檯付現';
-  }
-
-  // v24 嚴格區分：「暫停營業 (isOpen === false / canPreOrder === false)」全面封鎖立即單與預訂單！
-  if (store.isOpen === false || store.canPreOrder === false) {
-    state.checkoutErrorBannerMsg = t(
-      `「${store.name}」目前為「暫停營業」狀態，暫停現場點餐與所有預訂服務，請稍後再試或改選其他營業中櫃位。`,
-      `"${trTerm(store.name)}" is currently PAUSED. Both immediate ordering and pre-orders are unavailable.`,
-      `「${trTerm(store.name)}」は現在営業休止中のため、注文・予約を停止しております。`,
-      `"${trTerm(store.name)}" 매장은 현재 영업 중지 상태이므로 주문 및 예약이 불가합니다.`
-    );
-    restoreSubmitBtn();
-    updateCartUI();
-    showToast(t('⛔ 本店目前暫停營業中，暫停現場點餐與預訂服務！', '⛔ Store is currently paused!'));
-    return;
-  }
-
-  // #21 & #43：檢查店家是否剛打烊、進入午休時段或公休（非暫停營業，允許預訂）
-  if (store.canOrderNow === false && state.checkoutTimeMode === 'NOW') {
-    state.checkoutTimeMode = 'RESERVE';
-    state.checkoutErrorBannerMsg = `「${store.name}」${store.businessStatusLabel || '目前已打烊'}，系統已自動為您切換為「📅 預訂取餐」模式，請確認預訂時段與聯絡電話後再次送出！`;
-    restoreSubmitBtn();
-    updateCartUI();
-    showToast('🌙 店家目前已打烊，已為您切換為「預訂取餐」模式！');
-    return;
-  }
-
-  // #43 & B1：逐一檢查購物車內每個品項是否已下架、已售罄或單價/加購價已調整（優先比對 id，其次 category+name，避免同名不同類互撞）
-  const priceChangedNotices = [];
-  for (let i = 0; i < state.cartItems.length; i++) {
-    const ci = state.cartItems[i];
-    const ciBaseName = String(ci.baseName || ci.name || '').trim();
-    const ciCat = String(ci.category || '').trim();
-    const dbMenu = (store.menus || []).find(menu => String(menu.id) === String(ci.id))
-      || (ciCat ? (store.menus || []).find(menu => String(menu.category || '').trim() === ciCat && String(menu.name || '').trim() === ciBaseName) : null)
-      || (store.menus || []).find(menu => String(menu.name || '').trim() === ciBaseName);
-    if (!dbMenu) {
-      state.checkoutErrorBannerMsg = `購物車內的「${ciBaseName}」已被店家下架或停售，請先移除該品項後再結帳。`;
-      restoreSubmitBtn();
-      updateCartUI();
-      showToast(`🚫 抱歉，「${ciBaseName}」已停售！`);
-      return;
-    }
-    if (!ci.category && dbMenu.category) ci.category = dbMenu.category;
-    if (dbMenu.soldOut) {
-      state.checkoutErrorBannerMsg = `購物車內的「${dbMenu.name}」剛剛已售罄，請先移除該品項後再結帳。`;
-      restoreSubmitBtn();
-      updateCartUI();
-      showToast(`🚫 抱歉，「${dbMenu.name}」今日已售罄！`);
-      return;
-    }
-    // #14 檢查每日限量剩餘庫存
-    if (Number(dbMenu.dailyLimit) > 0 && dbMenu.remainingToday !== null && dbMenu.remainingToday !== undefined) {
-      const reqQtyForMenu = state.cartItems
-        .filter(x => String(x.id) === String(dbMenu.id))
-        .reduce((s, x) => s + (Number(x.qty) || 1), 0);
-      if (reqQtyForMenu > Number(dbMenu.remainingToday)) {
-        state.checkoutErrorBannerMsg = `「${dbMenu.name}」今日限量 ${dbMenu.dailyLimit} 份，目前僅剩 ${dbMenu.remainingToday} 份（您的購物車共有 ${reqQtyForMenu} 份），請減少數量後再送出！`;
-        restoreSubmitBtn();
-        updateCartUI();
-        showToast(`⚠️ 「${dbMenu.name}」今日限量僅剩 ${dbMenu.remainingToday} 份！`);
-        return;
-      }
-    }
-    // 重新計算最新白名單單價與選項加價（支援三-1 多數量 ×N 與巢狀套餐子規格 subOptions）
-    let calcExtra = 0;
-    const selObj = ci.selections || {};
-    const dbOpts = dbMenu.options || {};
-    const flatChoicePriceMap = {};
-    Object.keys(dbOpts).forEach(grpName => {
-      const grp = dbOpts[grpName];
-      const choices = (Array.isArray(grp.choices) ? grp.choices : (Array.isArray(grp) ? grp : [])).map(normalizeChoiceSpec);
-      choices.forEach(c => {
-        flatChoicePriceMap[c.label] = c.extra;
-        if (Array.isArray(c.subOptions)) {
-          c.subOptions.forEach(sub => {
-            (sub.choices || []).map(normalizeChoiceSpec).forEach(sc => {
-              flatChoicePriceMap[sc.label] = sc.extra;
-            });
-          });
-        }
-      });
-    });
-    Object.values(selObj).forEach(chosenVal => {
-      if (!chosenVal) return;
-      String(chosenVal).split(',').map(s => s.trim()).filter(Boolean).forEach(sName => {
-        const qm = sName.match(/^(.+?)\s*[×x]\s*(\d+)$/i);
-        const baseLbl = qm ? qm[1].trim() : sName;
-        const mult = qm ? Math.max(1, Math.min(10, parseInt(qm[2], 10) || 1)) : 1;
-        if (flatChoicePriceMap[baseLbl] !== undefined) {
-          calcExtra += flatChoicePriceMap[baseLbl] * mult;
-        }
-      });
-    });
-    const latestUnitPrice = Math.max(0, Number(dbMenu.price || 0) + calcExtra);
-    if (Number(ci.price) !== latestUnitPrice) {
-      priceChangedNotices.push(`「${dbMenu.name}」單價由 NT$${ci.price} 更新為 NT$${latestUnitPrice}`);
-      ci.basePrice = Number(dbMenu.price || 0);
-      ci.price = latestUnitPrice;
-    }
-  }
-
-  if (priceChangedNotices.length > 0) {
-    saveStudentCartDraft();
-    state.checkoutErrorBannerMsg = `店家剛剛調整了菜單價格（${priceChangedNotices.join('、')}），系統已自動更新購物車最新金額，請確認無誤後再次點擊「確認餐點並送出訂單」！`;
-    restoreSubmitBtn();
-    updateCartUI();
-    showToast('⚠️ 菜單價格有異動，已自動更新購物車總金額，請確認後再按送出！');
-    return;
-  }
-
-  const isReserve = state.checkoutTimeMode === 'RESERVE';
-  const isCashOrder = state.checkoutPayMethod === '現場櫃檯付現';
-  const cleanPhone = (state.checkoutPhone || '').replace(/\D/g, '');
-  const cleanTaxId = (state.checkoutTaxId || '').replace(/\D/g, '');
-
-  if (cleanTaxId && !validateTaiwanTaxId(cleanTaxId)) {
-    state.checkoutErrorBannerMsg = t(
-      '統一編號格式或邏輯檢核碼錯誤，請輸入有效之 8 碼台灣統一編號或留空。',
-      'Invalid Taiwan Tax ID checksum. Enter a valid 8-digit Tax ID or leave blank.',
-      '統一番号（8桁）の形式またはチェックサムが正しくありません。',
-      '유효한 8자리 대만 사업자등록번호를 입력하거나 비워 두세요.'
-    );
-    restoreSubmitBtn();
-    updateCartUI();
-    showToast(`⚠️ ${t('統一編號邏輯檢核未通過！', 'Invalid 8-digit Taiwan Tax ID!', '統一番号エラー', '사업자번호 오류')}`);
-    return;
-  }
-
-  // #20 防棄單保護：預訂取餐或選擇「現場付款 / 取餐時櫃檯付現」皆強制驗證有效 10 碼台灣手機號碼 (09xxxxxxxx)
-  if (isReserve || isCashOrder) {
-    if (!/^09\d{8}$/.test(cleanPhone)) {
-      state.checkoutErrorBannerMsg = isCashOrder
-        ? (store.enableOnlineLinePay === true
-            ? '選擇「取餐時櫃檯付現」必須填寫有效的 10 碼手機號碼（09xxxxxxxx），以利櫃檯核對並防止惡作劇棄單。'
-            : '選擇「現場付款」必須填寫有效的 10 碼手機號碼（09xxxxxxxx），以利櫃檯核對並防止棄單。')
-        : '預訂取餐必須填寫有效的 10 碼聯絡手機號碼（09xxxxxxxx）。';
-      restoreSubmitBtn();
-      updateCartUI();
-      showToast('⚠️ 請填寫有效的 10 碼手機號碼（如 0912345678）！');
-      document.getElementById('checkoutPhoneInput')?.focus();
-      return;
-    }
-    if (isCashOrder) {
-      const todayStr = getTodayDateStr();
-      const myUnpaidActiveCashOrders = getMyTrackedOrdersList().filter(o =>
-        normalizeDateStr(o.pickupDate) === todayStr &&
-        !String(o.status).includes('已取消') &&
-        o.status !== '已完成' &&
-        !isOrderConsiderPaid(o)
-      );
-      if (myUnpaidActiveCashOrders.length >= 2) {
-        state.checkoutErrorBannerMsg = '您目前已有 2 筆尚未至櫃檯付款領取的訂單，請先完成領取付款後再點新單。';
-        restoreSubmitBtn();
-        updateCartUI();
-        showToast('🛑 未付款訂單已達上限 (2筆)，請先至櫃檯取餐付款！');
-        return;
-      }
-    }
-  }
-
-  if (isReserve) {
-    const slotsWithQuota = getValidPickupTimeSlotsWithQuota(state.checkoutReserveDate, store.id);
-    const targetSlot = slotsWithQuota.find(s => s.time === state.checkoutReserveTime);
-    const totalReqPortions = state.cartItems.reduce((s, i) => s + (Number(i.qty) || 1), 0);
-    if (!targetSlot || targetSlot.isFull || targetSlot.remaining < totalReqPortions) {
-      state.checkoutErrorBannerMsg = targetSlot && (targetSlot.isFull || targetSlot.remaining < totalReqPortions)
-        ? `抱歉，${state.checkoutReserveDate} ${state.checkoutReserveTime} 時段僅剩 ${targetSlot.remaining} 份產能配額（本次購物車共 ${totalReqPortions} 份，上限 ${targetSlot.maxCap} 份），請改選相鄰可用時段！`
-        : '您選擇的預訂時段已過期或非營業時間，系統已重新調整時段，請確認後再次送出。';
-      restoreSubmitBtn();
-      updateCartUI();
-      showToast('⚠️ 該預訂時段產能配額不足或已過期，請重新選擇時段！');
-      return;
-    }
-  }
-
-  if (cleanPhone.length >= 3) {
-    state.savedCustomerPhone = state.checkoutPhone.trim();
-    try { localStorage.setItem('mealflow_saved_customer_phone_v12', state.savedCustomerPhone); } catch (e) {}
-  }
-
-  const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
-  const subtotal = state.cartItems.reduce((sum, i) => sum + i.price * (i.qty || 1), 0);
-  const cutleryFee = state.checkoutNeedCutlery ? storeCutleryPrice : 0;
-  const evalPromo = evaluateStudentPromoAndCoupon(store, state.cartItems, subtotal, isReserve, state.checkoutReserveTime);
-  const promoActive = evalPromo.promoActive;
-  const discount = Math.min(subtotal, evalPromo.promoDiscount + (evalPromo.comboDiscount || 0) + evalPromo.couponDiscount);
-  const finalTotal = Math.max(0, subtotal + cutleryFee - discount);
-  const promoTags = [];
-  if (promoActive && store.promoText && store.promoText !== '無優惠') promoTags.push(store.promoText);
-  if (evalPromo.comboDiscount > 0 && Array.isArray(evalPromo.comboAppliedRules)) {
-    evalPromo.comboAppliedRules.forEach(cr => promoTags.push(`組合折$${cr.amount}(${cr.name})`));
-  }
-  if (evalPromo.matchedCoupon) promoTags.push(`優惠碼 ${evalPromo.matchedCoupon.code}`);
-  const promoApplied = promoTags.length > 0 ? promoTags.join(' + ') : '一般點餐';
-  const generatedOrderId = generateOrderToken();
-  const isDineInPostPay = Boolean(state.checkoutPayMethod === '內用餐後結帳' && store.allowDineInPostPay && state.checkoutDineType === '內用自取' && !isReserve);
-
-  const isLargeOrderCashReserve = isReserve && finalTotal >= LARGE_ORDER_DEPOSIT_THRESHOLD && state.checkoutPayMethod === '現場櫃檯付現';
-  const paymentDeadline = isLargeOrderCashReserve ? normalizeDateStr(state.checkoutReserveDate) : '';
-  const paymentStatus = isDineInPostPay
-    ? '內用餐後結帳'
-    : (isLargeOrderCashReserve ? '待櫃檯繳費' : (state.checkoutPayMethod === '現場櫃檯付現' ? '取餐付現' : '已付款'));
-
-  const pickupDateVal = isReserve ? normalizeDateStr(state.checkoutReserveDate) : getTodayDateStr();
-  const nowTime = getTaipeiTimeHHMMSS();
-  const pickupTimeVal = isReserve ? state.checkoutReserveTime : nowTime.slice(0, 5);
-  const pickupTimeSlot = isReserve
-    ? `📅 預訂 ${pickupDateVal} ${state.checkoutReserveTime}`
-    : `⚡ 立即製作 (約${store.avgPrepMinutes}分)`;
-
-  const structuredItems = state.cartItems.map(i => normalizeOrderItemEntry({
-    id: i.id,
-    category: i.category || '',
-    baseName: i.baseName || i.name,
-    basePrice: i.basePrice !== undefined ? i.basePrice : i.price,
-    price: i.price,
-    qty: i.qty || 1,
-    selections: i.selections || {},
-    itemNote: i.itemNote || '',
-    snapshotAtTs: Date.now()
-  }));
-
-  if (promoActive && (store.promoMode === 'gift' || store.promoMode === 'freebie') && subtotal >= evalPromo.minSpend && state.checkoutWantGift !== false && !evalPromo.isGiftSoldOut) {
-    const giftName = evalPromo.giftMenuObj ? evalPromo.giftMenuObj.name : store.promoText;
-    structuredItems.push(normalizeOrderItemEntry({
-      id: evalPromo.giftMenuObj ? evalPromo.giftMenuObj.id : 'GIFT-AI',
-      category: (evalPromo.giftMenuObj && evalPromo.giftMenuObj.category) || '贈品',
-      baseName: `${giftName} (贈品)`,
-      basePrice: 0,
-      price: 0,
-      qty: 1,
-      selections: {},
-      isGift: true,
-      snapshotAtTs: Date.now()
-    }));
-  }
-
-  const requestOrderPayload = {
-    orderId: generatedOrderId,
-    storeId: store.id,
-    storeName: store.name,
-    campus: store.campus,
-    studentId: isReserve ? '📅 預訂點餐' : '📱 掃碼點餐',
-    orderSource: isReserve ? '📅 預訂點餐' : '📱 掃碼點餐',
-    dineType: state.checkoutDineType,
-    couponCode: evalPromo.matchedCoupon ? evalPromo.matchedCoupon.code : '',
-    isDineInPostPay: isDineInPostPay,
-    customerNote: (state.checkoutNote || '').trim(),
-    taxId: cleanTaxId,
-    structuredItems,
-    items: structuredItems,
-    subtotal,
-    cutleryFee,
-    needCutlery: state.checkoutNeedCutlery,
-    wantGift: state.checkoutWantGift !== false,
-    discount,
-    manualDiscount: 0,
-    finalTotal,
-    promoApplied,
-    pickupTimeSlot,
-    paymentMethod: state.checkoutPayMethod,
-    isReservation: isReserve,
-    pickupDate: pickupDateVal,
-    pickupTime: pickupTimeVal,
-    paidAtDate: getTodayDateStr(),
-    customerPhone: (state.checkoutPhone || '').trim(),
-    paymentDeadline,
-    paymentStatus,
-    transactionId: '',
-    paymentAuthToken: '',
-    clientDeviceId: state.clientDeviceId,
-    notifyCount: 0,
-    lineUserId: state.lineProfile.lineUserId || '',
-    customerEmail: state.lineProfile.email || '',
-    isDivertedOrder: promoActive,
-    createdAt: nowTime,
-    createdAtTs: getCalibratedNowMs(),
-    cookingStartedAtTs: isReserve ? 0 : getCalibratedNowMs()
-  };
-
-  if (state.checkoutPayMethod === 'LINE Pay') {
-    const payResult = await requestOnlinePaymentGateway(state.checkoutPayMethod, finalTotal, store.name, store.id, generatedOrderId, requestOrderPayload);
-    if (!payResult || !payResult.approved || !payResult.paymentAuthToken) {
-      restoreSubmitBtn();
-      return;
-    }
-    requestOrderPayload.transactionId = payResult.transactionId || '';
-    requestOrderPayload.paymentAuthToken = payResult.paymentAuthToken || '';
-  }
 
   if (btn) {
     btn.classList.add('btn-is-busy');
     btn.disabled = true;
-    btn.innerText = t('⏳ 正在向雲端伺服器送出訂單...', '⏳ Submitting order to server...', '⏳ サーバーへ注文送信中...', '⏳ 서버로 주문 전송 중...');
+    btn.innerText = t('⏳ 訂單傳送中，請勿重複點擊...', '⏳ Submitting order, please wait...', '⏳ 送信中です。連打しないでください...', '⏳ 주문 전송 중입니다...');
   }
-
-  let authoritativeOrder = null;
 
   try {
-    setSyncState('syncing', '雲端驗算與核發防偽碼中...');
-    let data = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timeoutId = controller ? setTimeout(() => controller.abort(), 16000) : null;
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        mode: 'cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        signal: controller ? controller.signal : undefined,
-        body: JSON.stringify({
-          action: 'submitOrder',
-          ...requestOrderPayload,
-          orderSource: requestOrderPayload.studentId,
-          campus: store.campus,
-          items: structuredItems
-        })
-      });
-      if (timeoutId) clearTimeout(timeoutId);
-      data = await res.json();
-      if (data && !data.success && String(data.message || '').includes('系統尖峰') && attempt < 2) {
-        await new Promise(r => setTimeout(r, 1100 * (attempt + 1)));
-        continue;
-      }
-      break;
+    if (Date.now() - (state.lastCloudSyncDoneTs || 0) > 3500) {
+      try { await syncCloud(false); } catch (e) {}
+      store = state.stores.find(s => s.id === state.selectedStoreId) || store;
     }
 
-    if (!data || !data.success || !data.order || !data.order.pickupNumber || !data.order.verificationCode) {
-      throw new Error((data && data.message) || '雲端伺服器白名單計價驗算或防偽簽章未通過');
+    if (store.enableOnlineLinePay !== true && state.checkoutPayMethod === 'LINE Pay') {
+      state.checkoutPayMethod = '現場櫃檯付現';
     }
 
-    authoritativeOrder = sanitizeIncomingOrder({
-      ...requestOrderPayload,
-      ...data.order,
-      customerPhone: requestOrderPayload.customerPhone,
+    if (store.isOpen === false || store.canPreOrder === false) {
+      state.checkoutErrorBannerMsg = `「${store.name}」目前為暫停營業狀態，暫停現場點餐與預訂。`;
+      unlockSubmitBtnOnError();
+      updateCartUI();
+      return;
+    }
+
+    const isReserve = state.checkoutTimeMode === 'RESERVE';
+    const isCashOrder = state.checkoutPayMethod === '現場櫃檯付現';
+    const cleanPhone = (state.checkoutPhone || '').replace(/\D/g, '');
+    const cleanTaxId = (state.checkoutTaxId || '').replace(/\D/g, '');
+
+    if (cleanTaxId && !validateTaiwanTaxId(cleanTaxId)) {
+      state.checkoutErrorBannerMsg = '統一編號格式錯誤，請輸入有效之 8 碼台灣統一編號或留空。';
+      unlockSubmitBtnOnError();
+      updateCartUI();
+      return;
+    }
+
+    if ((isReserve || isCashOrder) && !/^09\d{8}$/.test(cleanPhone)) {
+      state.checkoutErrorBannerMsg = '選擇「現場櫃檯付現」或「預訂取餐」請填寫完整的 10 碼手機號碼（09xxxxxxxx）！';
+      unlockSubmitBtnOnError();
+      updateCartUI();
+      return;
+    }
+
+    if (cleanPhone) {
+      state.savedCustomerPhone = cleanPhone;
+      try { localStorage.setItem('mealflow_saved_customer_phone_v12', cleanPhone); } catch (e) {}
+    }
+
+    const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
+    const subtotal = state.cartItems.reduce((sum, i) => sum + i.price * (i.qty || 1), 0);
+    const cutleryFee = (subtotal > 0 && state.checkoutNeedCutlery) ? storeCutleryPrice : 0;
+    const takeoutFee = (subtotal > 0 && state.checkoutDineType === '外帶自取') ? 1 : 0;
+    const evalPromo = evaluateStudentPromoAndCoupon(store, state.cartItems, subtotal, isReserve, state.checkoutReserveTime);
+    const discount = Math.min(subtotal, evalPromo.promoDiscount + (evalPromo.comboDiscount || 0) + evalPromo.couponDiscount);
+    const finalTotal = Math.max(0, subtotal + cutleryFee + takeoutFee - discount);
+    const pickupDateVal = isReserve ? normalizeDateStr(state.checkoutReserveDate) : getTodayDateStr();
+
+    const structuredItems = state.cartItems.map(i => normalizeOrderItemEntry({
+      id: i.id,
+      category: i.category || '',
+      baseName: i.baseName || i.name,
+      basePrice: i.basePrice !== undefined ? i.basePrice : i.price,
+      price: i.price,
+      qty: i.qty || 1,
+      selections: i.selections || {},
+      itemNote: i.itemNote || '',
+      snapshotAtTs: Date.now()
+    }));
+
+    const orderDraft = {
+      orderId: generateOrderToken(),
+      clientRequestId: state.currentCartRequestId,
+      storeId: store.id,
+      storeName: store.name,
+      campus: store.campus,
+      studentId: isReserve ? '📅 線上預訂' : '📱 掃碼點餐',
+      dineType: state.checkoutDineType || '外帶自取',
+      needCutlery: Boolean(state.checkoutNeedCutlery),
+      cutleryFee: cutleryFee,
+      takeoutFee: takeoutFee,
+      subtotal: subtotal,
+      discount: discount,
+      finalTotal: finalTotal,
+      couponCode: state.checkoutCouponCode || '',
+      wantGift: state.checkoutWantGift !== false,
+      isReservation: isReserve,
+      pickupDate: pickupDateVal,
+      pickupTime: isReserve ? state.checkoutReserveTime : getTaipeiTimeHHMM(),
+      pickupTimeSlot: isReserve ? `📅 預訂 ${pickupDateVal} ${state.checkoutReserveTime}` : '⚡ 立即製作',
+      paymentMethod: state.checkoutPayMethod,
+      customerPhone: cleanPhone,
+      customerNote: (state.checkoutNote || '').trim(),
       taxId: cleanTaxId,
-      isOfflinePending: false
+      lineUserId: (state.lineProfile && state.lineProfile.lineUserId) || '',
+      customerEmail: (state.lineProfile && state.lineProfile.email) || '',
+      clientDeviceId: state.clientDeviceId,
+      items: structuredItems,
+      structuredItems: structuredItems
+    };
+
+    if (state.checkoutPayMethod === 'LINE Pay') {
+      const payRes = await requestOnlinePaymentGateway('LINE Pay', finalTotal, store.name, store.id, orderDraft.orderId, orderDraft);
+      if (!payRes || !payRes.approved) {
+        unlockSubmitBtnOnError();
+        updateCartUI();
+        return;
+      }
+      orderDraft.paymentAuthToken = payRes.paymentAuthToken;
+      orderDraft.transactionId = payRes.transactionId;
+    }
+
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'submitOrder',
+        ...orderDraft
+      })
     });
+    const data = await res.json();
+    if (!data || !data.success || !data.order) {
+      throw new Error((data && data.message) || '送出訂單失敗，請稍後再試');
+    }
 
-    state.lastStudentSubmitTs = Date.now();
-    syncLocalSeqWithAuthoritativeNumber(store.id, pickupDateVal, authoritativeOrder.pickupNumber);
-    setSyncState('online', '已同步');
+    const savedOrder = sanitizeIncomingOrder({ ...orderDraft, ...data.order, isOfflinePending: false });
+    state.pendingLocalOrdersMap[savedOrder.orderId] = Date.now();
+    const existIdx = state.orders.findIndex(x => x.orderId === savedOrder.orderId);
+    if (existIdx >= 0) state.orders[existIdx] = savedOrder;
+    else state.orders.unshift(savedOrder);
+    addOrderToMyHistory(savedOrder.orderId);
+    saveCachedOrders(state.orders);
+
+    // 成功：先清空購物車與請求碼並跳轉取餐單（跳轉完成前絕不恢復按鈕）
+    state.currentCartRequestId = null;
+    state.cartItems = [];
+    if (state.cartByStoreMap && store.id) delete state.cartByStoreMap[store.id];
+    saveStudentCartDraft();
+    closeCartModal();
+    navigateToOrderTicket(savedOrder.orderId);
+    showToast(`🎉 送單成功！您的取餐號碼是 #${savedOrder.pickupNumber}`);
+
+    setTimeout(() => {
+      state.isStudentSubmittingOrder = false;
+      if (btn) {
+        btn.classList.remove('btn-is-busy');
+        btn.disabled = false;
+        btn.innerText = t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
+      }
+    }, 800);
   } catch (err) {
-    setSyncState('offline', '結帳連線異常');
-    const rawMsg = (err && err.name === 'AbortError')
-      ? '連線雲端伺服器超時（超過 16 秒）。請檢查網路連線後重試。'
-      : ((err && err.message) ? err.message : '無法連線至雲端點餐伺服器');
-
-    state.checkoutErrorBannerMsg = `結帳未完成：${rawMsg}（您的購物車內容已完整保留，請確認後再試一次）`;
-    restoreSubmitBtn();
+    // 失敗才解鎖按鈕，並保留 currentCartRequestId，學生重試也不會重複下單
+    state.checkoutErrorBannerMsg = translateServerError(err.message || '網路異常，請再按一次確認送出');
+    unlockSubmitBtnOnError();
     updateCartUI();
-    showToast(`🚫 結帳失敗：${rawMsg}`);
-    return;
-  } finally {
-    restoreSubmitBtn();
+    showToast(`⚠️ ${state.checkoutErrorBannerMsg}`);
   }
-
-  state.pendingLocalOrdersMap[authoritativeOrder.orderId] = Date.now();
-  state.knownStoreOrderIds.add(authoritativeOrder.orderId);
-  state.orders.unshift(authoritativeOrder);
-  addOrderToMyHistory(authoritativeOrder.orderId);
-  saveCachedOrders(state.orders);
-  state.lastSeenOrderNotifyMap[authoritativeOrder.orderId] = { status: authoritativeOrder.status, notifyCount: 0 };
-
-  enrichStoresAndAi();
-  saveLocalStores(state.stores);
-
-  recordLocalPushNotificationLog(
-    isLargeOrderCashReserve ? 'ORDER_RESERVE_UNPAID' : 'ORDER_CREATED',
-    isLargeOrderCashReserve ? `⏳ 大額預訂單 #${authoritativeOrder.pickupNumber} 待確認` : `🟢 訂單 #${authoritativeOrder.pickupNumber} 已成立 (${authoritativeOrder.status})`,
-    `【${store.name}】${pickupTimeSlot}，應付 NT$${authoritativeOrder.finalTotal} (${authoritativeOrder.paymentMethod})，防偽核銷碼：${authoritativeOrder.verificationCode}。`,
-    authoritativeOrder
-  );
-
-  state.cartItems = [];
-  if (state.cartByStoreMap && store && store.id) {
-    delete state.cartByStoreMap[store.id];
-  }
-  state.checkoutNote = '';
-  state.checkoutErrorBannerMsg = '';
-  saveStudentCartDraft();
-  if (state.lineProfile && state.lineProfile.lineUserId && String(state.lineProfile.lineUserId).startsWith('U')) {
-    saveMemberProfileToCloud();
-  }
-  closeCartModal();
-  navigateToOrderTicket(authoritativeOrder.orderId);
-  syncWatchedOrdersToServiceWorker(true);
-  updateBackgroundSilentAudioKeepAlive();
-  requestMerchantWakeLock();
-  showToast(`🎉 點餐成功！單號 #${authoritativeOrder.pickupNumber}（核銷碼 ${authoritativeOrder.verificationCode}）`);
 }
 
 // ==================== 4. 智慧選餐顧問 (v25.0 完整 4 語系支援 zh-TW / en / ja / ko) ====================
