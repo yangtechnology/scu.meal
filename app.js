@@ -1493,6 +1493,7 @@ var state = {
   posCashReceived: '',
   posSplitCashAmount: '',
   posAutoShowReceiptModal: localStorage.getItem('mealflow_pos_auto_receipt') === '1',
+  posFontSize: localStorage.getItem('mealflow_pos_font_size') || 'normal',
   posLastChangeBanner: null,
   posLinePayOneTimeKey: '',
   posLinePayManualConfirmed: false,
@@ -4834,10 +4835,22 @@ function updateMerchantHeaderBadgesOnly() {
   }
 }
 
+function applyPosFontSizeClass() {
+  const root = document.documentElement;
+  if (!root) return;
+  const validSizes = ['normal', 'large', 'xlarge'];
+  const size = validSizes.includes(state.posFontSize) ? state.posFontSize : 'normal';
+  root.classList.remove('pos-font-normal', 'pos-font-large', 'pos-font-xlarge');
+  if (state.routeMode === 'store' && size !== 'normal') {
+    root.classList.add(`pos-font-${size}`);
+  }
+}
+
 function updateBodyScrollLock() {
   document.body.classList.remove('store-fullscreen');
   document.body.classList.toggle('store-mode-active', state.routeMode === 'store' || state.routeMode === 'board');
   document.body.classList.toggle('pos-no-scroll', state.routeMode === 'store' && state.isMerchantUnlocked && state.storeTabMode === 'pos');
+  applyPosFontSizeClass();
 }
 
 function ensureHeaderExtraControls() {

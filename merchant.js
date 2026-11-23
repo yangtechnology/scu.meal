@@ -1791,6 +1791,22 @@ function posTapNumpad(key) {
   }
 }
 
+function setPosFontSize(size) {
+  const valid = ['normal', 'large', 'xlarge'];
+  const next = valid.includes(size) ? size : 'normal';
+  state.posFontSize = next;
+  try { localStorage.setItem('mealflow_pos_font_size', next); } catch (e) {}
+  if (typeof applyPosFontSizeClass === 'function') applyPosFontSizeClass();
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (store && state.storeTabMode === 'pos') renderPosCashierPanel(store);
+  const labelMap = {
+    normal: t('標準字體', 'Standard Text', '標準文字', '기본 글씨'),
+    large: t('大字模式', 'Large Text', '大文字', '큰 글씨'),
+    xlarge: t('特大老花友善模式', 'Extra-Large Text', '特大文字', '아주 큰 글씨')
+  };
+  showToast(`🔤 ${t('已切換為', 'Switched to')} ${labelMap[next]}`);
+}
+
 function calcCurrentPosTotals(store) {
   const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
   const subtotal = state.posCart.reduce((sum, i) => sum + (Number(i.price) || 0) * (i.qty || 1), 0);
@@ -1949,10 +1965,22 @@ function renderPosCashierPanel(store) {
 
         <!-- A4: 操作工具列獨立成列，徹底杜絕分類標籤被擠壓拉長變巨型橢圓！ -->
         <div class="pos-action-bar">
-          <div class="pos-mult-bar" title="${t('點選份數乘數後再點菜，一次加入多份', 'Tap multiplier then tap dish')}">
-            ${[1, 2, 3, 5].map(n => `
-              <button type="button" class="pos-mult-btn ${activeMult === n ? 'active' : ''}" onclick="setPosQtyMultiplier(${n})">×${n}</button>
-            `).join('')}
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <div class="pos-mult-bar" title="${t('點選份數乘數後再點菜，一次加入多份', 'Tap multiplier then tap dish')}">
+              ${[1, 2, 3, 5].map(n => `
+                <button type="button" class="pos-mult-btn ${activeMult === n ? 'active' : ''}" onclick="setPosQtyMultiplier(${n})">×${n}</button>
+              `).join('')}
+            </div>
+            <div class="pos-font-bar" title="${t('調整 POS 點餐畫面字體大小（會記住此平板設定）', 'Adjust POS text size (saved on this device)')}">
+              <span class="pos-font-label">🔤</span>
+              ${[
+                ['normal', t('標準', 'Std', '標準', '기본')],
+                ['large', t('大字', 'Large', '大', '크게')],
+                ['xlarge', t('特大', 'XL', '特大', '특대')]
+              ].map(([sz, lbl]) => `
+                <button type="button" class="pos-font-btn ${(state.posFontSize || 'normal') === sz ? 'active' : ''}" onclick="setPosFontSize('${sz}')">${lbl}</button>
+              `).join('')}
+            </div>
           </div>
           <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
             <button type="button" class="pos-cat-pill" style="background:#EFF6FF; color:#1D4ED8; border-color:#93C5FD;" onclick="triggerHardwareCashDrawerKick()" title="${t('送出 ESC/POS 開錢箱指令', 'Open cash drawer')}">
@@ -2049,7 +2077,7 @@ function renderPosCashierPanel(store) {
                     ${item.itemNote ? `<div style="font-size:0.72rem; color:#4338CA; font-weight:800;">📝 ${escapeHtml(item.itemNote)}</div>` : ''}
                     <div style="font-size:0.8rem; font-weight:950; color:var(--red);">NT$ ${(Number(item.price) || 0) * (item.qty || 1)}</div>
                   </div>
-                  <div style="display:flex; align-items:center; gap:4px;">
+                  <div class="pos-receipt-item-actions" style="display:flex; align-items:center; gap:4px;">
                     <button type="button" onclick="promptPosCartItemNote(${idx})" title="${t('單品備註', 'Item Note')}" style="border:1px solid var(--border); background:${item.itemNote ? '#EEF2FF' : '#FFFFFF'}; color:#4338CA; width:28px; height:28px; border-radius:7px; font-size:0.75rem;">📝</button>
                     <button type="button" onclick="openPosItemDiscountModal(${idx})" title="${t('單品招待/折扣', 'Item Comp/Discount')}" style="border:1px solid var(--border); background:${item.itemComp || item.itemDiscountAmount > 0 ? '#DCFCE7' : '#FFFFFF'}; color:#059669; width:28px; height:28px; border-radius:7px; font-size:0.75rem;">🎁</button>
                     ${canEdit ? `<button type="button" onclick="editCartItemOptions(${idx}, true)" style="border:1px solid var(--border); background:#EFF6FF; color:#1D4ED8; width:28px; height:28px; border-radius:7px; font-size:0.76rem; font-weight:800;">✎</button>` : ''}

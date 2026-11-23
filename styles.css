@@ -3330,3 +3330,254 @@ button[data-busy="1"] {
   align-items: center;
   gap: 3px;
 }
+
+/* ==================== POS 平板老花友善字體縮放切換（標準 / 大字 / 特大） ==================== */
+.pos-font-bar {
+  display: inline-flex;
+  align-items: center;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 999px;
+  padding: 2px 3px 2px 6px;
+  gap: 2px;
+}
+
+.pos-font-label {
+  font-size: 13px;
+  line-height: 1;
+  margin-right: 2px;
+  user-select: none;
+}
+
+.pos-font-btn {
+  border: none;
+  background: transparent;
+  color: #1E40AF;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.14s ease;
+}
+
+.pos-font-btn.active {
+  background: #2563EB;
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+}
+
+/* 大字模式（122%）與特大老花友善模式（145%）— 僅於店家端啟用，同步放大所有 rem 文字與彈窗 */
+html.pos-font-large {
+  font-size: 122%;
+}
+
+html.pos-font-xlarge {
+  font-size: 145%;
+}
+
+/* 保持頂部導覽列精簡不換行吃掉平板點餐空間 */
+html.pos-font-large .app-header,
+html.pos-font-xlarge .app-header {
+  padding: 7px 14px;
+}
+
+html.pos-font-large .app-header .role-badge,
+html.pos-font-large .app-header .sync-status,
+html.pos-font-large .app-header .filter-chip,
+html.pos-font-large .app-header .btn-danger-soft,
+html.pos-font-large .app-header .store-status-toggle,
+html.pos-font-large .app-header .select-input,
+html.pos-font-large .app-header .header-lang-select,
+html.pos-font-large .app-header .store-terminal-nameplate,
+html.pos-font-xlarge .app-header .role-badge,
+html.pos-font-xlarge .app-header .sync-status,
+html.pos-font-xlarge .app-header .filter-chip,
+html.pos-font-xlarge .app-header .btn-danger-soft,
+html.pos-font-xlarge .app-header .store-status-toggle,
+html.pos-font-xlarge .app-header .select-input,
+html.pos-font-xlarge .app-header .header-lang-select,
+html.pos-font-xlarge .app-header .store-terminal-nameplate {
+  font-size: 13.5px !important;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+/* 左側導覽軌適度加寬並保持清晰不爆版 */
+html.pos-font-large .store-shell-layout,
+html.pos-font-large .store-workspace-shell,
+html.pos-font-xlarge .store-shell-layout,
+html.pos-font-xlarge .store-workspace-shell {
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+}
+
+html.pos-font-large .store-rail-btn,
+html.pos-font-large .rail-nav-btn {
+  width: 66px;
+  height: 64px;
+  font-size: 13px;
+}
+
+html.pos-font-xlarge .store-rail-btn,
+html.pos-font-xlarge .rail-nav-btn {
+  width: 66px;
+  height: 66px;
+  font-size: 14px;
+}
+
+html.pos-font-large .store-rail-btn .rail-icon,
+html.pos-font-xlarge .store-rail-btn .rail-icon {
+  font-size: 24px;
+}
+
+/* 雙欄比例加寬右側結帳欄，讓大字明細與按鈕更寬敞 */
+html.pos-font-large .pos-modern-workspace {
+  grid-template-columns: minmax(0, 1fr) clamp(355px, 38vw, 440px);
+}
+
+html.pos-font-xlarge .pos-modern-workspace {
+  grid-template-columns: minmax(0, 1fr) clamp(385px, 41vw, 480px);
+}
+
+/* 工具列按鈕保持清楚又不佔滿高度 */
+html.pos-font-large .pos-action-bar .pos-cat-pill,
+html.pos-font-large .pos-mult-btn,
+html.pos-font-large .pos-font-btn {
+  height: auto;
+  min-height: 34px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+html.pos-font-xlarge .pos-action-bar .pos-cat-pill,
+html.pos-font-xlarge .pos-mult-btn,
+html.pos-font-xlarge .pos-font-btn {
+  height: auto;
+  min-height: 38px;
+  padding: 6px 11px;
+  font-size: 15px;
+}
+
+/* 分類膠囊自適應高度免截字 */
+html.pos-font-large .pos-cat-strip .pos-cat-pill {
+  height: auto;
+  min-height: 42px;
+  padding: 7px 16px;
+  font-size: 0.94rem;
+}
+
+html.pos-font-xlarge .pos-cat-strip .pos-cat-pill {
+  height: auto;
+  min-height: 48px;
+  padding: 8px 18px;
+  font-size: 0.98rem;
+}
+
+/* 餐點卡片放大格線、菜名與價格更醒目 */
+html.pos-font-large .pos-dish-grid {
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  grid-auto-rows: minmax(126px, auto);
+  gap: 11px;
+}
+
+html.pos-font-xlarge .pos-dish-grid {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-auto-rows: minmax(150px, auto);
+  gap: 12px;
+}
+
+html.pos-font-large .pos-dish-tile,
+html.pos-font-xlarge .pos-dish-tile {
+  padding: 12px 14px;
+  gap: 8px;
+}
+
+html.pos-font-large .pos-tile-name {
+  font-size: 1.02rem;
+  line-height: 1.28;
+  -webkit-line-clamp: 3;
+}
+
+html.pos-font-xlarge .pos-tile-name {
+  font-size: 1.06rem;
+  line-height: 1.26;
+  -webkit-line-clamp: 3;
+}
+
+html.pos-font-large .pos-tile-price {
+  font-size: 1.06rem;
+}
+
+html.pos-font-xlarge .pos-tile-price {
+  font-size: 1.12rem;
+}
+
+/* 右側已點品項：大字時自動換行，讓菜名滿寬顯示、＋－按鈕加大好點擊 */
+html.pos-font-large .pos-receipt-item,
+html.pos-font-xlarge .pos-receipt-item {
+  flex-wrap: wrap;
+  padding: 10px !important;
+  gap: 8px;
+}
+
+html.pos-font-large .pos-receipt-item-actions,
+html.pos-font-xlarge .pos-receipt-item-actions {
+  width: 100%;
+  justify-content: flex-end;
+  gap: 6px !important;
+}
+
+html.pos-font-large .pos-receipt-item-actions button {
+  width: 36px !important;
+  height: 36px !important;
+  font-size: 0.9rem !important;
+}
+
+html.pos-font-xlarge .pos-receipt-item-actions button {
+  width: 40px !important;
+  height: 40px !important;
+  font-size: 0.95rem !important;
+}
+
+/* 內用 / 外帶 / 餐具與快餐結帳按鈕放大好按 */
+html.pos-font-large .pos-chip-btn {
+  min-height: 42px;
+  line-height: 1.25;
+  font-size: 0.84rem;
+}
+
+html.pos-font-xlarge .pos-chip-btn {
+  min-height: 48px;
+  line-height: 1.22;
+  font-size: 0.86rem;
+}
+
+html.pos-font-large .pos-fast-cash-btn,
+html.pos-font-large .pos-fast-pay-btn {
+  height: 46px;
+  font-size: 0.92rem;
+}
+
+html.pos-font-xlarge .pos-fast-cash-btn,
+html.pos-font-xlarge .pos-fast-pay-btn {
+  height: 52px;
+  font-size: 0.96rem;
+}
+
+/* 客製化選項、複合付款與找零彈窗同步加寬免擁擠 */
+html.pos-font-large .modal-card {
+  max-width: 600px;
+}
+
+html.pos-font-xlarge .modal-card {
+  max-width: 680px;
+}
+
+@media (max-width: 900px) {
+  html.pos-font-large .pos-modern-workspace,
+  html.pos-font-xlarge .pos-modern-workspace {
+    grid-template-columns: 1fr;
+  }
+}
