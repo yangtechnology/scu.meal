@@ -5110,7 +5110,7 @@ async function searchOrderAcrossDevices(rawQuery, rawPhoneLast3) {
 
   const isFullOrderId = tokenPart.startsWith('ORD-') && tokenPart.length >= 10;
   const isSixCharHmacCode = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/.test(tokenPart);
-  const isFourDigitPickup = /^([AB]\d{3,4}|\d{4,5})$/.test(tokenPart);
+  const isFourDigitPickup = /^([AB]\d{3,4}|\d{3,5})$/.test(tokenPart);
 
   if (!isFullOrderId && !isSixCharHmacCode) {
     if (isFourDigitPickup && last3Part.length !== 3) {
