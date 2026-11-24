@@ -1908,6 +1908,14 @@ function renderPosCashierPanel(store) {
 
   const menus = (store.menus || []).slice().sort((a, b) => (Number(a.sortOrder) || 999) - (Number(b.sortOrder) || 999));
   const categories = ['全部', ...new Set(menus.map(m => m.category || '主廚推薦'))];
+  if (state.xpMode && categories.length > 1) {
+    if (state.xpDefaultCategoryAppliedForStore !== store.id) {
+      state.posSelectedCategory = categories[1];
+      state.xpDefaultCategoryAppliedForStore = store.id;
+    } else if (!categories.includes(state.posSelectedCategory)) {
+      state.posSelectedCategory = categories[1];
+    }
+  }
   const filteredMenus = state.posSelectedCategory === '全部'
     ? menus
     : menus.filter(m => (m.category || '主廚推薦') === state.posSelectedCategory);
@@ -2017,9 +2025,9 @@ function renderPosCashierPanel(store) {
             return `
               <div class="pos-dish-tile ${isSoldOut ? 'sold-out' : ''}" style="${tileAccent}" onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
                 <div>
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
+                  <div class="pos-tile-meta-row" style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
                     <span class="pos-tile-cat">${escapeHtml(trTerm(m.category || '主廚推薦'))}${hasDailyLimit && !isSoldOut ? ` · ${t(`剩${m.remainingToday}`, `${m.remainingToday} left`)}` : ''}</span>
-                    <button type="button" onclick="toggleMenuItemSoldOut(${fullIdx}, event)" style="border:none; background:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#FEE2E2' : '#FEF3C7') : '#F1F5F9'}; color:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#DC2626' : '#B45309') : '#475569'}; font-size:0.66rem; font-weight:900; padding:2px 6px; border-radius:6px;" title="${t('切換售罄或上架', 'Toggle Sold Out')}">
+                    <button type="button" class="pos-tile-soldout-btn" onclick="toggleMenuItemSoldOut(${fullIdx}, event)" style="border:none; background:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#FEE2E2' : '#FEF3C7') : '#F1F5F9'}; color:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#DC2626' : '#B45309') : '#475569'}; font-size:0.66rem; font-weight:900; padding:2px 6px; border-radius:6px;" title="${t('切換售罄或上架', 'Toggle Sold Out')}">
                       ${isSoldOut ? (m.soldOutType === 'PERMANENT' ? t('🚫 長期缺貨', '🚫 Out', '🚫 長期切', '🚫 장기품절') : t('📅 本日售完', '📅 Today Out', '📅 本日売切', '📅 오늘품절')) : (hasOpts ? t('⚙️ 客製', '⚙️ Opts', '⚙️ 選択', '⚙️ 옵션') : t('售罄', 'Out', '売切', '품절'))}
                     </button>
                   </div>
@@ -2146,7 +2154,7 @@ function renderPosCashierPanel(store) {
             </div>
           ` : ''}
 
-          <div style="display:grid; grid-template-columns:1fr 1fr 1.2fr; gap:6px; margin-bottom:6px;">
+          <div class="pos-dine-row" style="display:grid; grid-template-columns:1fr 1fr 1.2fr; gap:6px; margin-bottom:6px;">
             <button type="button" class="pos-chip-btn ${state.posDineType === '內用自取' ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in', '店内', '매장')}</button>
             <button type="button" class="pos-chip-btn ${state.posDineType === '外帶自取' ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posDineType', '外帶自取')">🛍️ ${t('外帶自取 (+$1)', 'Takeout (+$1)', '持帰 (+$1)', '포장 (+$1)')}</button>
             <button type="button" class="pos-chip-btn ${state.posNeedCutlery ? 'active' : ''}" style="padding:7px 5px;" onclick="setPosOption('posNeedCutlery', !state.posNeedCutlery)">

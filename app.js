@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.0`;
+    script.src = `${base}merchant.js?v=26.2`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1469,6 +1469,9 @@ var state = {
 
   // 店家全螢幕 POS 四大主導覽：'pos' | 'kds' | 'analytics' | 'settings'
   storeTabMode: 'pos',
+  xpMode: false,
+  xpModeExited: false,
+  xpDefaultCategoryAppliedForStore: '',
   settingsSubTab: 'menu', // 'menu' | 'promo' | 'storeProfile' | 'line'
   merchantStoreId: localStorage.getItem('mealflow_bound_store_id') || localStorage.getItem('mealflow_last_merchant_store_id') || 'S01',
   kdsSoundEnabled: true,
@@ -3761,6 +3764,42 @@ function syncUrlStateWithHistory(usePush = false) {
   } catch (e) {}
 }
 
+function isXpUrlParamActive() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('xp') === '1') return true;
+  } catch (e) {}
+  return /(?:^\?|&)xp=1(?:&|$)/.test(window.location.search || '');
+}
+
+function ensureXpExitButton() {
+  if (typeof document === 'undefined' || !document.body) return;
+  if (document.getElementById('xpExitModeBtn')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'xpExitModeBtn';
+  btn.className = 'xp-exit-btn';
+  btn.textContent = '退出滿版 / 回後台';
+  btn.title = '退出 XP 滿版模式，返回後台查看日結與設定';
+  btn.onclick = exitXpMode;
+  document.body.appendChild(btn);
+}
+
+function exitXpMode() {
+  state.xpMode = false;
+  state.xpModeExited = true;
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.remove('xp-mode');
+  }
+  updateBodyScrollLock();
+  if (typeof renderMerchantView === 'function' && state.routeMode === 'store') {
+    renderMerchantView();
+  }
+  if (typeof showToast === 'function') {
+    showToast('已退出 XP 滿版模式，可查看交班日結與後台設定');
+  }
+}
+
 function detectRouteFromUrl() {
   const rawPath = window.location.pathname;
   const path = rawPath.toLowerCase();
@@ -3814,6 +3853,21 @@ function detectRouteFromUrl() {
     state.routeMode = 'order';
   } else {
     state.routeMode = 'portal';
+  }
+
+  // XP 專屬純 POS 滿版模式：網址帶有 ?xp=1 且進入 store 後台時自動啟用並鎖定切至 POS 點餐頁
+  if (state.routeMode === 'store' && isXpUrlParamActive() && !state.xpModeExited) {
+    state.xpMode = true;
+    state.storeTabMode = 'pos';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('xp-mode');
+      ensureXpExitButton();
+    }
+  } else if (state.routeMode !== 'store') {
+    state.xpMode = false;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('xp-mode');
+    }
   }
 }
 
@@ -4859,6 +4913,9 @@ function updateBodyScrollLock() {
   document.body.classList.remove('store-fullscreen');
   document.body.classList.toggle('store-mode-active', state.routeMode === 'store' || state.routeMode === 'board');
   document.body.classList.toggle('pos-no-scroll', state.routeMode === 'store' && state.isMerchantUnlocked && state.storeTabMode === 'pos');
+  const isXpActive = Boolean(state.xpMode && state.routeMode === 'store');
+  document.body.classList.toggle('xp-mode', isXpActive);
+  if (isXpActive) ensureXpExitButton();
   applyPosFontSizeClass();
 }
 
