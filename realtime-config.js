@@ -17,7 +17,7 @@
 
   const CONFIG = {
     // 預設後端：'gas'（平行測試期）或 'cf'（正式切換 Cloudflare Workers）
-    DEFAULT_BACKEND: 'gas',
+    DEFAULT_BACKEND: 'cf',
 
     GAS_URL: DEFAULT_GAS_URL,
     CF_WORKER_URL: 'https://mealflow-api.mealflow-scu.workers.dev',
