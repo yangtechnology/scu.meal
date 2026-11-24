@@ -6110,6 +6110,7 @@ function renderMerchantSettingsPanel(store) {
                     <button type="button" onclick="toggleMenuItemSoldOut(${idx})" style="border:1px solid ${isSoldOut ? '#10B981' : '#CBD5E1'}; background:${isSoldOut ? '#DCFCE7' : '#FFFFFF'}; color:${isSoldOut ? '#065F46' : '#475569'}; padding:5px 7px; border-radius:6px; font-weight:800; font-size:0.74rem;">
                       ${isSoldOut ? t('上架', 'Restock', '販売再開', '재입고') : t('售罄', 'Sold Out', '売切', '품절')}
                     </button>
+                    ${optCount > 0 ? `<button type="button" onclick="openBatchApplyOptionsModal(${idx})" title="${escapeHtml(t('將此品項的客製化選項批次套用到同分類其他餐點', 'Batch apply this item\'s customization options to other dishes'))}" style="border:1px solid #A5B4FC; background:#E0E7FF; color:#3730A3; padding:5px 8px; border-radius:6px; font-weight:800; font-size:0.74rem;">📋 ${t('套用客製', 'Apply Opts', '一括適用', '옵션 일괄적용')}</button>` : ''}
                     <button type="button" onclick="openMenuEditModal(${idx})" style="border:1px solid #C7D2FE; background:#EEF2FF; color:#312E81; padding:5px 8px; border-radius:6px; font-weight:800; font-size:0.76rem;">✏️ ${t('編輯', 'Edit', '編集', '수정')}</button>
                     <button type="button" onclick="deleteMenuItem(${idx})" style="border:none; background:#FEE2E2; color:#DC2626; padding:5px 8px; border-radius:6px; font-weight:800; font-size:0.76rem;">${t('刪', 'Del', '削除', '삭제')}</button>
                   </div>
@@ -7638,7 +7639,10 @@ function renderMenuEditModalBody(item) {
     <div style="border-top:1px solid var(--border); padding-top:12px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
         <label class="field-label" style="margin:0; font-size:0.86rem; color:var(--indigo);">⚙️ 客製化選項群組設定 (${state.editingMenuTempOptions.length} 組・選項後加 [售罄] 可單獨停售加料)</label>
-        <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem;" onclick="addTempOptionGroupInModal()">＋ 新增選項群組</button>
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem; background:#EEF2FF; border-color:#A5B4FC; color:#3730A3; font-weight:900;" onclick="openBatchApplyOptionsFromEditModal()">📋 套用到其他品項</button>
+          <button type="button" class="filter-chip" style="padding:4px 10px; font-size:0.75rem;" onclick="addTempOptionGroupInModal()">＋ 新增選項群組</button>
+        </div>
       </div>
 
       <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;">
@@ -7677,6 +7681,15 @@ function renderMenuEditModalBody(item) {
             ${g.rawSubOptionsByLabel && Object.keys(g.rawSubOptionsByLabel).length > 0 ? `<div style="font-size:0.72rem; color:#4338CA; font-weight:800; margin-top:4px;">↳ 已內嵌巢狀子規格（${escapeHtml(Object.keys(g.rawSubOptionsByLabel).join('、'))} 將動態展開甜度/冰塊）</div>` : ''}
           </div>
         `).join('')}
+      </div>
+
+      <div style="margin-top:10px; padding:10px 12px; background:#EEF2FF; border:1px solid #C7D2FE; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="font-size:0.76rem; color:#312E81; font-weight:800; line-height:1.45;">
+          💡 編輯完客製化了嗎？可直接將這組選項批次套用到同分類其他餐點（寫入 D1 資料庫）。
+        </div>
+        <button type="button" onclick="openBatchApplyOptionsFromEditModal()" style="border:1px solid #818CF8; background:#4F46E5; color:#FFFFFF; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:900; cursor:pointer; white-space:nowrap;">
+          📋 套用到其他品項
+        </button>
       </div>
     </div>
   `;
@@ -7726,6 +7739,56 @@ function closeMenuEditModal() {
   state.editingMenuStoreIndex = -1;
 }
 
+function cloneMenuOptionsSafe(optionsObj) {
+  if (!optionsObj || typeof optionsObj !== 'object' || Array.isArray(optionsObj)) return {};
+  try {
+    const cloned = JSON.parse(JSON.stringify(optionsObj));
+    Object.keys(cloned).forEach(k => {
+      if (k.startsWith('__')) delete cloned[k];
+    });
+    return cloned;
+  } catch (e) {
+    return {};
+  }
+}
+
+function buildOptionsObjectFromTempList(tempOptionsList) {
+  const newOptions = {};
+  (Array.isArray(tempOptionsList) ? tempOptionsList : []).forEach(g => {
+    const gName = (g && g.name ? g.name : '').trim();
+    if (!gName || gName.startsWith('__')) return;
+    const subMap = (g.rawSubOptionsByLabel && typeof g.rawSubOptionsByLabel === 'object') ? g.rawSubOptionsByLabel : {};
+    const choices = String(g.choicesText || '')
+      .split(/[,，/]/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(rawTok => {
+        const isSoldOut = /\[售罄\]|（售罄）|\(售罄\)/.test(rawTok);
+        const tok = rawTok.replace(/\[售罄\]|（售罄）|\(售罄\)/g, '').trim();
+        const m = tok.match(/^(.+?)\+(\d+)$/);
+        const cName = m ? m[1].trim() : tok;
+        const cPrice = m ? Math.max(0, parseInt(m[2], 10)) : 0;
+        const subOpts = subMap[cName];
+        if (Array.isArray(subOpts) && subOpts.length > 0) {
+          return { label: cName, priceDelta: cPrice, soldOut: isSoldOut, subOptions: subOpts };
+        }
+        return isSoldOut ? [cName, cPrice, true] : [cName, cPrice];
+      });
+    if (choices.length > 0) {
+      const grpObj = {
+        type: (g.type === 'checkbox' || g.type === 'qty') ? g.type : 'radio',
+        choices
+      };
+      if (grpObj.type === 'checkbox' || grpObj.type === 'qty') {
+        if (Number(g.minSelect) > 0) grpObj.minSelect = Math.max(0, parseInt(g.minSelect, 10));
+        if (Number(g.maxSelect) > 0) grpObj.maxSelect = Math.max(0, parseInt(g.maxSelect, 10));
+      }
+      newOptions[gName] = grpObj;
+    }
+  });
+  return newOptions;
+}
+
 async function saveEditedMenuItem() {
   if (!isMerchantSessionValidNow()) {
     checkMerchantSecurityGate();
@@ -7761,39 +7824,7 @@ async function saveEditedMenuItem() {
     return;
   }
 
-  const newOptions = {};
-  state.editingMenuTempOptions.forEach(g => {
-    const gName = (g.name || '').trim();
-    if (!gName) return;
-    const subMap = (g.rawSubOptionsByLabel && typeof g.rawSubOptionsByLabel === 'object') ? g.rawSubOptionsByLabel : {};
-    const choices = String(g.choicesText || '')
-      .split(/[,，/]/)
-      .map(s => s.trim())
-      .filter(Boolean)
-      .map(rawTok => {
-        const isSoldOut = /\[售罄\]|（售罄）|\(售罄\)/.test(rawTok);
-        const tok = rawTok.replace(/\[售罄\]|（售罄）|\(售罄\)/g, '').trim();
-        const m = tok.match(/^(.+?)\+(\d+)$/);
-        const cName = m ? m[1].trim() : tok;
-        const cPrice = m ? Math.max(0, parseInt(m[2], 10)) : 0;
-        const subOpts = subMap[cName];
-        if (Array.isArray(subOpts) && subOpts.length > 0) {
-          return { label: cName, priceDelta: cPrice, soldOut: isSoldOut, subOptions: subOpts };
-        }
-        return isSoldOut ? [cName, cPrice, true] : [cName, cPrice];
-      });
-    if (choices.length > 0) {
-      const grpObj = {
-        type: (g.type === 'checkbox' || g.type === 'qty') ? g.type : 'radio',
-        choices
-      };
-      if (grpObj.type === 'checkbox' || grpObj.type === 'qty') {
-        if (Number(g.minSelect) > 0) grpObj.minSelect = Math.max(0, parseInt(g.minSelect, 10));
-        if (Number(g.maxSelect) > 0) grpObj.maxSelect = Math.max(0, parseInt(g.maxSelect, 10));
-      }
-      newOptions[gName] = grpObj;
-    }
-  });
+  const newOptions = buildOptionsObjectFromTempList(state.editingMenuTempOptions);
 
   store.menus[idx] = {
     ...store.menus[idx],
@@ -7823,6 +7854,400 @@ async function saveEditedMenuItem() {
     renderMerchantSettingsPanel(store);
     showToast(`✅ 已更新「[${cat}] ${name}」之餐點設定、站點與客製選項！`);
   }, t('⏳ 儲存品項中...', '⏳ Saving Item...'));
+}
+
+// ==================== 批次套用客製化選項（直寫 Cloudflare D1） ====================
+function openBatchApplyOptionsFromEditModal() {
+  ensureSharedModalsMounted();
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  const idx = state.editingMenuStoreIndex;
+  if (!store || idx < 0 || !store.menus[idx]) return;
+
+  const origItem = store.menus[idx];
+  const currentCat = (document.getElementById('editMenuCat')?.value || origItem.category || '主廚推薦').trim() || '主廚推薦';
+  const currentName = (document.getElementById('editMenuName')?.value || origItem.name || '').trim() || origItem.name;
+  const optionsObj = buildOptionsObjectFromTempList(state.editingMenuTempOptions);
+
+  state.batchApplyOptionsState = {
+    sourceMenuIdx: idx,
+    sourceMenuId: String(origItem.id || '').trim(),
+    sourceName: currentName,
+    sourceCategory: currentCat,
+    optionsObj: cloneMenuOptionsSafe(optionsObj),
+    selectedIds: new Set(),
+    scope: 'same_category',
+    mode: 'replace',
+    fromEditModal: true
+  };
+
+  renderBatchApplyOptionsModal();
+  document.getElementById('batchApplyOptionsModal')?.classList.add('open');
+}
+
+function openBatchApplyOptionsModal(menuIdx) {
+  ensureSharedModalsMounted();
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (!store || !Array.isArray(store.menus) || !store.menus[menuIdx]) return;
+
+  const item = store.menus[menuIdx];
+  state.batchApplyOptionsState = {
+    sourceMenuIdx: menuIdx,
+    sourceMenuId: String(item.id || '').trim(),
+    sourceName: String(item.name || '').trim(),
+    sourceCategory: String(item.category || '主廚推薦').trim() || '主廚推薦',
+    optionsObj: cloneMenuOptionsSafe(item.options || {}),
+    selectedIds: new Set(),
+    scope: 'same_category',
+    mode: 'replace',
+    fromEditModal: false
+  };
+
+  renderBatchApplyOptionsModal();
+  document.getElementById('batchApplyOptionsModal')?.classList.add('open');
+}
+
+function closeBatchApplyOptionsModal() {
+  document.getElementById('batchApplyOptionsModal')?.classList.remove('open');
+  state.batchApplyOptionsState = null;
+}
+
+function getBatchApplyCandidateMenus(store, batchState) {
+  if (!store || !Array.isArray(store.menus) || !batchState) {
+    return { sameCatItems: [], allOtherItems: [], visibleItems: [] };
+  }
+  const sourceId = String(batchState.sourceMenuId || '').trim();
+  const sourceCat = String(batchState.sourceCategory || '').trim();
+  const allOtherItems = store.menus.filter((m, idx) => {
+    const mId = String(m && m.id ? m.id : '').trim();
+    if (!mId) return false;
+    if (sourceId && mId === sourceId) return false;
+    if (!sourceId && idx === batchState.sourceMenuIdx) return false;
+    return true;
+  });
+  const sameCatItems = allOtherItems.filter(m => String(m.category || '主廚推薦').trim() === sourceCat);
+  const visibleItems = batchState.scope === 'all_store' ? allOtherItems : sameCatItems;
+  return { sameCatItems, allOtherItems, visibleItems };
+}
+
+function setBatchApplyOptionsScope(scope) {
+  if (!state.batchApplyOptionsState) return;
+  state.batchApplyOptionsState.scope = scope === 'all_store' ? 'all_store' : 'same_category';
+  renderBatchApplyOptionsModal();
+}
+
+function setBatchApplyOptionsMode(mode) {
+  if (!state.batchApplyOptionsState) return;
+  state.batchApplyOptionsState.mode = mode === 'merge' ? 'merge' : 'replace';
+  renderBatchApplyOptionsModal();
+}
+
+function toggleBatchApplyTargetMenu(menuId, checked) {
+  const s = state.batchApplyOptionsState;
+  if (!s) return;
+  const cleanId = String(menuId || '').trim();
+  if (!cleanId) return;
+  if (checked) s.selectedIds.add(cleanId);
+  else s.selectedIds.delete(cleanId);
+  renderBatchApplyOptionsModal();
+}
+
+function toggleBatchApplySelectAllSameCategory() {
+  const s = state.batchApplyOptionsState;
+  const store = state.stores.find(st => st.id === state.merchantStoreId);
+  if (!s || !store) return;
+  const { sameCatItems } = getBatchApplyCandidateMenus(store, s);
+  if (sameCatItems.length === 0) {
+    showToast(`⚠️「${s.sourceCategory}」分類中目前沒有其他餐點可選`);
+    return;
+  }
+  const allSelected = sameCatItems.every(m => s.selectedIds.has(String(m.id)));
+  if (allSelected) {
+    sameCatItems.forEach(m => s.selectedIds.delete(String(m.id)));
+  } else {
+    sameCatItems.forEach(m => s.selectedIds.add(String(m.id)));
+  }
+  renderBatchApplyOptionsModal();
+}
+
+function toggleBatchApplySelectAllVisible() {
+  const s = state.batchApplyOptionsState;
+  const store = state.stores.find(st => st.id === state.merchantStoreId);
+  if (!s || !store) return;
+  const { visibleItems } = getBatchApplyCandidateMenus(store, s);
+  if (visibleItems.length === 0) return;
+  const allSelected = visibleItems.every(m => s.selectedIds.has(String(m.id)));
+  if (allSelected) {
+    visibleItems.forEach(m => s.selectedIds.delete(String(m.id)));
+  } else {
+    visibleItems.forEach(m => s.selectedIds.add(String(m.id)));
+  }
+  renderBatchApplyOptionsModal();
+}
+
+function clearBatchApplySelection() {
+  const s = state.batchApplyOptionsState;
+  if (!s) return;
+  s.selectedIds.clear();
+  renderBatchApplyOptionsModal();
+}
+
+function renderBatchApplyOptionsModal() {
+  const body = document.getElementById('batchApplyOptionsModalBody');
+  const confirmBtn = document.getElementById('batchApplyOptionsConfirmBtn');
+  const s = state.batchApplyOptionsState;
+  const store = state.stores.find(st => st.id === state.merchantStoreId);
+  if (!body || !s || !store) return;
+
+  const { sameCatItems, allOtherItems, visibleItems } = getBatchApplyCandidateMenus(store, s);
+  const validIdSet = new Set(allOtherItems.map(m => String(m.id)));
+  Array.from(s.selectedIds).forEach(id => {
+    if (!validIdSet.has(id)) s.selectedIds.delete(id);
+  });
+
+  const optEntries = Object.entries(s.optionsObj || {});
+  const allSameCatSelected = sameCatItems.length > 0 && sameCatItems.every(m => s.selectedIds.has(String(m.id)));
+  const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(m => s.selectedIds.has(String(m.id)));
+  const selectedCount = s.selectedIds.size;
+
+  body.innerHTML = `
+    <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:12px; padding:12px; margin-bottom:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+        <div style="font-size:0.84rem; font-weight:900; color:#312E81;">
+          🎯 來源品項：<span style="background:#FFFFFF; border:1px solid #C7D2FE; padding:2px 7px; border-radius:6px; margin-right:4px;">${escapeHtml(s.sourceCategory)}</span>${escapeHtml(s.sourceName)}
+        </div>
+        <span style="font-size:0.74rem; font-weight:800; color:#4338CA; background:#E0E7FF; padding:2px 8px; border-radius:999px;">
+          共 ${optEntries.length} 組客製化選項
+        </span>
+      </div>
+
+      ${optEntries.length === 0 ? `
+        <div style="background:#FFFBEB; border:1px solid #FCD34D; color:#92400E; border-radius:8px; padding:8px 10px; font-size:0.76rem; font-weight:800; line-height:1.45;">
+          ⚠️ 目前來源品項為「無客製化選項」。若以覆蓋模式套用，將會清空所選餐點的客製化選項（品項價格、圖片、每日限量與售罄狀態皆不受影響）。
+        </div>
+      ` : `
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+          ${optEntries.map(([gName, grp]) => {
+            const cList = (grp && Array.isArray(grp.choices)) ? grp.choices : [];
+            const typeLabel = grp && grp.type === 'qty' ? '多數量' : (grp && grp.type === 'checkbox' ? '多選' : '單選');
+            const previewChoices = cList.slice(0, 4).map(c => {
+              if (Array.isArray(c)) return c[0];
+              if (c && typeof c === 'object') return c.label || c.name || '';
+              return String(c || '');
+            }).filter(Boolean).join(' / ');
+            return `
+              <div style="background:#FFFFFF; border:1px solid #C7D2FE; border-radius:8px; padding:5px 9px; font-size:0.74rem; max-width:100%;">
+                <span style="font-weight:900; color:#1E1B4B;">${escapeHtml(gName)}</span>
+                <span style="color:#6366F1; font-weight:800;">(${typeLabel}・${cList.length}項)</span>
+                ${previewChoices ? `<div style="font-size:0.69rem; color:#64748B; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;">${escapeHtml(previewChoices)}${cList.length > 4 ? '…' : ''}</div>` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+
+      ${s.fromEditModal ? `
+        <div style="margin-top:8px; font-size:0.72rem; color:#4338CA; font-weight:800;">
+          💾 確認寫入時，也會同步將目前編輯中的這組客製化選項儲存至「${escapeHtml(s.sourceName)}」本身。
+        </div>
+      ` : ''}
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label class="field-label" style="margin-bottom:6px;">⚙️ 套用方式（絕不影響目標餐點的價格、售罄、限量與出單站點）</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <button type="button" onclick="setBatchApplyOptionsMode('replace')" style="text-align:left; padding:8px 10px; border-radius:10px; border:1.5px solid ${s.mode === 'replace' ? '#4F46E5' : '#CBD5E1'}; background:${s.mode === 'replace' ? '#EEF2FF' : '#FFFFFF'}; cursor:pointer;">
+          <div style="font-size:0.78rem; font-weight:900; color:${s.mode === 'replace' ? '#312E81' : '#334155'};">🔄 覆蓋客製化選項 (預設)</div>
+          <div style="font-size:0.7rem; color:#64748B; margin-top:2px;">將所選餐點的客製化完全替換為此組</div>
+        </button>
+        <button type="button" onclick="setBatchApplyOptionsMode('merge')" style="text-align:left; padding:8px 10px; border-radius:10px; border:1.5px solid ${s.mode === 'merge' ? '#4F46E5' : '#CBD5E1'}; background:${s.mode === 'merge' ? '#EEF2FF' : '#FFFFFF'}; cursor:pointer;">
+          <div style="font-size:0.78rem; font-weight:900; color:${s.mode === 'merge' ? '#312E81' : '#334155'};">➕ 保留原選項並合併</div>
+          <div style="font-size:0.7rem; color:#64748B; margin-top:2px;">保留目標既有群組，僅新增或更新同名群組</div>
+        </button>
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button type="button" onclick="setBatchApplyOptionsScope('same_category')" class="filter-chip ${s.scope === 'same_category' ? 'active' : ''}" style="padding:5px 10px; font-size:0.76rem;">
+          📂 同分類「${escapeHtml(s.sourceCategory)}」(${sameCatItems.length})
+        </button>
+        <button type="button" onclick="setBatchApplyOptionsScope('all_store')" class="filter-chip ${s.scope === 'all_store' ? 'active' : ''}" style="padding:5px 10px; font-size:0.76rem;">
+          🏪 全店其他餐點 (${allOtherItems.length})
+        </button>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button type="button" onclick="toggleBatchApplySelectAllSameCategory()" style="border:1px solid ${allSameCatSelected ? '#EF4444' : '#4F46E5'}; background:${allSameCatSelected ? '#FEF2F2' : '#4F46E5'}; color:${allSameCatSelected ? '#B91C1C' : '#FFFFFF'}; padding:5px 10px; border-radius:8px; font-size:0.75rem; font-weight:900; cursor:pointer;">
+          ${allSameCatSelected ? '⬜ 取消全選同分類' : `☑️ 一鍵全選同分類 (${sameCatItems.length})`}
+        </button>
+        ${s.scope === 'all_store' && visibleItems.length > 0 ? `
+          <button type="button" onclick="toggleBatchApplySelectAllVisible()" class="filter-chip" style="padding:5px 9px; font-size:0.74rem;">
+            ${allVisibleSelected ? '取消全選列表' : '全選全店'}
+          </button>
+        ` : ''}
+        ${selectedCount > 0 ? `
+          <button type="button" onclick="clearBatchApplySelection()" class="btn-danger-soft" style="padding:5px 8px; font-size:0.74rem;">清空 (${selectedCount})</button>
+        ` : ''}
+      </div>
+    </div>
+
+    <div style="max-height:270px; overflow-y:auto; border:1px solid var(--border); border-radius:12px; background:#F8FAFC; padding:8px; display:flex; flex-direction:column; gap:6px;">
+      ${visibleItems.length === 0 ? `
+        <div style="text-align:center; padding:22px 12px; color:var(--text-muted); font-size:0.82rem; font-weight:700;">
+          ${s.scope === 'same_category'
+            ? `「${escapeHtml(s.sourceCategory)}」分類中目前沒有其他餐點，可點擊上方「全店其他餐點」選擇其他分類。`
+            : '本店目前沒有其他餐點可供套用。'}
+        </div>
+      ` : visibleItems.map(m => {
+        const mId = String(m.id);
+        const isChecked = s.selectedIds.has(mId);
+        const mOptKeys = m.options && typeof m.options === 'object' ? Object.keys(m.options) : [];
+        const mOptSummary = mOptKeys.length > 0
+          ? `目前 ${mOptKeys.length} 組：${mOptKeys.slice(0, 3).join('、')}${mOptKeys.length > 3 ? '…' : ''}`
+          : '目前無客製選項';
+        return `
+          <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 11px; border-radius:10px; border:1.5px solid ${isChecked ? '#6366F1' : '#E2E8F0'}; background:${isChecked ? '#EEF2FF' : '#FFFFFF'}; cursor:pointer; transition:all 0.12s ease;">
+            <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
+              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleBatchApplyTargetMenu(${escapeJsAttr(mId)}, this.checked)" style="width:18px; height:18px; accent-color:#4F46E5; flex-shrink:0; cursor:pointer;">
+              <div style="min-width:0; flex:1;">
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  ${s.scope === 'all_store' ? `<span style="font-size:0.68rem; font-weight:800; color:var(--brand-dark); background:var(--brand-light); padding:1px 6px; border-radius:4px;">${escapeHtml(m.category || '主廚推薦')}</span>` : ''}
+                  <span style="font-size:0.86rem; font-weight:900; color:#0F172A;">${escapeHtml(m.name || '')}</span>
+                  <span style="font-size:0.76rem; font-weight:800; color:#475569;">$${Number(m.price) || 0}</span>
+                </div>
+                <div style="font-size:0.71rem; color:${mOptKeys.length > 0 ? '#4F46E5' : '#94A3B8'}; font-weight:700; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  ${escapeHtml(mOptSummary)}
+                </div>
+              </div>
+            </div>
+            <span style="font-size:0.68rem; color:#94A3B8; font-weight:700; flex-shrink:0;">${escapeHtml(mId)}</span>
+          </label>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  if (confirmBtn) {
+    confirmBtn.textContent = selectedCount > 0
+      ? `🚀 批次套用並寫入 D1（已選 ${selectedCount} 項）`
+      : '🚀 批次套用並寫入 D1（請先勾選餐點）';
+    confirmBtn.style.opacity = selectedCount > 0 ? '1' : '0.6';
+  }
+  if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(document.getElementById('batchApplyOptionsModal'));
+}
+
+async function syncBatchMenuOptionsToCloud(store, targetMenuIds, optionsObj, mode, fallbackItems = []) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    mode: 'cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'batchApplyMenuOptions',
+      ...getMerchantAuthPayload(),
+      managerOverridePin: state.tempManagerOverridePin || '',
+      storeId: store.id,
+      targetMenuIds,
+      options: optionsObj,
+      mode
+    })
+  });
+  const data = await res.json();
+  if (data && data.success === true) {
+    return data;
+  }
+  // 若為 GAS 冷備援模式尚未實作 batchApplyMenuOptions，平滑降級為逐筆 upsertSingleMenuItem
+  if (data && String(data.message || '').includes('未知的操作請求')) {
+    for (const item of fallbackItems) {
+      await syncSingleMenuItemToCloud(store, item);
+    }
+    return { success: true, updatedCount: fallbackItems.length, fallback: true };
+  }
+  throw new Error((data && data.message) || '批次寫入雲端資料庫失敗');
+}
+
+async function confirmBatchApplyMenuOptions() {
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
+  const s = state.batchApplyOptionsState;
+  const store = state.stores.find(st => st.id === state.merchantStoreId);
+  if (!s || !store || !Array.isArray(store.menus)) return;
+
+  const selectedTargetIds = Array.from(s.selectedIds).map(id => String(id).trim()).filter(Boolean);
+  if (selectedTargetIds.length === 0) {
+    showToast('⚠️ 請至少勾選 1 項要套用的其他餐點！');
+    return;
+  }
+
+  if (!isCurrentMerchantManager()) {
+    const mgrAuth = await requestManagerPinOverride('批次套用餐點客製化選項', store.id);
+    if (!mgrAuth) return;
+    state.tempManagerOverridePin = mgrAuth.managerOverridePin;
+  }
+
+  const targetIdSet = new Set(selectedTargetIds);
+  const cleanOptions = cloneMenuOptionsSafe(s.optionsObj);
+  const mode = s.mode === 'merge' ? 'merge' : 'replace';
+  const sourceItem = (s.fromEditModal && s.sourceMenuIdx >= 0 && store.menus[s.sourceMenuIdx])
+    ? store.menus[s.sourceMenuIdx]
+    : null;
+  const sourceId = sourceItem && sourceItem.id ? String(sourceItem.id).trim() : '';
+
+  const previewUpdatedItems = [];
+  store.menus.forEach(m => {
+    const mId = String(m.id || '').trim();
+    if (targetIdSet.has(mId)) {
+      const nextOpts = mode === 'merge'
+        ? { ...cloneMenuOptionsSafe(m.options || {}), ...cloneMenuOptionsSafe(cleanOptions) }
+        : cloneMenuOptionsSafe(cleanOptions);
+      previewUpdatedItems.push({ ...m, options: nextOpts });
+    }
+  });
+
+  await withActiveButtonBusy(async () => {
+    try {
+      if (sourceItem && sourceId && mode === 'replace') {
+        const batchIdsWithSource = Array.from(new Set([sourceId, ...selectedTargetIds]));
+        const fallbackWithSource = [{ ...sourceItem, options: cloneMenuOptionsSafe(cleanOptions) }, ...previewUpdatedItems];
+        await syncBatchMenuOptionsToCloud(store, batchIdsWithSource, cleanOptions, 'replace', fallbackWithSource);
+      } else {
+        await syncBatchMenuOptionsToCloud(store, selectedTargetIds, cleanOptions, mode, previewUpdatedItems);
+        if (sourceItem && sourceId) {
+          await syncBatchMenuOptionsToCloud(store, [sourceId], cleanOptions, 'replace', [{ ...sourceItem, options: cloneMenuOptionsSafe(cleanOptions) }]);
+        }
+      }
+
+      // 寫入成功後再同步更新前端本地菜單狀態
+      store.menus.forEach(m => {
+        const mId = String(m.id || '').trim();
+        if (targetIdSet.has(mId)) {
+          m.options = mode === 'merge'
+            ? { ...cloneMenuOptionsSafe(m.options || {}), ...cloneMenuOptionsSafe(cleanOptions) }
+            : cloneMenuOptionsSafe(cleanOptions);
+        }
+      });
+      if (sourceItem) {
+        sourceItem.options = cloneMenuOptionsSafe(cleanOptions);
+      }
+
+      state.lastLocalStoreConfigUpdateTs = Date.now();
+      saveLocalStores(state.stores);
+
+      const groupCount = Object.keys(cleanOptions).length;
+      const modeLabel = mode === 'merge' ? '合併' : '覆蓋';
+      recordMerchantAuditLog(
+        '批次套用客製化選項',
+        `來源：[${s.sourceCategory}] ${s.sourceName}（${groupCount} 組，${modeLabel}）➔ 批次套用 ${selectedTargetIds.length} 項餐點`
+      );
+
+      closeBatchApplyOptionsModal();
+      renderMerchantSettingsPanel(store);
+      showToast(`✅ 已將「${s.sourceName}」的 ${groupCount} 組客製化選項批次寫入 ${selectedTargetIds.length} 項餐點（D1 已同步）！`);
+    } catch (err) {
+      console.error('[BatchApplyMenuOptions]', err);
+      showToast(`🚫 批次寫入 D1 失敗：${(err && err.message) ? err.message : '請檢查網路連線後重試'}`);
+    }
+  }, t('⏳ 批次寫入 D1 中...', '⏳ Saving to D1...'));
 }
 
 async function syncStoreMenuToCloud(store) {

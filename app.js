@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.2`;
+    script.src = `${base}merchant.js?v=26.3`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1544,6 +1544,7 @@ var state = {
   scannedMenuCandidates: [],
   editingMenuStoreIndex: -1,
   editingMenuTempOptions: [],
+  batchApplyOptionsState: null,
 
   // 推播、防偽動態時鐘與智慧退避輪詢計時器
   lineProfile: loadLineProfile(),
@@ -3277,6 +3278,27 @@ function ensureSharedModalsMounted() {
     `);
   }
 
+  if (!document.getElementById('batchApplyOptionsModal')) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="batchApplyOptionsModal" class="modal-overlay" style="z-index:1150;" onclick="if(event.target===this) closeBatchApplyOptionsModal()">
+        <div class="modal-card" style="max-width:560px;">
+          <div class="modal-header">
+            <div>
+              <span style="font-size:0.72rem; font-weight:800; color:var(--indigo);">批次同步至 Cloudflare D1 菜單資料庫</span>
+              <h3 style="font-size:1.15rem; font-weight:900;" id="batchApplyOptionsModalTitle">📋 批次套用客製化選項</h3>
+            </div>
+            <button type="button" onclick="closeBatchApplyOptionsModal()" style="border:none; background:#F3F4F6; width:34px; height:34px; border-radius:50%; font-weight:900;">✕</button>
+          </div>
+          <div class="modal-body" id="batchApplyOptionsModalBody"></div>
+          <div class="modal-footer" id="batchApplyOptionsModalFooter" style="display:flex; gap:10px;">
+            <button type="button" class="btn-outline" style="flex:1;" onclick="closeBatchApplyOptionsModal()">取消</button>
+            <button type="button" id="batchApplyOptionsConfirmBtn" class="btn-tip-action" style="flex:2;" onclick="confirmBatchApplyMenuOptions()">🚀 批次套用並寫入雲端</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
   if (!document.getElementById('receiptPrintModal')) {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="receiptPrintModal" class="modal-overlay" onclick="if(event.target===this) closeReceiptPrintModal()">
@@ -4110,6 +4132,7 @@ function isUserEditingFormInput() {
     }
   }
   if (document.getElementById('menuEditModal')?.classList.contains('open')) return true;
+  if (document.getElementById('batchApplyOptionsModal')?.classList.contains('open')) return true;
   if (document.getElementById('onlinePaymentModal')?.classList.contains('open')) return true;
   if (document.getElementById('orderPayModal')?.classList.contains('open')) return true;
   if (document.getElementById('posCashNumpadModal')?.classList.contains('open')) return true;
