@@ -438,6 +438,8 @@ function switchMerchantStore(storeId) {
   try { localStorage.setItem('mealflow_last_merchant_store_id', storeId); } catch (e) {}
   state.posSelectedCategory = '全部';
   state.posCart = [];
+  state.xpInlineModTargetCartIdx = -1;
+  state.xpInlineModPreselect = {};
   state.posCashReceived = '';
   state.posManualDiscount = 0;
   state.posDiscountPercent = 0;
@@ -853,10 +855,326 @@ function selectPosCategory(cat) {
   if (store) renderPosCashierPanel(store);
 }
 
+// ==================== XP=1 飯捲類 / 蔥抓餅類：右側直接展開客製化引擎 ====================
+function getSharedCategoryOptionsForXp(menusInCat) {
+  const merged = {};
+  (Array.isArray(menusInCat) ? menusInCat : []).forEach(m => {
+    if (!m || !m.options || typeof m.options !== 'object') return;
+    Object.entries(m.options).forEach(([gName, grp]) => {
+      if (!gName || gName.startsWith('__') || merged[gName]) return;
+      if (grp && Array.isArray(grp.choices) && grp.choices.length > 0) {
+        merged[gName] = grp;
+      }
+    });
+  });
+  return merged;
+}
+
+function calcMenuSelectionsExtraPriceForXp(menuItem, selectionsObj) {
+  if (!menuItem || !menuItem.options || !selectionsObj || typeof selectionsObj !== 'object') return 0;
+  let extraTotal = 0;
+  Object.entries(selectionsObj).forEach(([gName, rawVal]) => {
+    const grp = menuItem.options[gName];
+    if (!grp || !Array.isArray(grp.choices)) return;
+    const priceMap = {};
+    grp.choices.forEach(c => {
+      const spec = normalizeChoiceSpec(c);
+      if (spec.label) priceMap[spec.label] = spec.extra;
+    });
+    const gType = grp.type === 'qty' ? 'qty' : (grp.type === 'checkbox' ? 'checkbox' : 'radio');
+    if (gType === 'radio') {
+      const lbl = String(rawVal || '').trim();
+      if (lbl && priceMap[lbl] !== undefined) extraTotal += priceMap[lbl];
+    } else if (gType === 'qty') {
+      String(rawVal || '').split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+        const m = tok.match(/^(.+?)(?:\s*[×xX*]\s*(\d+))?$/);
+        if (!m) return;
+        const lbl = m[1].trim();
+        const cnt = Math.max(1, parseInt(m[2] || '1', 10) || 1);
+        if (priceMap[lbl] !== undefined) extraTotal += priceMap[lbl] * cnt;
+      });
+    } else {
+      String(rawVal || '').split(',').map(s => s.trim()).filter(Boolean).forEach(lbl => {
+        if (priceMap[lbl] !== undefined) extraTotal += priceMap[lbl];
+      });
+    }
+  });
+  return Math.max(0, extraTotal);
+}
+
+function getXpInlineModTargetIndex(categoryName) {
+  const cat = String(categoryName || '').trim();
+  if (!cat || !Array.isArray(state.posCart) || state.posCart.length === 0) return -1;
+  const explicitIdx = Number(state.xpInlineModTargetCartIdx);
+  if (explicitIdx >= 0 && explicitIdx < state.posCart.length) {
+    const item = state.posCart[explicitIdx];
+    if (item && String(item.category || '').trim() === cat) {
+      return explicitIdx;
+    }
+  }
+  const lastIdx = state.posCart.length - 1;
+  const lastItem = state.posCart[lastIdx];
+  if (lastItem && String(lastItem.category || '').trim() === cat) {
+    return lastIdx;
+  }
+  return -1;
+}
+
+function handleXpInlineModDishClick(item) {
+  if (!item) return;
+  const cat = String(item.category || '主廚推薦').trim();
+  const preMap = (state.xpInlineModPreselect && state.xpInlineModPreselect[cat]) || {};
+  const validSelections = {};
+  if (item.options && typeof item.options === 'object') {
+    Object.entries(preMap).forEach(([gName, val]) => {
+      if (item.options[gName] && val !== undefined && String(val).trim() !== '') {
+        validSelections[gName] = String(val).trim();
+      }
+    });
+  }
+  const extraTotal = calcMenuSelectionsExtraPriceForXp(item, validSelections);
+  const addQty = Math.max(1, Number(state.posQtyMultiplier) || 1);
+  const newItemObj = {
+    id: item.id,
+    category: cat,
+    name: item.name,
+    baseName: item.name,
+    basePrice: item.price,
+    price: Math.max(0, Number(item.price) + extraTotal),
+    qty: addQty,
+    selections: validSelections
+  };
+  mergeOrPushCartItem(state.posCart, newItemObj, -1);
+  const newSig = getItemSignature(newItemObj);
+  const foundIdx = state.posCart.findIndex(it => getItemSignature(it) === newSig);
+  state.xpInlineModTargetCartIdx = foundIdx >= 0 ? foundIdx : (state.posCart.length - 1);
+  if (state.xpInlineModPreselect && state.xpInlineModPreselect[cat]) {
+    delete state.xpInlineModPreselect[cat];
+  }
+  state.posQtyMultiplier = 1;
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (store) renderPosCashierPanel(store);
+}
+
+function selectXpInlineModCartItem(cartIdx) {
+  const it = state.posCart[cartIdx];
+  if (!it) return;
+  state.xpInlineModTargetCartIdx = cartIdx;
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  const storeMenu = store && (store.menus || []).find(m => String(m.id) === String(it.id));
+  const itemCat = String(it.category || (storeMenu && storeMenu.category) || '').trim();
+  if (itemCat && isXpInlineModCategory(itemCat)) {
+    state.posSelectedCategory = itemCat;
+  }
+  if (store) renderPosCashierPanel(store);
+}
+
+function parseQtySelectionMap(rawVal) {
+  const map = {};
+  String(rawVal || '').split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+    const m = tok.match(/^(.+?)(?:\s*[×xX*]\s*(\d+))?$/);
+    if (!m) return;
+    const lbl = m[1].trim();
+    const cnt = Math.max(1, parseInt(m[2] || '1', 10) || 1);
+    map[lbl] = (map[lbl] || 0) + cnt;
+  });
+  return map;
+}
+
+function serializeQtySelectionMap(map) {
+  const parts = [];
+  Object.entries(map).forEach(([lbl, cnt]) => {
+    if (cnt > 0) parts.push(cnt > 1 ? `${lbl} ×${cnt}` : lbl);
+  });
+  return parts.join(', ');
+}
+
+function applyInlineModToggleToSelections(curSelections, groupName, choiceLabel, groupType, maxSelect, qtyDelta = 1) {
+  const next = { ...(curSelections || {}) };
+  const cleanGrp = String(groupName || '').trim();
+  const cleanLbl = String(choiceLabel || '').trim();
+  if (!cleanGrp || !cleanLbl) return next;
+
+  if (groupType === 'radio') {
+    if (String(next[cleanGrp] || '').trim() === cleanLbl) {
+      delete next[cleanGrp];
+    } else {
+      next[cleanGrp] = cleanLbl;
+    }
+    return next;
+  }
+
+  if (groupType === 'qty') {
+    const qMap = parseQtySelectionMap(next[cleanGrp]);
+    const totalNow = Object.values(qMap).reduce((s, n) => s + n, 0);
+    const curVal = qMap[cleanLbl] || 0;
+    const nextVal = Math.max(0, curVal + qtyDelta);
+    if (qtyDelta > 0 && maxSelect > 0 && totalNow + qtyDelta > maxSelect) {
+      showToast(`⚠️「${cleanGrp}」最多可選 ${maxSelect} 份`);
+      return curSelections;
+    }
+    if (nextVal > 0) qMap[cleanLbl] = nextVal;
+    else delete qMap[cleanLbl];
+    const serialized = serializeQtySelectionMap(qMap);
+    if (serialized) next[cleanGrp] = serialized;
+    else delete next[cleanGrp];
+    return next;
+  }
+
+  // checkbox 多選
+  const curArr = String(next[cleanGrp] || '').split(',').map(s => s.trim()).filter(Boolean);
+  const existsIdx = curArr.indexOf(cleanLbl);
+  if (existsIdx >= 0) {
+    curArr.splice(existsIdx, 1);
+  } else {
+    if (maxSelect > 0 && curArr.length >= maxSelect) {
+      showToast(`⚠️「${cleanGrp}」最多可選 ${maxSelect} 項`);
+      return curSelections;
+    }
+    curArr.push(cleanLbl);
+  }
+  if (curArr.length > 0) next[cleanGrp] = curArr.join(', ');
+  else delete next[cleanGrp];
+  return next;
+}
+
+function toggleXpInlineModifierChoice(groupName, choiceLabel, groupType, maxSelect = 0, qtyDelta = 1) {
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (!store) return;
+  const cat = String(state.posSelectedCategory || '').trim();
+  const targetIdx = getXpInlineModTargetIndex(cat);
+
+  if (targetIdx >= 0 && state.posCart[targetIdx]) {
+    const cartItem = state.posCart[targetIdx];
+    const menuItem = (store.menus || []).find(m => String(m.id) === String(cartItem.id));
+    if (!menuItem) return;
+    const nextSelections = applyInlineModToggleToSelections(cartItem.selections || {}, groupName, choiceLabel, groupType, maxSelect, qtyDelta);
+    if (nextSelections === (cartItem.selections || {})) return;
+    const extraTotal = calcMenuSelectionsExtraPriceForXp(menuItem, nextSelections);
+    const updatedItem = {
+      ...cartItem,
+      selections: nextSelections,
+      price: Math.max(0, Number(menuItem.price) + extraTotal)
+    };
+    mergeOrPushCartItem(state.posCart, updatedItem, targetIdx);
+    const updatedSig = getItemSignature(updatedItem);
+    const mergedIdx = state.posCart.findIndex(it => getItemSignature(it) === updatedSig);
+    state.xpInlineModTargetCartIdx = mergedIdx >= 0 ? mergedIdx : Math.min(targetIdx, state.posCart.length - 1);
+  } else {
+    if (!state.xpInlineModPreselect || typeof state.xpInlineModPreselect !== 'object') {
+      state.xpInlineModPreselect = {};
+    }
+    const curPre = state.xpInlineModPreselect[cat] || {};
+    state.xpInlineModPreselect[cat] = applyInlineModToggleToSelections(curPre, groupName, choiceLabel, groupType, maxSelect, qtyDelta);
+  }
+
+  renderPosCashierPanel(store);
+}
+
+function clearXpInlineModifiers() {
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (!store) return;
+  const cat = String(state.posSelectedCategory || '').trim();
+  const targetIdx = getXpInlineModTargetIndex(cat);
+
+  if (targetIdx >= 0 && state.posCart[targetIdx]) {
+    const cartItem = state.posCart[targetIdx];
+    const menuItem = (store.menus || []).find(m => String(m.id) === String(cartItem.id));
+    const basePrice = menuItem ? Number(menuItem.price) : Number(cartItem.basePrice || cartItem.price || 0);
+    const updatedItem = {
+      ...cartItem,
+      selections: {},
+      price: Math.max(0, basePrice)
+    };
+    mergeOrPushCartItem(state.posCart, updatedItem, targetIdx);
+    const updatedSig = getItemSignature(updatedItem);
+    const mergedIdx = state.posCart.findIndex(it => getItemSignature(it) === updatedSig);
+    state.xpInlineModTargetCartIdx = mergedIdx >= 0 ? mergedIdx : Math.min(targetIdx, state.posCart.length - 1);
+  } else if (state.xpInlineModPreselect && state.xpInlineModPreselect[cat]) {
+    delete state.xpInlineModPreselect[cat];
+  }
+  renderPosCashierPanel(store);
+}
+
+function renderXpInlineModPanelHtml(store, categoryName, sharedOptions) {
+  const targetIdx = getXpInlineModTargetIndex(categoryName);
+  const targetItem = targetIdx >= 0 ? state.posCart[targetIdx] : null;
+  const activeSelections = targetItem
+    ? (targetItem.selections || {})
+    : ((state.xpInlineModPreselect && state.xpInlineModPreselect[categoryName]) || {});
+  const hasAnySelected = Object.keys(activeSelections).length > 0;
+  const targetMenu = targetItem ? (store.menus || []).find(m => String(m.id) === String(targetItem.id)) : null;
+
+  return `
+    <div class="xp-pos-inline-mod-panel">
+      <div class="xp-inline-mod-header ${targetItem ? '' : 'preselect'}">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:13px; font-weight:900; color:${targetItem ? '#9A3412' : '#312E81'};">
+            ${targetItem ? `🎯 客製：${escapeHtml(targetMenu ? trDishName(targetMenu) : targetItem.baseName || targetItem.name)}${(targetItem.qty || 1) > 1 ? ` ×${targetItem.qty}` : ''}` : `⚙️ ${escapeHtml(categoryName)}客製`}
+          </div>
+          ${hasAnySelected ? `
+            <button type="button" onclick="clearXpInlineModifiers()" style="border:1px solid #FCA5A5; background:#FFFFFF; color:#DC2626; padding:2px 7px; border-radius:6px; font-size:12px; font-weight:900; cursor:pointer; flex-shrink:0;">清除</button>
+          ` : ''}
+        </div>
+        <div style="font-size:11px; color:${targetItem ? '#C2410C' : '#4338CA'}; font-weight:700; margin-top:2px;">
+          ${targetItem ? '點下方按鈕即時套用至此品項' : '先點左側餐點直接加單，有需要再點此微調'}
+        </div>
+      </div>
+
+      ${Object.entries(sharedOptions).map(([gName, grp]) => {
+        const gType = grp.type === 'qty' ? 'qty' : (grp.type === 'checkbox' ? 'checkbox' : 'radio');
+        const maxSel = Math.max(0, parseInt(grp.maxSelect || 0, 10) || 0);
+        const rawCur = activeSelections[gName] || '';
+        const checkedSet = new Set(
+          gType === 'radio'
+            ? (rawCur ? [String(rawCur).trim()] : [])
+            : String(rawCur).split(',').map(s => s.trim()).filter(Boolean)
+        );
+        const qtyMap = gType === 'qty' ? parseQtySelectionMap(rawCur) : {};
+        const choices = Array.isArray(grp.choices) ? grp.choices : [];
+        const singleCol = choices.some(c => normalizeChoiceSpec(c).label.length >= 7);
+
+        return `
+          <div class="xp-inline-mod-group">
+            <div class="xp-inline-mod-group-title">${escapeHtml(gName)} <span style="font-size:11px; color:#64748B; font-weight:700;">(${gType === 'radio' ? '單選' : (gType === 'qty' ? '加購' : '可複選')})</span></div>
+            <div class="xp-inline-mod-choices">
+              ${choices.map(rawC => {
+                const spec = normalizeChoiceSpec(rawC);
+                if (!spec.label) return '';
+                const isOut = spec.soldOut;
+                if (gType === 'qty') {
+                  const qCnt = qtyMap[spec.label] || 0;
+                  return `
+                    <button type="button" class="xp-inline-mod-btn ${singleCol ? 'full-row' : ''} ${qCnt > 0 ? 'active' : ''} ${isOut ? 'sold-out' : ''}" ${isOut ? 'disabled' : ''} onclick="toggleXpInlineModifierChoice(${escapeJsAttr(gName)}, ${escapeJsAttr(spec.label)}, 'qty', ${maxSel}, 1)">
+                      <span>${escapeHtml(spec.label)}${qCnt > 0 ? ` ×${qCnt}` : ''}</span>
+                      ${spec.extra > 0 ? `<span class="xp-inline-mod-price">+$${spec.extra}</span>` : ''}
+                    </button>
+                  `;
+                }
+                const isOn = checkedSet.has(spec.label);
+                return `
+                  <button type="button" class="xp-inline-mod-btn ${singleCol ? 'full-row' : ''} ${isOn ? 'active' : ''} ${isOut ? 'sold-out' : ''}" ${isOut ? 'disabled' : ''} onclick="toggleXpInlineModifierChoice(${escapeJsAttr(gName)}, ${escapeJsAttr(spec.label)}, ${escapeJsAttr(gType)}, ${maxSel}, 1)">
+                    <span>${isOn ? '✓ ' : ''}${escapeHtml(spec.label)}</span>
+                    ${spec.extra > 0 ? `<span class="xp-inline-mod-price">+$${spec.extra}</span>` : ''}
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function changePosCartQty(idx, delta) {
   if (!state.posCart[idx]) return;
   state.posCart[idx].qty = (state.posCart[idx].qty || 1) + delta;
-  if (state.posCart[idx].qty <= 0) state.posCart.splice(idx, 1);
+  if (state.posCart[idx].qty <= 0) {
+    state.posCart.splice(idx, 1);
+    if (state.xpInlineModTargetCartIdx === idx) state.xpInlineModTargetCartIdx = -1;
+    else if (state.xpInlineModTargetCartIdx > idx) state.xpInlineModTargetCartIdx -= 1;
+  }
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (store) renderPosCashierPanel(store);
 }
@@ -872,6 +1190,8 @@ async function clearPosCart(skipConfirm = false) {
     if (!ok) return;
   }
   state.posCart = [];
+  state.xpInlineModTargetCartIdx = -1;
+  state.xpInlineModPreselect = {};
   state.posCashReceived = '';
   state.posSplitCashAmount = '';
   state.posManualDiscount = 0;
@@ -1904,6 +2224,7 @@ function renderPosCashierPanel(store) {
   }
 
   const prevMenuGridScroll = document.querySelector('#storePanel-pos .pos-dish-grid')?.scrollTop || 0;
+  const prevInlineModScroll = document.querySelector('#storePanel-pos .xp-pos-inline-mod-panel')?.scrollTop || 0;
   const prevReceiptScroll = document.querySelector('#storePanel-pos .pos-receipt-scroll-body')?.scrollTop || 0;
 
   const menus = (store.menus || []).slice().sort((a, b) => (Number(a.sortOrder) || 999) - (Number(b.sortOrder) || 999));
@@ -1919,6 +2240,12 @@ function renderPosCashierPanel(store) {
   const filteredMenus = state.posSelectedCategory === '全部'
     ? menus
     : menus.filter(m => (m.category || '主廚推薦') === state.posSelectedCategory);
+  const sharedXpCategoryOpts = (state.xpMode && isXpInlineModCategory(state.posSelectedCategory))
+    ? getSharedCategoryOptionsForXp(filteredMenus)
+    : {};
+  const isXpSplitInlineMod = state.xpMode && isXpInlineModCategory(state.posSelectedCategory) && Object.keys(sharedXpCategoryOpts).length > 0;
+  const isXpFried3Col = state.xpMode && !isXpSplitInlineMod && String(state.posSelectedCategory || '').includes('酥炸');
+  const activeXpInlineTargetIdx = isXpSplitInlineMod ? getXpInlineModTargetIndex(state.posSelectedCategory) : -1;
   const activeMult = Math.max(1, Number(state.posQtyMultiplier) || 1);
 
   const { storeCutleryPrice, subtotal, cutleryFee, takeoutFee, comboDiscount, comboAppliedRules, discount, percentDiscount, manualDiscount, serviceFee, finalTotal } = calcCurrentPosTotals(store);
@@ -2015,32 +2342,64 @@ function renderPosCashierPanel(store) {
           `).join('')}
         </div>
 
-        <div class="pos-dish-grid">
-          ${filteredMenus.map(m => {
-            const fullIdx = (store.menus || []).findIndex(x => String(x.id) === String(m.id));
-            const hasOpts = m.options && Object.keys(m.options).length > 0;
-            const isSoldOut = Boolean(m.soldOut);
-            const hasDailyLimit = Number(m.dailyLimit) > 0 && m.remainingToday !== null && m.remainingToday !== undefined;
-            const tileAccent = m.tileColor ? `border-top:4px solid ${escapeHtml(m.tileColor)};` : '';
-            return `
-              <div class="pos-dish-tile ${isSoldOut ? 'sold-out' : ''}" style="${tileAccent}" onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
-                <div>
-                  <div class="pos-tile-meta-row" style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
-                    <span class="pos-tile-cat">${escapeHtml(trTerm(m.category || '主廚推薦'))}${hasDailyLimit && !isSoldOut ? ` · ${t(`剩${m.remainingToday}`, `${m.remainingToday} left`)}` : ''}</span>
-                    <button type="button" class="pos-tile-soldout-btn" onclick="toggleMenuItemSoldOut(${fullIdx}, event)" style="border:none; background:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#FEE2E2' : '#FEF3C7') : '#F1F5F9'}; color:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#DC2626' : '#B45309') : '#475569'}; font-size:0.66rem; font-weight:900; padding:2px 6px; border-radius:6px;" title="${t('切換售罄或上架', 'Toggle Sold Out')}">
-                      ${isSoldOut ? (m.soldOutType === 'PERMANENT' ? t('🚫 長期缺貨', '🚫 Out', '🚫 長期切', '🚫 장기품절') : t('📅 本日售完', '📅 Today Out', '📅 本日売切', '📅 오늘품절')) : (hasOpts ? t('⚙️ 客製', '⚙️ Opts', '⚙️ 選択', '⚙️ 옵션') : t('售罄', 'Out', '売切', '품절'))}
-                    </button>
+        ${isXpSplitInlineMod ? `
+          <div class="xp-pos-split-body">
+            <div class="pos-dish-grid xp-grid-2col">
+              ${filteredMenus.map(m => {
+                const fullIdx = (store.menus || []).findIndex(x => String(x.id) === String(m.id));
+                const hasOpts = m.options && Object.keys(m.options).length > 0;
+                const isSoldOut = Boolean(m.soldOut);
+                const hasDailyLimit = Number(m.dailyLimit) > 0 && m.remainingToday !== null && m.remainingToday !== undefined;
+                const tileAccent = m.tileColor ? `border-top:4px solid ${escapeHtml(m.tileColor)};` : '';
+                return `
+                  <div class="pos-dish-tile ${isSoldOut ? 'sold-out' : ''}" style="${tileAccent}" onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
+                    <div>
+                      <div class="pos-tile-meta-row" style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
+                        <span class="pos-tile-cat">${escapeHtml(trTerm(m.category || '主廚推薦'))}${hasDailyLimit && !isSoldOut ? ` · ${t(`剩${m.remainingToday}`, `${m.remainingToday} left`)}` : ''}</span>
+                        <button type="button" class="pos-tile-soldout-btn" onclick="toggleMenuItemSoldOut(${fullIdx}, event)" style="border:none; background:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#FEE2E2' : '#FEF3C7') : '#F1F5F9'}; color:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#DC2626' : '#B45309') : '#475569'}; font-size:0.66rem; font-weight:900; padding:2px 6px; border-radius:6px;" title="${t('切換售罄或上架', 'Toggle Sold Out')}">
+                          ${isSoldOut ? (m.soldOutType === 'PERMANENT' ? t('🚫 長期缺貨', '🚫 Out', '🚫 長期切', '🚫 장기품절') : t('📅 本日售完', '📅 Today Out', '📅 本日売切', '📅 오늘품절')) : (hasOpts ? t('⚙️ 客製', '⚙️ Opts', '⚙️ 選択', '⚙️ 옵션') : t('售罄', 'Out', '売切', '품절'))}
+                        </button>
+                      </div>
+                      <div class="pos-tile-name" data-dish-name="1">${escapeHtml(trDishName(m))}</div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="pos-tile-price">NT$ ${m.price}</span>
+                      <span style="min-width:22px; height:22px; padding:0 5px; border-radius:999px; background:${isSoldOut ? '#E2E8F0' : (activeMult > 1 ? '#EA580C' : 'var(--brand-light)')}; color:${isSoldOut ? '#94A3B8' : (activeMult > 1 ? '#FFFFFF' : 'var(--brand-dark)')}; display:inline-flex; align-items:center; justify-content:center; font-weight:900; font-size:0.78rem;">${isSoldOut ? '✕' : (activeMult > 1 ? `×${activeMult}` : '＋')}</span>
+                    </div>
                   </div>
-                  <div class="pos-tile-name" data-dish-name="1">${escapeHtml(trDishName(m))}</div>
+                `;
+              }).join('')}
+            </div>
+            ${renderXpInlineModPanelHtml(store, state.posSelectedCategory, sharedXpCategoryOpts)}
+          </div>
+        ` : `
+          <div class="pos-dish-grid ${isXpFried3Col ? 'xp-grid-3col' : ''}">
+            ${filteredMenus.map(m => {
+              const fullIdx = (store.menus || []).findIndex(x => String(x.id) === String(m.id));
+              const hasOpts = m.options && Object.keys(m.options).length > 0;
+              const isSoldOut = Boolean(m.soldOut);
+              const hasDailyLimit = Number(m.dailyLimit) > 0 && m.remainingToday !== null && m.remainingToday !== undefined;
+              const tileAccent = m.tileColor ? `border-top:4px solid ${escapeHtml(m.tileColor)};` : '';
+              return `
+                <div class="pos-dish-tile ${isSoldOut ? 'sold-out' : ''}" style="${tileAccent}" onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
+                  <div>
+                    <div class="pos-tile-meta-row" style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
+                      <span class="pos-tile-cat">${escapeHtml(trTerm(m.category || '主廚推薦'))}${hasDailyLimit && !isSoldOut ? ` · ${t(`剩${m.remainingToday}`, `${m.remainingToday} left`)}` : ''}</span>
+                      <button type="button" class="pos-tile-soldout-btn" onclick="toggleMenuItemSoldOut(${fullIdx}, event)" style="border:none; background:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#FEE2E2' : '#FEF3C7') : '#F1F5F9'}; color:${isSoldOut ? (m.soldOutType === 'PERMANENT' ? '#DC2626' : '#B45309') : '#475569'}; font-size:0.66rem; font-weight:900; padding:2px 6px; border-radius:6px;" title="${t('切換售罄或上架', 'Toggle Sold Out')}">
+                        ${isSoldOut ? (m.soldOutType === 'PERMANENT' ? t('🚫 長期缺貨', '🚫 Out', '🚫 長期切', '🚫 장기품절') : t('📅 本日售完', '📅 Today Out', '📅 本日売切', '📅 오늘품절')) : (hasOpts ? t('⚙️ 客製', '⚙️ Opts', '⚙️ 選択', '⚙️ 옵션') : t('售罄', 'Out', '売切', '품절'))}
+                      </button>
+                    </div>
+                    <div class="pos-tile-name" data-dish-name="1">${escapeHtml(trDishName(m))}</div>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="pos-tile-price">NT$ ${m.price}</span>
+                    <span style="min-width:22px; height:22px; padding:0 5px; border-radius:999px; background:${isSoldOut ? '#E2E8F0' : (activeMult > 1 ? '#EA580C' : 'var(--brand-light)')}; color:${isSoldOut ? '#94A3B8' : (activeMult > 1 ? '#FFFFFF' : 'var(--brand-dark)')}; display:inline-flex; align-items:center; justify-content:center; font-weight:900; font-size:0.78rem;">${isSoldOut ? '✕' : (activeMult > 1 ? `×${activeMult}` : '＋')}</span>
+                  </div>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span class="pos-tile-price">NT$ ${m.price}</span>
-                  <span style="min-width:22px; height:22px; padding:0 5px; border-radius:999px; background:${isSoldOut ? '#E2E8F0' : (activeMult > 1 ? '#EA580C' : 'var(--brand-light)')}; color:${isSoldOut ? '#94A3B8' : (activeMult > 1 ? '#FFFFFF' : 'var(--brand-dark)')}; display:inline-flex; align-items:center; justify-content:center; font-weight:900; font-size:0.78rem;">${isSoldOut ? '✕' : (activeMult > 1 ? `×${activeMult}` : '＋')}</span>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
+              `;
+            }).join('')}
+          </div>
+        `}
       </div>
 
       <div class="pos-receipt-column">
@@ -2074,12 +2433,15 @@ function renderPosCashierPanel(store) {
                 : '';
               const storeMenu = (store.menus || []).find(m => String(m.id) === String(item.id));
               const canEdit = storeMenu && storeMenu.options && Object.keys(storeMenu.options).length > 0;
+              const isXpInlineCartItem = Boolean(state.xpMode && isXpInlineModCategory(item.category || (storeMenu && storeMenu.category)));
+              const isXpActiveTarget = isXpInlineCartItem && idx === activeXpInlineTargetIdx;
 
               return `
-                <div class="pos-receipt-item" style="padding:8px;">
-                  <div style="flex:1; min-width:0;">
+                <div class="pos-receipt-item ${isXpActiveTarget ? 'xp-inline-target-active' : ''}" style="padding:8px;">
+                  <div style="flex:1; min-width:0; ${isXpInlineCartItem ? 'cursor:pointer;' : ''}" ${isXpInlineCartItem ? `onclick="selectXpInlineModCartItem(${idx})"` : ''}>
                     <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
                       <span data-dish-name="1" style="font-weight:900; font-size:0.88rem; color:var(--text-primary);">${escapeHtml(storeMenu ? trDishName(storeMenu) : trDishName(item))}</span>
+                      ${isXpActiveTarget ? `<span style="font-size:0.65rem; font-weight:900; background:#FF5A1F; color:#FFFFFF; padding:1px 5px; border-radius:4px;">🎯 客製對象</span>` : ''}
                       ${item.itemComp ? `<span style="font-size:0.66rem; font-weight:900; background:#DCFCE7; color:#15803D; padding:1px 5px; border-radius:4px;">🎁 ${t('招待', 'Comp', 'サービス', '무료')}</span>` : (Number(item.itemDiscountAmount) > 0 ? `<span style="font-size:0.66rem; font-weight:900; background:#EEF2FF; color:#4338CA; padding:1px 5px; border-radius:4px;">-$${item.itemDiscountAmount}</span>` : '')}
                     </div>
                     ${selStr ? `<div style="font-size:0.72rem; color:var(--brand-dark); font-weight:700;">${escapeHtml(selStr)}</div>` : ''}
@@ -2216,6 +2578,8 @@ function renderPosCashierPanel(store) {
 
   const newMenuGrid = document.querySelector('#storePanel-pos .pos-dish-grid');
   if (newMenuGrid && prevMenuGridScroll > 0) newMenuGrid.scrollTop = prevMenuGridScroll;
+  const newInlineModPanel = document.querySelector('#storePanel-pos .xp-pos-inline-mod-panel');
+  if (newInlineModPanel && prevInlineModScroll > 0) newInlineModPanel.scrollTop = prevInlineModScroll;
   const newReceiptBody = document.querySelector('#storePanel-pos .pos-receipt-scroll-body');
   if (newReceiptBody && prevReceiptScroll > 0) newReceiptBody.scrollTop = prevReceiptScroll;
 }
@@ -2434,6 +2798,8 @@ async function submitMerchantPosOrder(opts = {}) {
     };
 
     state.posCart = [];
+    state.xpInlineModTargetCartIdx = -1;
+    state.xpInlineModPreselect = {};
     state.posCashReceived = '';
     state.posSplitCashAmount = '';
     state.posManualDiscount = 0;
@@ -6161,6 +6527,19 @@ function renderMerchantSettingsPanel(store) {
             </div>
 
             <div>
+              <label class="field-label" style="color:var(--indigo);">✅ ${t('忙碌店逾時自動結單時間 (分鐘，0=關閉手動結單)', 'Auto-Complete Orders After (min, 0=Manual)', '自動完了時間（分、0=手動）', '자동 완료 시간 (분, 0=수동)')}</label>
+              <input type="number" id="cfgAutoCompleteMinutes" class="select-input" min="0" max="240" value="${Number(store.autoCompleteMinutes) || 0}">
+              <div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:5px;">
+                ${[0, 15, 20, 30, 45].map(m => `
+                  <button type="button" class="pos-chip-btn" style="padding:2px 8px; font-size:0.7rem;" onclick="const el=document.getElementById('cfgAutoCompleteMinutes'); if(el) el.value='${m}';">${m === 0 ? '關閉(手動)' : `${m}分鐘`}</button>
+                `).join('')}
+              </div>
+              <div style="font-size:0.71rem; color:var(--text-secondary); margin-top:4px; line-height:1.4;">
+                💡 ${t('適合口頭叫號、無暇按「通知取餐／結單」的店家。設為 0 表示關閉（維持手動結單）；設為例如 15 或 20 分鐘，逾時後系統將自動結單為「已完成」，避免學生端預估等候時間暴增。', 'For busy oral-call stores that skip pressing Ready/Complete. 0 = manual completion; e.g. 15–20 min auto-completes expired orders so student wait times stay accurate.')}
+              </div>
+            </div>
+
+            <div>
               <label class="field-label">🎁 ${t('行銷優惠模式', 'Promotion Mode', '割引・プロモーション', '프로모션 모드')}</label>
               <select id="cfgPromoMode" class="select-input">
                 <option value="none" ${store.promoMode === 'none' ? 'selected' : ''}>${t('關閉優惠', 'Disabled', '無効', '사용 안 함')}</option>
@@ -8641,6 +9020,10 @@ async function saveMerchantConfig() {
     store.basePrepMinutes = Math.max(1, parseInt(document.getElementById('cfgBasePrepMin')?.value || '4', 10));
     store.maxCapacityPer15Min = Math.max(5, parseInt(document.getElementById('cfgMaxCap')?.value || '20', 10));
     store.reserveLeadMinutes = Math.max(10, Math.min(90, parseInt(document.getElementById('cfgReserveLeadMins')?.value || '25', 10) || 25));
+    const rawAutoComplete = parseInt(document.getElementById('cfgAutoCompleteMinutes')?.value || '0', 10);
+    store.autoCompleteMinutes = (Number.isFinite(rawAutoComplete) && rawAutoComplete > 0)
+      ? Math.max(5, Math.min(240, rawAutoComplete))
+      : 0;
     store.baseQueueOffset = 0;
     store.promoMode = document.getElementById('cfgPromoMode')?.value || 'none';
     store.promoScope = document.getElementById('cfgPromoScope')?.value === 'ALL_DAY' ? 'ALL_DAY' : 'OFF_PEAK';
@@ -8676,6 +9059,7 @@ async function saveMerchantConfig() {
           basePrepMinutes: store.basePrepMinutes,
           maxCapacityPer15Min: store.maxCapacityPer15Min,
           reserveLeadMinutes: store.reserveLeadMinutes,
+          autoCompleteMinutes: store.autoCompleteMinutes,
           baseQueueOffset: store.baseQueueOffset,
           activeOrders: store.activeOrders,
           promoMode: store.promoMode,

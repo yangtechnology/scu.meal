@@ -88,11 +88,11 @@ async function dispatchPostAction(env, ctx, action, params) {
   switch (action) {
     // ===== 1. 公開查詢、下單與看板 =====
     case 'initBundle':
-      return handleInitBundle(env, params);
+      return handleInitBundle(env, params, ctx);
     case 'getPickupBoard':
-      return handleGetPickupBoard(env, params);
+      return handleGetPickupBoard(env, params, ctx);
     case 'getOrder':
-      return handleGetOrder(env, params);
+      return handleGetOrder(env, params, ctx);
     case 'lookupOrders':
       return handleLookupOrders(env, params);
     case 'submitOrder':
@@ -233,7 +233,7 @@ export default {
             v: sp.get('v') || sp.get('verificationCode') || '',
             clientDeviceId: sp.get('clientDeviceId') || '',
             merchantAuthToken: sp.get('merchantAuthToken') || ''
-          });
+          }, ctx);
           return jsonResponse({ success: true, ...res });
         }
 
@@ -241,7 +241,7 @@ export default {
           const res = await handleGetPickupBoard(env, {
             storeId: sp.get('storeId') || sp.get('store') || '',
             forceRefresh: sp.get('forceRefresh') === '1' || sp.get('forceRefresh') === 'true'
-          });
+          }, ctx);
           return jsonResponse({ success: true, ...res });
         }
 
@@ -264,7 +264,7 @@ export default {
             merchantAuthToken: sp.get('merchantAuthToken') || '',
             storeId: sp.get('storeId') || '',
             forceRefresh: sp.get('forceRefresh') === '1' || sp.get('forceRefresh') === 'true'
-          });
+          }, ctx);
           return jsonResponse({ success: true, ...res });
         }
 

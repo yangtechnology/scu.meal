@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.3`;
+    script.src = `${base}merchant.js?v=26.4`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1545,6 +1545,8 @@ var state = {
   editingMenuStoreIndex: -1,
   editingMenuTempOptions: [],
   batchApplyOptionsState: null,
+  xpInlineModTargetCartIdx: -1,
+  xpInlineModPreselect: {},
 
   // 推播、防偽動態時鐘與智慧退避輪詢計時器
   lineProfile: loadLineProfile(),
@@ -1954,8 +1956,11 @@ function isOrderActivelyCookingNow(order) {
   if (ordDate !== todayStr) return false;
 
   const lifecycleStatus = evaluateOrderLifecycleStatus(order);
+  const storeObj = state.stores.find(s => s.id === order.storeId);
+  const storeAutoMins = storeObj ? Math.max(0, parseInt(storeObj.autoCompleteMinutes || 0, 10) || 0) : 0;
   if (lifecycleStatus === '製作中') {
-    return getOrderElapsedMinutes(order) <= 45;
+    const maxCookMins = storeAutoMins > 0 ? Math.min(45, storeAutoMins) : 45;
+    return getOrderElapsedMinutes(order) <= maxCookMins;
   }
   if (lifecycleStatus === '可取餐' && order.readyAtTs && (Date.now() - Number(order.readyAtTs)) < 180000) {
     return true;
@@ -2228,6 +2233,7 @@ function enrichStoresAndAi() {
       printerFrontCategories: Array.isArray(s.printerFrontCategories) && s.printerFrontCategories.length > 0 ? s.printerFrontCategories : ['飯捲類', '飲料類', '飲品類'],
       printerAutoEnabled: s.printerAutoEnabled !== false,
       printerBridgeKey: s.printerBridgeKey || '',
+      autoCompleteMinutes: Math.max(0, Math.min(240, parseInt(s.autoCompleteMinutes || 0, 10) || 0)),
       isOpen,
       maxCapacityPer15Min: cap,
       basePrepMinutes: storeBasePrep,
@@ -4573,6 +4579,9 @@ function applyCloudBundle(data, fromBroadcast = false, forceApply = false) {
           : (localMatch && Array.isArray(localMatch.printerFrontCategories) && localMatch.printerFrontCategories.length > 0 ? localMatch.printerFrontCategories : ['飯捲類', '飲料類', '飲品類']),
         printerAutoEnabled: cloudStore.printerAutoEnabled !== undefined ? Boolean(cloudStore.printerAutoEnabled) : (localMatch && localMatch.printerAutoEnabled !== undefined ? Boolean(localMatch.printerAutoEnabled) : true),
         printerBridgeKey: cloudStore.printerBridgeKey || (localMatch ? localMatch.printerBridgeKey : '') || '',
+        autoCompleteMinutes: cloudStore.autoCompleteMinutes !== undefined
+          ? Math.max(0, Math.min(240, parseInt(cloudStore.autoCompleteMinutes || 0, 10) || 0))
+          : (localMatch && localMatch.autoCompleteMinutes !== undefined ? Math.max(0, Math.min(240, parseInt(localMatch.autoCompleteMinutes || 0, 10) || 0)) : 0),
         serverActiveOrders: Number(cloudStore.activeOrders || 0),
         isOpen: cloudStore.isOpen !== undefined
           ? Boolean(cloudStore.isOpen)
@@ -6629,6 +6638,11 @@ function mergeOrPushCartItem(targetCart, newItemObj, editingIndex = -1) {
   }
 }
 
+function isXpInlineModCategory(catName) {
+  const c = String(catName || '').trim();
+  return c.includes('飯捲') || c.includes('蔥抓');
+}
+
 function handleMenuItemClick(itemId, isPos = false) {
   const storeId = isPos ? state.merchantStoreId : state.selectedStoreId;
   const store = state.stores.find(s => s.id === storeId);
@@ -6644,6 +6658,12 @@ function handleMenuItemClick(itemId, isPos = false) {
 
   if (item.soldOut) {
     showToast(t(`🚫 「${item.name}」今日已售罄，請挑選其他品項！`, `🚫 "${item.name}" is sold out today!`));
+    return;
+  }
+
+  // XP 模式：飯捲類 / 蔥抓餅類客製化為非必選，改於右側直接展開，點擊餐點不跳彈窗直接加入點餐單
+  if (isPos && state.xpMode && isXpInlineModCategory(item.category) && typeof handleXpInlineModDishClick === 'function') {
+    handleXpInlineModDishClick(item);
     return;
   }
 
