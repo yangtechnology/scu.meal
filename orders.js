@@ -67,6 +67,11 @@ import {
   verifyLinePayAuthToken
 } from './integrations.js';
 
+import {
+  getCachedStoresAndMenus,
+  invalidateCatalogCache
+} from './cache.js';
+
 // 輕量記憶體滑動視窗限流（每個 Worker Isolate 獨立防刷單；不浪費 D1 寫入配額）
 const rateBuckets = new Map();
 
@@ -109,24 +114,26 @@ export async function getNextPickupNumber(db, storeId, pickupDate, isPos) {
 
 // ==================== 2. 內部資料庫讀取與佇列計算輔助 ====================
 
-async function loadActiveStoresAndMenus(db) {
-  const [storesRes, menusRes] = await Promise.all([
-    db.prepare('SELECT * FROM stores WHERE deleted_at IS NULL ORDER BY id ASC').all(),
-    db.prepare('SELECT * FROM menus ORDER BY store_id ASC, sort_order ASC, id ASC').all()
-  ]);
-  return {
-    stores: storesRes.results || [],
-    menus: menusRes.results || []
-  };
+async function loadActiveStoresAndMenus(db, forceRefresh = false) {
+  return getCachedStoresAndMenus(db, forceRefresh);
 }
 
-async function loadRecentOrders(db, limit = 1500, storeId = '') {
-  const safeLimit = Math.max(10, Math.min(2500, Number(limit) || 1500));
+async function loadRecentOrders(db, limit = 80, storeId = '', maxAgeDays = 3) {
+  const safeLimit = Math.max(10, Math.min(500, Number(limit) || 80));
+  const cutoffTs = maxAgeDays > 0 ? (Date.now() - maxAgeDays * 86400 * 1000) : 0;
   let res;
-  if (storeId) {
+  if (storeId && cutoffTs > 0) {
+    res = await db.prepare(
+      'SELECT * FROM orders WHERE store_id = ? AND created_at_ts >= ? ORDER BY created_at_ts DESC LIMIT ?'
+    ).bind(String(storeId), cutoffTs, safeLimit).all();
+  } else if (storeId) {
     res = await db.prepare(
       'SELECT * FROM orders WHERE store_id = ? ORDER BY created_at_ts DESC LIMIT ?'
     ).bind(String(storeId), safeLimit).all();
+  } else if (cutoffTs > 0) {
+    res = await db.prepare(
+      'SELECT * FROM orders WHERE created_at_ts >= ? ORDER BY created_at_ts DESC LIMIT ?'
+    ).bind(cutoffTs, safeLimit).all();
   } else {
     res = await db.prepare(
       'SELECT * FROM orders ORDER BY created_at_ts DESC LIMIT ?'
@@ -225,7 +232,7 @@ async function autoCompleteExpiredOrders(env, storesRows, ordersList, ctx = null
     stmts.push(
       db.prepare(`
         UPDATE orders
-        SET status = '已完成', extra_meta_json = ?
+        SET status = '已完成', needs_print = 0, extra_meta_json = ?
         WHERE order_id = ? AND status IN ('製作中', '可取餐')
       `).bind(nextMetaStr, ord.orderId)
     );
@@ -295,8 +302,9 @@ function computeStoreQueueStats(storesRows, recentOrders, simOffsetsMap = {}) {
   return computedMap;
 }
 
-async function getStoreCustomMetaAndConfig(db, storeId) {
-  const row = await db.prepare('SELECT * FROM stores WHERE id = ? AND deleted_at IS NULL').bind(String(storeId)).first();
+async function getStoreCustomMetaAndConfig(db, storeId, forceRefresh = false) {
+  const sm = await getCachedStoresAndMenus(db, forceRefresh);
+  const row = sm.storeById.get(String(storeId || '').trim().toUpperCase()) || null;
   if (!row) return null;
   const customMeta = safeJsonParse(row.custom_meta_json, {});
   const frontCategories = Array.isArray(customMeta.printerFrontCategories) && customMeta.printerFrontCategories.length > 0
@@ -319,10 +327,11 @@ async function isStoreShiftLocked(db, storeId, dateStr) {
 export async function handleInitBundle(env, params = {}, ctx = null) {
   const db = env.DB;
   const session = await parseVerifiedMerchantSession(env, params);
+  const forceRefresh = Boolean(params && params.forceRefresh);
 
   const [sm, rawRecentOrders, simOffsetsRaw, lineBotBasicId, lineLiffId] = await Promise.all([
-    loadActiveStoresAndMenus(db),
-    loadRecentOrders(db, 1500),
+    loadActiveStoresAndMenus(db, forceRefresh),
+    loadRecentOrders(db, 80, '', 3),
     kvGet(db, 'SIM_QUEUE_OFFSETS'),
     kvGet(db, 'LINE_BOT_BASIC_ID'),
     kvGet(db, 'LINE_LIFF_ID')
@@ -545,8 +554,8 @@ export async function handleInitBundle(env, params = {}, ctx = null) {
 
   if (session && effectiveMerchantStoreId) {
     const [auditRes, shiftRes] = await Promise.all([
-      db.prepare('SELECT * FROM audit_logs WHERE store_id = ? ORDER BY ts DESC LIMIT 200').bind(effectiveMerchantStoreId).all(),
-      db.prepare('SELECT * FROM shift_reports WHERE store_id = ? ORDER BY updated_at DESC LIMIT 200').bind(effectiveMerchantStoreId).all()
+      db.prepare('SELECT * FROM audit_logs WHERE store_id = ? ORDER BY ts DESC LIMIT 30').bind(effectiveMerchantStoreId).all(),
+      db.prepare('SELECT * FROM shift_reports WHERE store_id = ? ORDER BY updated_at DESC LIMIT 30').bind(effectiveMerchantStoreId).all()
     ]);
 
     storeAuditLogs = (auditRes.results || []).map(r => ({
@@ -624,17 +633,23 @@ export async function handleInitBundle(env, params = {}, ctx = null) {
 export async function handleGetPickupBoard(env, params = {}, ctx = null) {
   const db = env.DB;
   const requestedStoreId = String(params.storeId || params.store || '').trim().toUpperCase();
-  const storesRes = await db.prepare('SELECT * FROM stores WHERE deleted_at IS NULL ORDER BY id ASC').all();
-  const stores = storesRes.results || [];
+  const sm = await getCachedStoresAndMenus(db, Boolean(params.forceRefresh));
+  const stores = sm.stores || [];
   if (stores.length === 0) throw new Error('查無店鋪資料');
 
-  const targetRow = stores.find(s => String(s.id).toUpperCase() === requestedStoreId) || stores[0];
+  const targetRow = sm.storeById.get(requestedStoreId) || stores[0];
   const targetId = String(targetRow.id);
   const customMeta = safeJsonParse(targetRow.custom_meta_json, {});
   const isOpen = targetRow.is_open !== undefined && targetRow.is_open !== null ? Boolean(targetRow.is_open) : true;
   const bizStatus = evaluateStoreBusinessHours(customMeta, isOpen);
 
-  const recentOrders = await loadRecentOrders(db, 500, targetId);
+  const todayStr = getTodayTaipeiStr();
+  const todayRes = await db.prepare(
+    'SELECT * FROM orders WHERE store_id = ? AND pickup_date = ? ORDER BY created_at_ts DESC LIMIT 120'
+  ).bind(targetId, todayStr).all();
+  const recentOrders = (todayRes.results || [])
+    .map(dbRowToOrderObject)
+    .filter(o => o && !isCorruptedOrMockOrder(o));
   await autoCompleteExpiredOrders(env, [targetRow], recentOrders, ctx);
   const qMap = buildStoreQueueProgressMap(recentOrders);
   const qStats = computeStoreQueueStats([targetRow], recentOrders);
@@ -678,10 +693,8 @@ export async function handleGetOrder(env, params = {}, ctx = null) {
   if (!order) return { order: null };
 
   if (order.status === '製作中' || order.status === '可取餐') {
-    const storeRow = await env.DB
-      .prepare('SELECT id, custom_meta_json FROM stores WHERE id = ? AND deleted_at IS NULL')
-      .bind(String(order.storeId || ''))
-      .first();
+    const sm = await getCachedStoresAndMenus(env.DB);
+    const storeRow = sm.storeById.get(String(order.storeId || '').trim().toUpperCase()) || null;
     if (storeRow) {
       await autoCompleteExpiredOrders(env, [storeRow], [order], ctx);
     }
@@ -861,12 +874,12 @@ export async function handleSubmitOrder(env, ctx, params = {}) {
     }
   }
 
-  // 6. 載入近期訂單（檢查防棄單、時段配額、每日限量、佇列負載）與本店菜單
-  const [recentOrders, menusRes] = await Promise.all([
-    loadRecentOrders(db, 300, storeId),
-    db.prepare('SELECT * FROM menus WHERE store_id = ?').bind(storeId).all()
+  // 6. 載入近期訂單（檢查防棄單、時段配額、每日限量、佇列負載）與本店快取菜單
+  const [recentOrders, sm] = await Promise.all([
+    loadRecentOrders(db, 100, storeId, 3),
+    getCachedStoresAndMenus(db)
   ]);
-  const allMenus = menusRes.results || [];
+  const allMenus = sm.menusByStoreId.get(storeId.toUpperCase()) || [];
   const maxCap = Math.max(5, Number(storeRow.max_capacity_per_15min) || 20);
 
   if (!isMerchantPosRequest && isCashPayment && env.DISABLE_RATE_LIMIT !== '1') {
@@ -1394,9 +1407,9 @@ export async function handleSubmitOrder(env, ctx, params = {}) {
       items_json, subtotal, discount, cutlery_fee, takeout_fee, service_fee, final_total,
       promo_applied, dine_type, pickup_date, pickup_time, pickup_time_slot,
       payment_method, payment_status, paid_at_date, status, is_reservation,
-      print_status, preprint_done, customer_phone, line_user_id, verification_code,
+      print_status, preprint_done, needs_print, customer_phone, line_user_id, verification_code,
       created_at, created_at_ts, extra_meta_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, 1, ?, ?, ?, ?, ?, ?)
   `).bind(
     incomingOrderId, pickupNumber, storeId, String(storeRow.name || ''), orderSource, studentNameSummary,
     itemsJsonStr, authoritativeSubtotal, authoritativeDiscount, cutleryFee, takeoutFee, serviceFee, authoritativeFinalTotal,
@@ -1523,16 +1536,32 @@ export async function handleUpdateOrderStatus(env, ctx, params = {}) {
   meta.statusTimeline.push({ ts: nowMs, timeStr: nowStr, status: nextStatus, label: tlLabel });
   meta.statusTimeline = meta.statusTimeline.slice(-25);
 
-  await db.prepare(`
-    UPDATE orders
-    SET status = ?, payment_status = ?, paid_at_date = ?, payment_method = ?, extra_meta_json = ?
-    WHERE order_id = ?
-  `).bind(nextStatus, paymentStatus, paidAtDate, paymentMethod, JSON.stringify(meta), orderId).run();
+  // 若預訂單被店員手動提前切為「製作中」且尚未印正常三聯，重新標記 needs_print = 1 並推播 NORMAL 任務
+  const promotedToCooking = prevStatus !== '製作中' && nextStatus === '製作中' && String(curOrder.printStatus || '').toUpperCase() !== 'PRINTED';
+  const isTerminalNext = nextStatus === '已完成' || nextStatus.includes('已取消') || nextStatus === '已退單';
+
+  if (isTerminalNext) {
+    await db.prepare(`
+      UPDATE orders
+      SET status = ?, payment_status = ?, paid_at_date = ?, payment_method = ?, needs_print = 0, extra_meta_json = ?
+      WHERE order_id = ?
+    `).bind(nextStatus, paymentStatus, paidAtDate, paymentMethod, JSON.stringify(meta), orderId).run();
+  } else if (promotedToCooking) {
+    await db.prepare(`
+      UPDATE orders
+      SET status = ?, payment_status = ?, paid_at_date = ?, payment_method = ?, needs_print = 1, extra_meta_json = ?
+      WHERE order_id = ?
+    `).bind(nextStatus, paymentStatus, paidAtDate, paymentMethod, JSON.stringify(meta), orderId).run();
+  } else {
+    await db.prepare(`
+      UPDATE orders
+      SET status = ?, payment_status = ?, paid_at_date = ?, payment_method = ?, extra_meta_json = ?
+      WHERE order_id = ?
+    `).bind(nextStatus, paymentStatus, paidAtDate, paymentMethod, JSON.stringify(meta), orderId).run();
+  }
 
   const updatedOrderObj = await loadOrderById(db, orderId);
 
-  // 若預訂單被店員手動提前切為「製作中」且尚未印正常三聯，推播 NORMAL 印表機任務
-  const promotedToCooking = prevStatus !== '製作中' && nextStatus === '製作中' && updatedOrderObj.printStatus !== 'PRINTED';
   const storeCtx = promotedToCooking ? await getStoreCustomMetaAndConfig(db, orderStoreId) : null;
   const bgList = [
     syncOrderToFirestore(env, updatedOrderObj, {
@@ -1646,7 +1675,7 @@ export async function handleCancelOrder(env, ctx, params = {}) {
   meta.statusTimeline = meta.statusTimeline.slice(-25);
 
   await db.prepare(`
-    UPDATE orders SET status = ?, payment_status = ?, extra_meta_json = ?
+    UPDATE orders SET status = ?, payment_status = ?, needs_print = 0, extra_meta_json = ?
     WHERE order_id = ?
   `).bind(nextStatus, nextPaymentStatus, JSON.stringify(meta), orderId).run();
 
@@ -2091,48 +2120,85 @@ export async function handleGetPendingPrintJobs(env, params = {}) {
   }
 
   const todayStr = getTodayTaipeiStr();
-  const [recentOrders, menusRes] = await Promise.all([
-    loadRecentOrders(db, 200, storeId),
-    db.prepare('SELECT id, name, category FROM menus WHERE store_id = ?').bind(storeId).all()
-  ]);
+  // 只用精準索引撈出 needs_print = 1 且取餐日 >= 今日之待印單（無新單時 rows_read = 0）
+  const pendingRes = await db.prepare(`
+    SELECT * FROM orders
+    WHERE store_id = ? AND needs_print = 1 AND pickup_date >= ?
+    ORDER BY created_at_ts DESC
+    LIMIT 50
+  `).bind(storeId, todayStr).all();
 
+  const rawRows = pendingRes.results || [];
+  // 無待印訂單時立刻回傳，絕不查詢 menus！
+  if (rawRows.length === 0) {
+    return { storeId, storeName: storeRow.name, frontCategories, autoPrintEnabled: true, jobs: [], serverTimeTs: nowMs };
+  }
+
+  // 有待印單時也直接從 60 秒記憶體快取取得菜單分類，零額外 D1 查詢
+  const sm = await getCachedStoresAndMenus(db);
+  const storeMenus = sm.menusByStoreId.get(storeId) || [];
   const menuCatById = {};
   const menuCatByName = {};
-  (menusRes.results || []).forEach(m => {
+  for (const m of storeMenus) {
     const c = String(m.category || '其他').trim();
     if (m.id) menuCatById[String(m.id)] = c;
     if (m.name && !menuCatByName[String(m.name).trim()]) menuCatByName[String(m.name).trim()] = c;
-  });
+  }
 
   const maxAgeMs = 12 * 3600 * 1000;
   const jobs = [];
+  const staleClearIds = [];
 
-  for (const o of recentOrders) {
+  for (const row of rawRows) {
+    const o = dbRowToOrderObject(row);
+    if (!o || isCorruptedOrMockOrder(o)) continue;
+
     const st = String(o.status || '').trim();
-    if (st === '待付款 (LINE Pay 授權中)' || st.includes('已取消') || st === '已退單' || st === '已完成') continue;
+    if (st === '待付款 (LINE Pay 授權中)' || st.includes('已取消') || st === '已退單' || st === '已完成') {
+      staleClearIds.push(o.orderId);
+      continue;
+    }
 
     let printMode = '';
     if (st === '製作中' || st === '可取餐') {
-      if (String(o.printStatus || '').toUpperCase() === 'PRINTED') continue;
+      if (String(o.printStatus || '').toUpperCase() === 'PRINTED') {
+        staleClearIds.push(o.orderId);
+        continue;
+      }
       printMode = 'NORMAL';
     } else if (o.isReservation || st.includes('預訂') || st.includes('預約') || st.includes('排程')) {
-      if (o.preprintDone) continue;
+      if (o.preprintDone) {
+        staleClearIds.push(o.orderId);
+        continue;
+      }
       printMode = 'PREORDER_COUNTER_ONLY';
     } else {
+      staleClearIds.push(o.orderId);
       continue;
     }
 
-    if (o.pickupDate < todayStr) continue;
+    if (o.pickupDate < todayStr) {
+      staleClearIds.push(o.orderId);
+      continue;
+    }
     if (!o.isReservation && o.createdAtTs > 0 && (nowMs - o.createdAtTs) > maxAgeMs && String(o.printStatus || '').toUpperCase() !== 'PENDING') {
+      staleClearIds.push(o.orderId);
       continue;
     }
 
-    // 補齊菜單分類
     const enrichedItems = (o.structuredItems || []).map(it => ({
       ...it,
       category: String(it.category || menuCatById[String(it.id || '')] || menuCatByName[String(it.baseName || it.name || '').trim()] || '其他').trim()
     }));
     jobs.push(buildPrintJobPayload({ ...o, structuredItems: enrichedItems }, frontCategories, printMode));
+  }
+
+  // 若有舊狀態殘留 needs_print = 1，自動清除避免下次輪詢重複讀取
+  if (staleClearIds.length > 0) {
+    const clearStmts = staleClearIds.map(oid =>
+      db.prepare('UPDATE orders SET needs_print = 0 WHERE order_id = ?').bind(oid)
+    );
+    await db.batch(clearStmts).catch(() => {});
   }
 
   return { storeId, storeName: storeRow.name, frontCategories, autoPrintEnabled: true, jobs, serverTimeTs: nowMs };
@@ -2154,13 +2220,13 @@ export async function handleAckPrintJob(env, ctx, params = {}) {
 
   const nowTs = Date.now();
   if (printMode === 'PREORDER_COUNTER_ONLY') {
-    await db.prepare('UPDATE orders SET preprint_done = 1 WHERE order_id = ?').bind(orderId).run();
+    await db.prepare('UPDATE orders SET preprint_done = 1, needs_print = 0 WHERE order_id = ?').bind(orderId).run();
   } else {
     const meta = safeJsonParse(curOrder.extraMetaJson, {});
     meta.printStatus = 'PRINTED';
     meta.printedAtTs = nowTs;
     await db.prepare(`
-      UPDATE orders SET print_status = 'PRINTED', extra_meta_json = ?
+      UPDATE orders SET print_status = 'PRINTED', needs_print = 0, extra_meta_json = ?
       WHERE order_id = ?
     `).bind(JSON.stringify(meta), orderId).run();
   }
@@ -2189,7 +2255,7 @@ export async function handleRequeuePrintJob(env, ctx, params = {}) {
   meta.reprintRequestedAtTs = Date.now();
 
   await db.prepare(`
-    UPDATE orders SET print_status = 'PENDING', extra_meta_json = ?
+    UPDATE orders SET print_status = 'PENDING', needs_print = 1, extra_meta_json = ?
     WHERE order_id = ?
   `).bind(JSON.stringify(meta), orderId).run();
 
@@ -2272,6 +2338,7 @@ export async function handleUpdateStoreConfig(env, params = {}) {
     nextCutlery, nextPromoMode, nextPromoText, nextPromoDisc,
     JSON.stringify(nextMeta), storeId
   ).run();
+  invalidateCatalogCache();
 
   return { updated: true, storeId };
 }
@@ -2301,6 +2368,7 @@ export async function handleToggleMenuSoldOut(env, params = {}) {
     UPDATE menus SET sold_out = ?, options_json = ?
     WHERE id = ? AND store_id = ?
   `).bind(soldOut ? 1 : 0, JSON.stringify(rawOpts), menuId, storeId).run();
+  invalidateCatalogCache();
 
   return { updated: true, storeId, menuId, soldOut, soldOutType, soldOutDate };
 }
@@ -2326,7 +2394,10 @@ export async function handleRestoreSoldOutMenusBatch(env, params = {}) {
         .bind(JSON.stringify(rawOpts), String(row.id), storeId)
     );
   }
-  if (stmts.length > 0) await db.batch(stmts);
+  if (stmts.length > 0) {
+    await db.batch(stmts);
+    invalidateCatalogCache();
+  }
   return { restored: true, storeId, count: stmts.length };
 }
 
@@ -2337,17 +2408,19 @@ export async function runScheduledReservationPromotion(env, ctx) {
   const nowMs = Date.now();
   const nowP = getTaipeiDateParts(nowMs);
 
-  const [storesRes, ordersRes] = await Promise.all([
-    db.prepare('SELECT id, custom_meta_json FROM stores WHERE deleted_at IS NULL').all(),
+  // 利用 idx_orders_active_status 精準只撈進行中/待排程訂單，絕不掃歷史已完成與已取消單
+  const [sm, ordersRes] = await Promise.all([
+    getCachedStoresAndMenus(db),
     db.prepare(`
       SELECT * FROM orders
-      WHERE status NOT IN ('已完成') AND status NOT LIKE '已取消%'
-      ORDER BY created_at_ts DESC LIMIT 500
+      WHERE status IN ('製作中', '可取餐', '已接單待排程', '待付款確認', '待付款 (LINE Pay 授權中)')
+      ORDER BY created_at_ts DESC LIMIT 200
     `).all()
   ]);
 
+  const storesList = sm.stores || [];
   const storeMetaMap = {};
-  (storesRes.results || []).forEach(s => {
+  storesList.forEach(s => {
     const meta = safeJsonParse(s.custom_meta_json, {});
     const frontCats = Array.isArray(meta.printerFrontCategories) && meta.printerFrontCategories.length > 0
       ? meta.printerFrontCategories
@@ -2376,7 +2449,7 @@ export async function runScheduledReservationPromotion(env, ctx) {
         if (!Array.isArray(meta.statusTimeline)) meta.statusTimeline = [];
         meta.statusTimeline.push({ ts: nowMs, timeStr: nowP.timeFullStr, status: '已取消 (LINE Pay 付款逾時未完成)', label: 'LINE Pay 逾時未授權自動取消' });
         await db.prepare(`
-          UPDATE orders SET status = '已取消 (LINE Pay 付款逾時未完成)', payment_status = '已退單作廢', extra_meta_json = ?
+          UPDATE orders SET status = '已取消 (LINE Pay 付款逾時未完成)', payment_status = '已退單作廢', needs_print = 0, extra_meta_json = ?
           WHERE order_id = ?
         `).bind(JSON.stringify(meta), ord.orderId).run();
         cleanedCount++;
@@ -2400,24 +2473,27 @@ export async function runScheduledReservationPromotion(env, ctx) {
       if (!Array.isArray(meta.statusTimeline)) meta.statusTimeline = [];
       let nextPaymentStatus = ord.paymentStatus;
       let shouldPushNormalPrint = false;
+      let nextNeedsPrint = 0;
 
       if (nextStatus.includes('已取消')) {
         nextPaymentStatus = '已退單作廢';
         meta.paymentStatus = nextPaymentStatus;
         meta.statusTimeline.push({ ts: nowMs, timeStr: nowP.timeFullStr, status: nextStatus, label: '系統自動歸檔作廢' });
+        nextNeedsPrint = 0;
         cleanedCount++;
       } else if (nextStatus === '製作中') {
         meta.cookingStartedAtTs = meta.cookingStartedAtTs || nowMs;
         meta.autoFiredAtTs = nowMs;
         meta.statusTimeline.push({ ts: nowMs, timeStr: nowP.timeFullStr, status: '製作中', label: '預訂單到時自動推入廚房 (Auto-fire)' });
         shouldPushNormalPrint = sInfo.autoPrintEnabled && ord.printStatus !== 'PRINTED';
+        nextNeedsPrint = ord.printStatus !== 'PRINTED' ? 1 : 0;
         promotedCount++;
       }
 
       await db.prepare(`
-        UPDATE orders SET status = ?, payment_status = ?, extra_meta_json = ?
+        UPDATE orders SET status = ?, payment_status = ?, needs_print = ?, extra_meta_json = ?
         WHERE order_id = ?
-      `).bind(nextStatus, nextPaymentStatus, JSON.stringify(meta), ord.orderId).run();
+      `).bind(nextStatus, nextPaymentStatus, nextNeedsPrint, JSON.stringify(meta), ord.orderId).run();
 
       const updatedOrd = await loadOrderById(db, ord.orderId);
       const syncPromise = syncOrderToFirestore(env, updatedOrd, {
@@ -2437,7 +2513,7 @@ export async function runScheduledReservationPromotion(env, ctx) {
   }
 
   // 3. 針對有開啟「自動結單時間」的忙碌店家，將超過設定分鐘數的進行中訂單自動結單為「已完成」
-  const autoRes = await autoCompleteExpiredOrders(env, storesRes.results || [], activeOrdersForAutoComplete, ctx);
+  const autoRes = await autoCompleteExpiredOrders(env, storesList, activeOrdersForAutoComplete, ctx);
 
   return {
     promotedCount,

@@ -22,6 +22,7 @@ import {
   issueMerchantSessionToken,
   kvSet
 } from './auth.js';
+import { invalidateCatalogCache } from './cache.js';
 
 function packMenuOptionsMeta(m, todayStr) {
   const cleanOpts = (m.options && typeof m.options === 'object' && !Array.isArray(m.options)) ? { ...m.options } : {};
@@ -128,6 +129,7 @@ export async function handleSaveStoreMenus(env, params = {}) {
     );
   }
   await db.batch(stmts);
+  invalidateCatalogCache();
 
   return { saved: true, storeId, menuCount: preparedRows.length };
 }
@@ -180,6 +182,7 @@ export async function handleUpsertSingleMenuItem(env, params = {}) {
     isSoldOutBool ? 1 : 0,
     finalSortOrder
   ).run();
+  invalidateCatalogCache();
 
   return { updated: true, storeId, menuId };
 }
@@ -193,6 +196,7 @@ export async function handleDeleteSingleMenuItem(env, params = {}) {
 
   const res = await db.prepare('DELETE FROM menus WHERE id = ? AND store_id = ?').bind(menuId, storeId).run();
   const changed = Number(res && res.meta && res.meta.changes) || 0;
+  if (changed > 0) invalidateCatalogCache();
   return { deleted: changed > 0, storeId, menuId };
 }
 
@@ -325,6 +329,7 @@ export async function handleSaveStoreProfile(env, params = {}) {
     UPDATE stores SET campus = ?, name = ?, category = ?, custom_meta_json = ?
     WHERE id = ?
   `).bind(nextCampus, nextName, nextCategory, JSON.stringify(nextMeta), storeId).run();
+  invalidateCatalogCache();
 
   return { updated: true, storeId, closedDays: nextClosedDays, weeklyHours: nextWeeklyHours };
 }
@@ -365,6 +370,7 @@ export async function handleCreateStore(env, params = {}) {
   `).bind(nextId, campus, name, category, JSON.stringify(customMeta)).run();
 
   await kvSet(db, 'MERCHANT_PIN_HMAC_STORE_' + nextId, await hashMerchantPinWithServerSalt(env, newStorePin));
+  invalidateCatalogCache();
   const newStoreToken = await issueMerchantSessionToken(env, nextId, 'MANAGER', '店長');
 
   return {
@@ -401,6 +407,7 @@ export async function handleDeleteStore(env, params = {}) {
   await assertManagerAuthorized(env, params, storeId);
 
   await db.prepare('UPDATE stores SET deleted_at = ? WHERE id = ?').bind(Date.now(), storeId).run();
+  invalidateCatalogCache();
   return { deleted: true, storeId };
 }
 
@@ -433,7 +440,10 @@ export async function handleUpdateStoresVisibility(env, params = {}) {
     );
   }
 
-  if (stmts.length > 0) await db.batch(stmts);
+  if (stmts.length > 0) {
+    await db.batch(stmts);
+    invalidateCatalogCache();
+  }
   return { updated: true, visibilityMap: updatedVisibility };
 }
 
