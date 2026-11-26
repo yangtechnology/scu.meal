@@ -449,7 +449,10 @@ function switchMerchantStore(storeId) {
   state.analyticsRangeOrders = null;
   state.analyticsOrdersLoading = false;
   state.analyticsOrdersError = '';
-  state.kdsHistoryDateOrders = null;
+  state.kdsDateMode = 'LIVE_TODAY';
+  state.kdsRangeOrders = null;
+  state.kdsSearchOrders = null;
+  state.shiftReportDate = getTodayDateStr();
   state.shiftZReportCloudData = null;
   const topSel = document.getElementById('storeTopSwitcher');
   if (topSel && topSel.value !== storeId) topSel.value = storeId;
@@ -2905,18 +2908,18 @@ function isOrderInShiftSlot(order, shiftSlot) {
 async function lockTodayShiftSettlement(expectedDrawerCash, actualCounted, varianceAmt) {
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (!store) return;
-  const todayStr = getTodayDateStr();
+  const shiftDate = normalizeDateStr(state.shiftReportDate || getTodayDateStr());
   const slot = state.activeShiftSlot || 'FULL';
-  const compKey = makeShiftCompositeKey(todayStr, slot);
+  const compKey = makeShiftCompositeKey(shiftDate, slot);
   const cashier = state.shiftCashierName || state.merchantStaffName || '值班店長';
   const lockKey = `mealflow_shift_locked_${store.id}_${compKey}`;
-  const pettyEntries = getShiftPettyCashEntries(store.id, todayStr, slot);
+  const pettyEntries = getShiftPettyCashEntries(store.id, shiftDate, slot);
   const pettyCashInSum = pettyEntries.filter(e => e.type === 'IN').reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const pettyCashOutSum = pettyEntries.filter(e => e.type === 'OUT').reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const lockRecord = {
     locked: true,
-    lockedAt: `${todayStr} ${getTaipeiTimeHHMMSS()}`,
+    lockedAt: `${getTodayDateStr()} ${getTaipeiTimeHHMMSS()}`,
     shiftSlot: slot,
     cashier,
     openingFloat: state.shiftOpeningFloat,
@@ -2935,10 +2938,10 @@ async function lockTodayShiftSettlement(expectedDrawerCash, actualCounted, varia
     localStorage.setItem(lockKey, JSON.stringify(lockRecord));
   } catch (e) {}
 
-  recordMerchantAuditLog('完成交班日結關班', `班別[${slot}] 經手人：${cashier}，應有錢箱現金 $${expectedDrawerCash}，實點 $${actualCounted}，差額 $${varianceAmt}`);
-  openShiftZReportModal();
+  recordMerchantAuditLog('完成交班日結關班', `營業日 ${shiftDate} 班別[${slot}] 經手人：${cashier}，應有錢箱現金 $${expectedDrawerCash}，實點 $${actualCounted}，差額 $${varianceAmt}`);
+  openShiftZReportModal(true);
   renderMerchantView();
-  showToast(`🔒 已完成「${store.name}」${todayStr} [${slot}] 交班日結鎖定並寫入雲端 ShiftReports 工作表！`);
+  showToast(`🔒 已完成「${store.name}」${shiftDate} [${slot}] 交班日結鎖定並寫入雲端！`);
 
   try {
     await fetch(GAS_URL, {
@@ -2949,7 +2952,7 @@ async function lockTodayShiftSettlement(expectedDrawerCash, actualCounted, varia
         action: 'lockShiftZReport',
         ...getMerchantAuthPayload(),
         storeId: store.id,
-        shiftDate: todayStr,
+        shiftDate,
         shiftSlot: slot,
         ...lockRecord
       })
@@ -2973,12 +2976,12 @@ async function unlockTodayShiftSettlement() {
     mgrOverridePin = mgrAuth.managerOverridePin;
   }
 
-  const todayStr = getTodayDateStr();
+  const shiftDate = normalizeDateStr(state.shiftReportDate || getTodayDateStr());
   const slot = state.activeShiftSlot || 'FULL';
-  const compKey = makeShiftCompositeKey(todayStr, slot);
+  const compKey = makeShiftCompositeKey(shiftDate, slot);
   const reason = await showAppPromptModal({
-    title: `🔓 解除交班日結鎖定 (${todayStr}・${slot})`,
-    message: `確定要解除「${store.name}」${todayStr} [${slot}] 的交班日結鎖定嗎？\n請輸入店長解鎖原因（將永久寫入雲端 AuditLogs）：`,
+    title: `🔓 解除交班日結鎖定 (${shiftDate}・${slot})`,
+    message: `確定要解除「${store.name}」${shiftDate} [${slot}] 的交班日結鎖定嗎？\n請輸入店長解鎖原因（將永久寫入雲端 AuditLogs）：`,
     defaultValue: '補登漏單 / 重新盤點錢箱',
     placeholder: '請輸入解鎖原因',
     confirmText: '確定解除鎖定',
@@ -2989,17 +2992,17 @@ async function unlockTodayShiftSettlement() {
 
   try {
     localStorage.removeItem(`mealflow_shift_locked_${store.id}_${compKey}`);
-    if (slot === 'FULL') localStorage.removeItem(`mealflow_shift_locked_${store.id}_${todayStr}`);
+    if (slot === 'FULL') localStorage.removeItem(`mealflow_shift_locked_${store.id}_${shiftDate}`);
   } catch (e) {}
   if (state.lockedShiftsMap && state.lockedShiftsMap[store.id]) {
     delete state.lockedShiftsMap[store.id][compKey];
-    if (slot === 'FULL') delete state.lockedShiftsMap[store.id][todayStr];
+    if (slot === 'FULL') delete state.lockedShiftsMap[store.id][shiftDate];
   }
 
-  recordMerchantAuditLog('解除交班日結鎖定', `店長解除 ${todayStr} [${slot}] 關班鎖定，原因：${cleanReason}`);
-  openShiftZReportModal();
+  recordMerchantAuditLog('解除交班日結鎖定', `店長解除 ${shiftDate} [${slot}] 關班鎖定，原因：${cleanReason}`);
+  openShiftZReportModal(true);
   renderMerchantView();
-  showToast(`🔓 已解除「${store.name}」[${slot}] 關班鎖定，可繼續調整帳務或重新日結！`);
+  showToast(`🔓 已解除「${store.name}」${shiftDate} [${slot}] 關班鎖定，可繼續調整帳務或重新日結！`);
 
   try {
     await fetch(GAS_URL, {
@@ -3011,7 +3014,7 @@ async function unlockTodayShiftSettlement() {
         ...getMerchantAuthPayload(),
         managerOverridePin: mgrOverridePin,
         storeId: store.id,
-        shiftDate: todayStr,
+        shiftDate,
         shiftSlot: slot,
         reason: cleanReason
       })
@@ -3022,8 +3025,8 @@ async function unlockTodayShiftSettlement() {
 function addShiftPettyCashEntry() {
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (!store) return;
-  const todayStr = getTodayDateStr();
-  if (getLockedShiftRecord(store.id, todayStr)) {
+  const shiftDate = normalizeDateStr(state.shiftReportDate || getTodayDateStr());
+  if (getLockedShiftRecord(store.id, shiftDate)) {
     showToast('🔒 本班已完成關班鎖定，如需新增零用金收支請先解鎖！');
     return;
   }
@@ -3038,7 +3041,7 @@ function addShiftPettyCashEntry() {
     showToast('⚠️ 請輸入零用金用途或事由（例如：買冰塊、買塑膠袋、補百元鈔）！');
     return;
   }
-  const entries = [...getShiftPettyCashEntries(store.id, todayStr)];
+  const entries = [...getShiftPettyCashEntries(store.id, shiftDate)];
   const newEntry = {
     id: 'PC-' + Date.now().toString(36).toUpperCase(),
     type: typeVal === 'IN' ? 'IN' : 'OUT',
@@ -3048,10 +3051,10 @@ function addShiftPettyCashEntry() {
     time: getTaipeiTimeHHMMSS()
   };
   entries.push(newEntry);
-  saveShiftPettyCashEntries(store.id, todayStr, entries);
+  saveShiftPettyCashEntries(store.id, shiftDate, entries);
   recordMerchantAuditLog(
     newEntry.type === 'OUT' ? '錢箱零用金支出 (Payout)' : '錢箱零用金補入 (Pay-in)',
-    `${newEntry.type === 'OUT' ? '-' : '+'}NT$${amtVal}（事由：${noteVal}）`
+    `${newEntry.type === 'OUT' ? '-' : '+'}NT$${amtVal}（營業日 ${shiftDate}・事由：${noteVal}）`
   );
   openShiftZReportModal();
   showToast(`🪙 已記錄錢箱零用金${newEntry.type === 'OUT' ? '支出 -$' : '補入 +$'}${amtVal} (${noteVal})！`);
@@ -3060,23 +3063,33 @@ function addShiftPettyCashEntry() {
 function removeShiftPettyCashEntry(entryId) {
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (!store) return;
-  const todayStr = getTodayDateStr();
-  if (getLockedShiftRecord(store.id, todayStr)) {
+  const shiftDate = normalizeDateStr(state.shiftReportDate || getTodayDateStr());
+  if (getLockedShiftRecord(store.id, shiftDate)) {
     showToast('🔒 本班已完成關班鎖定，無法刪除零用金紀錄！');
     return;
   }
-  const entries = getShiftPettyCashEntries(store.id, todayStr).filter(e => e.id !== entryId);
-  saveShiftPettyCashEntries(store.id, todayStr, entries);
-  recordMerchantAuditLog('刪除錢箱零用金紀錄', `已移除零用金紀錄 (${entryId})`);
+  const entries = getShiftPettyCashEntries(store.id, shiftDate).filter(e => e.id !== entryId);
+  saveShiftPettyCashEntries(store.id, shiftDate, entries);
+  recordMerchantAuditLog('刪除錢箱零用金紀錄', `已移除零用金紀錄 (${shiftDate}・${entryId})`);
   openShiftZReportModal();
+}
+
+function setShiftReportDate(dateVal) {
+  const nextDate = normalizeDateStr(dateVal || getTodayDateStr()) || getTodayDateStr();
+  state.shiftReportDate = nextDate;
+  state.shiftZReportCloudData = null;
+  openShiftZReportModal(false);
 }
 
 /**
  * 【商業級改造 9 & B5 & #13 & #33 & #45】會計級櫃檯錢箱交班日結單
  * 支援：開店找零準備金 (Opening Float)、中途零用金收支 (Petty Cash Payout/Pay-in)、嚴格收款日歸屬 (防止跨日預訂單重複計算營收)、雲端同步關班鎖定與店長解鎖
+ * 帳務數字一律以後端 D1 索引全量統計 (getShiftZReport) 為準，避免單日超過 80 單時漏算！
  */
 async function fetchAuthoritativeShiftZReport(storeId, shiftDate, shiftSlot) {
   if (!storeId || !isMerchantSessionValidNow()) return;
+  const reqSeq = (state.shiftZReportReqSeq || 0) + 1;
+  state.shiftZReportReqSeq = reqSeq;
   try {
     const res = await fetch(GAS_URL, {
       method: 'POST',
@@ -3091,6 +3104,7 @@ async function fetchAuthoritativeShiftZReport(storeId, shiftDate, shiftSlot) {
       })
     });
     const data = await res.json();
+    if (state.shiftZReportReqSeq !== reqSeq) return;
     if (data && data.success && data.authoritative) {
       state.shiftZReportCloudData = data;
       if (document.getElementById('receiptPrintModal')?.classList.contains('open')) {
@@ -3106,41 +3120,49 @@ function openShiftZReportModal(skipCloudFetch = false) {
   if (!store) return;
 
   const todayStr = getTodayDateStr();
+  const shiftDate = normalizeDateStr(state.shiftReportDate || todayStr) || todayStr;
+  state.shiftReportDate = shiftDate;
+  const isTodayShift = shiftDate === todayStr;
   const curSlot = state.activeShiftSlot || 'CURRENT_OPEN';
   const slotLabel = curSlot === 'CURRENT_OPEN'
     ? t('當班開班至今 (Open-to-Close)', 'Current Open Shift', '現在のシフト', '현재 개시 교대')
     : (curSlot === 'MORNING' ? t('早班 (~14:30)', 'Morning Shift', '早番', '오전 근무')
       : (curSlot === 'EVENING' ? t('晚班 (14:30~)', 'Evening Shift', '遅番', '오후 근무')
         : t('全日總結', 'Full Day', '終日集計', '종일 마감')));
-  const lockedShiftInfo = getLockedShiftRecord(store.id, todayStr, curSlot === 'CURRENT_OPEN' ? 'FULL' : curSlot);
+  const lockedShiftInfo = getLockedShiftRecord(store.id, shiftDate, curSlot === 'CURRENT_OPEN' ? 'FULL' : curSlot);
 
   if (!skipCloudFetch) {
     state.shiftZReportCloudData = null;
-    fetchAuthoritativeShiftZReport(store.id, todayStr, curSlot);
+    fetchAuthoritativeShiftZReport(store.id, shiftDate, curSlot);
   }
 
-  const cloudZ = (state.shiftZReportCloudData && state.shiftZReportCloudData.storeId === store.id && state.shiftZReportCloudData.shiftSlot === curSlot)
-    ? state.shiftZReportCloudData
-    : null;
+  const cloudZ = (
+    state.shiftZReportCloudData &&
+    state.shiftZReportCloudData.storeId === store.id &&
+    state.shiftZReportCloudData.shiftDate === shiftDate &&
+    state.shiftZReportCloudData.shiftSlot === curSlot
+  ) ? state.shiftZReportCloudData : null;
 
-  // 本地即時預覽計算；一旦雲端全表權威掃描 (getShiftZReport) 回傳即自動升級為全試算表權威帳務數字！
+  // 本地預覽僅作載入中佔位；一旦雲端 D1 索引全量統計 (getShiftZReport) 回傳即全面採用權威帳務數字（突破 80 單限制）！
   const storeAllOrders = state.orders.filter(o => o.storeId === store.id);
   const localSlotForFilter = curSlot === 'CURRENT_OPEN' ? 'FULL' : curSlot;
   const paidOrders = storeAllOrders.filter(o =>
     !String(o.status).includes('已取消') &&
+    String(o.status) !== '已退單' &&
     isOrderConsiderPaid(o) &&
-    normalizeDateStr(o.paidAtDate || o.pickupDate) === todayStr &&
+    normalizeDateStr(o.paidAtDate || o.pickupDate) === shiftDate &&
     isOrderInShiftSlot(o, localSlotForFilter)
   );
   const unpaidOrders = storeAllOrders.filter(o =>
     !String(o.status).includes('已取消') &&
+    String(o.status) !== '已退單' &&
     !isOrderConsiderPaid(o) &&
-    normalizeDateStr(o.pickupDate) === todayStr &&
+    normalizeDateStr(o.pickupDate) === shiftDate &&
     isOrderInShiftSlot(o, localSlotForFilter)
   );
   const cancelledOrders = storeAllOrders.filter(o =>
-    String(o.status).includes('已取消') &&
-    normalizeDateStr(o.paidAtDate || o.pickupDate) === todayStr &&
+    (String(o.status).includes('已取消') || String(o.status) === '已退單') &&
+    normalizeDateStr(o.paidAtDate || o.pickupDate) === shiftDate &&
     isOrderInShiftSlot(o, localSlotForFilter)
   );
   const refundedOrders = cancelledOrders.filter(o => Number(o.refundAmount) > 0 || String(o.paymentStatus).includes('已退款'));
@@ -3148,11 +3170,14 @@ function openShiftZReportModal(skipCloudFetch = false) {
 
   const crossDayPrepaidFulfilledToday = storeAllOrders.filter(o =>
     !String(o.status).includes('已取消') &&
+    String(o.status) !== '已退單' &&
     isOrderConsiderPaid(o) &&
-    normalizeDateStr(o.pickupDate) === todayStr &&
-    normalizeDateStr(o.paidAtDate || o.pickupDate) !== todayStr
+    normalizeDateStr(o.pickupDate) === shiftDate &&
+    normalizeDateStr(o.paidAtDate || o.pickupDate) !== shiftDate
   );
-  const crossDayPrepaidTotal = crossDayPrepaidFulfilledToday.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
+  const crossDayPrepaidTotal = cloudZ
+    ? Number(cloudZ.crossDayPrepaidTotal || 0)
+    : crossDayPrepaidFulfilledToday.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
 
   const foodGrossSubtotal = cloudZ ? Number(cloudZ.grossSubtotal || 0) : paidOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0);
   const cutleryFeeSum = cloudZ ? Number(cloudZ.cutleryFeeSum || 0) : paidOrders.reduce((s, o) => s + (Number(o.cutleryFee) || 0), 0);
@@ -3160,7 +3185,7 @@ function openShiftZReportModal(skipCloudFetch = false) {
   const promoDiscountSum = cloudZ ? Number(cloudZ.discountTotal || 0) : paidOrders.reduce((s, o) => s + (Number(o.discount) || 0), 0);
   const manualDiscountSum = cloudZ ? 0 : paidOrders.reduce((s, o) => s + (Number(o.manualDiscount) || 0), 0);
   const netRevenue = cloudZ ? Number(cloudZ.netRevenue || 0) : paidOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
-  const paidOrderCount = cloudZ ? Number(cloudZ.validCount || 0) : paidOrders.length;
+  const paidOrderCount = cloudZ ? Number(cloudZ.paidCount !== undefined ? cloudZ.paidCount : (cloudZ.validCount || 0)) : paidOrders.length;
   const avgOrderValue = paidOrderCount > 0 ? Math.round(netRevenue / paidOrderCount) : 0;
 
   const cashOrders = paidOrders.filter(o =>
@@ -3175,21 +3200,26 @@ function openShiftZReportModal(skipCloudFetch = false) {
   const cashNetTotal = cloudZ
     ? Number(cloudZ.cashTotal || 0)
     : cashOrders.reduce((s, o) => s + (o.paymentSplit ? (Number(o.paymentSplit.cash) || 0) : (Number(o.finalTotal) || 0)), 0);
-  const cashTenderedSum = cashOrders.reduce((s, o) => s + (o.paymentSplit ? (Number(o.paymentSplit.cash) || 0) : (Number(o.cashReceived) > 0 ? Number(o.cashReceived) : (Number(o.finalTotal) || 0))), 0);
-  const cashChangeSum = cashOrders.reduce((s, o) => s + (o.paymentSplit ? 0 : (Number(o.changeGiven) || 0)), 0);
-  const cashRefundSum = refundedOrders
-    .filter(o => String(o.refundMethod || o.paymentMethod).includes('現金') || String(o.refundMethod || o.paymentMethod).includes('付現'))
-    .reduce((s, o) => s + (Number(o.refundAmount) || Number(o.finalTotal) || 0), 0);
+  const cashRefundSum = cloudZ
+    ? Number(cloudZ.cashRefundSum || 0)
+    : refundedOrders
+      .filter(o => String(o.refundMethod || o.paymentMethod).includes('現金') || String(o.refundMethod || o.paymentMethod).includes('付現'))
+      .reduce((s, o) => s + (Number(o.refundAmount) || Number(o.finalTotal) || 0), 0);
   const partialCashRefundSum = cloudZ ? Number(cloudZ.partialRefundTotal || 0) : paidOrders.reduce((s, o) => s + (Number(o.partialRefundTotal) || 0), 0);
 
-  const pettyEntries = getShiftPettyCashEntries(store.id, todayStr, localSlotForFilter);
+  const pettyEntries = (cloudZ && Array.isArray(cloudZ.pettyCashEntries) && cloudZ.pettyCashEntries.length > 0 && !isTodayShift)
+    ? cloudZ.pettyCashEntries
+    : getShiftPettyCashEntries(store.id, shiftDate, localSlotForFilter);
   const pettyCashInSum = cloudZ ? Number(cloudZ.pettyCashIn || 0) : pettyEntries.filter(e => e.type === 'IN').reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const pettyCashOutSum = cloudZ ? Number(cloudZ.pettyCashOut || 0) : pettyEntries.filter(e => e.type === 'OUT').reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
-  const openingFloat = Math.max(0, Number(state.shiftOpeningFloat) || 0);
-  const expectedTotalCashInDrawer = cloudZ
-    ? Math.max(0, Number(cloudZ.expectedCash || 0))
-    : Math.max(0, openingFloat + cashNetTotal + pettyCashInSum - pettyCashOutSum - cashRefundSum - partialCashRefundSum);
+  const openingFloat = (!isTodayShift && cloudZ && Number(cloudZ.openingFloat) > 0)
+    ? Math.max(0, Number(cloudZ.openingFloat) || 0)
+    : Math.max(0, Number(state.shiftOpeningFloat) || (cloudZ ? Number(cloudZ.openingFloat || 0) : 0));
+  const expectedTotalCashInDrawer = Math.max(
+    0,
+    Math.round(openingFloat + cashNetTotal + pettyCashInSum - pettyCashOutSum - cashRefundSum - partialCashRefundSum)
+  );
   const actualCountedNum = state.shiftActualCountedCash !== '' ? Math.max(0, Number(state.shiftActualCountedCash) || 0) : expectedTotalCashInDrawer;
   const cashVariance = actualCountedNum - expectedTotalCashInDrawer;
 
@@ -3203,32 +3233,38 @@ function openShiftZReportModal(skipCloudFetch = false) {
   const linePayManualTotal = cloudZ ? Number(cloudZ.linePayManualTotal || 0) : linePayTotal;
 
   const totalExtraSurchargeSum = cloudZ ? Number(cloudZ.extraChargeTotal || 0) : paidOrders.reduce((s, o) => s + (Number(o.extraChargeTotal) || 0), 0);
-  const refundedTotal = refundedOrders.reduce((s, o) => s + (Number(o.refundAmount) || Number(o.finalTotal) || 0), 0);
-  const voidUnpaidTotal = cloudZ ? Number(cloudZ.voidedTotal || 0) : voidUnpaidOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
+  const refundedTotal = cloudZ
+    ? Number(cloudZ.refundedTotal || 0)
+    : refundedOrders.reduce((s, o) => s + (Number(o.refundAmount) || Number(o.finalTotal) || 0), 0);
+  const voidUnpaidTotal = cloudZ
+    ? Number(cloudZ.voidUnpaidTotal !== undefined ? cloudZ.voidUnpaidTotal : (cloudZ.voidedTotal || 0))
+    : voidUnpaidOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
   const unpaidTotal = cloudZ ? Number(cloudZ.unpaidTotal || 0) : unpaidOrders.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
 
   const dineInCount = cloudZ ? Number(cloudZ.dineInCount || 0) : paidOrders.filter(o => o.dineType === '內用自取').length;
   const takeoutCount = cloudZ ? Number(cloudZ.takeoutCount || 0) : Math.max(0, paidOrderCount - dineInCount);
 
   const titleEl = document.getElementById('receiptPrintModalTitle');
-  if (titleEl) titleEl.innerText = `🧾 ${t('櫃檯錢箱交班日結單', 'Shift Cash Drawer Z-Report', 'レジ精算書', '교대 마감 정산서')} (${slotLabel})`;
+  if (titleEl) titleEl.innerText = `🧾 ${t('櫃檯錢箱交班日結單', 'Shift Cash Drawer Z-Report', 'レジ精算書', '교대 마감 정산서')} (${shiftDate} · ${slotLabel})`;
 
   const body = document.getElementById('receiptPrintModalBody');
   if (body) {
     body.innerHTML = `
       <div class="no-print" style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px; padding:12px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-          <div style="font-size:0.82rem; font-weight:900; color:#0F172A;">
-            🪙 ${t('多班別錢箱清點・中途零用金收支與關班鎖定', 'Multi-Shift Drawer Count, Petty Cash & Lock', 'シフト精算・小口現金・締めロック', '교대 시재 점검・소액 현금 및 잠금')}
-            <span style="margin-left:6px; font-size:0.7rem; padding:2px 7px; border-radius:999px; background:${cloudZ ? '#DCFCE7' : '#FEF3C7'}; color:${cloudZ ? '#166534' : '#92400E'};">
-              ${cloudZ ? `☁️ ${t(`雲端全表權威 (${cloudZ.totalRowsScanned} 筆掃描)`, `Server Verified (${cloudZ.totalRowsScanned} rows)`)}` : `⏳ ${t('同步雲端全表中...', 'Syncing server...')}`}
+          <div style="font-size:0.82rem; font-weight:900; color:#0F172A; display:flex; align-items:center; flex-wrap:wrap; gap:6px;">
+            <span>🪙 ${t('多班別錢箱清點・中途零用金收支與關班鎖定', 'Multi-Shift Drawer Count, Petty Cash & Lock', 'シフト精算・小口現金・締めロック', '교대 시재 점검・소액 현금 및 잠금')}</span>
+            <span style="font-size:0.7rem; padding:2px 7px; border-radius:999px; background:${cloudZ ? '#DCFCE7' : '#FEF3C7'}; color:${cloudZ ? '#166534' : '#92400E'};">
+              ${cloudZ ? `☁️ ${t(`D1 完整日結權威 (${cloudZ.matchedOrderCount || cloudZ.totalRowsScanned} 筆訂單全量核對)`, `Server Full-Day Verified (${cloudZ.matchedOrderCount || cloudZ.totalRowsScanned} orders)`)}` : `⏳ ${t('正在查詢該日完整訂單（突破 80 筆上限）...', 'Loading full-day orders from D1...')}`}
             </span>
           </div>
-          <div style="display:flex; gap:4px; flex-wrap:wrap;">
+          <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
+            <input type="date" class="select-input" style="width:auto; padding:4px 7px; font-size:0.74rem; font-weight:800;" value="${escapeHtml(shiftDate)}" onchange="setShiftReportDate(this.value)" title="${t('切換交班日結查詢日期', 'Select Z-Report date')}">
             <button type="button" class="pos-cat-pill ${curSlot === 'CURRENT_OPEN' ? 'active' : ''}" style="padding:4px 10px; font-size:0.72rem;" onclick="setActiveShiftSlot('CURRENT_OPEN')">🕒 ${t('當班至今', 'Open Shift', '現在シフト', '현재 교대')}</button>
             <button type="button" class="pos-cat-pill ${curSlot === 'MORNING' ? 'active' : ''}" style="padding:4px 10px; font-size:0.72rem;" onclick="setActiveShiftSlot('MORNING')">☀️ ${t('早班', 'Morning', '早番', '오전')}</button>
             <button type="button" class="pos-cat-pill ${curSlot === 'EVENING' ? 'active' : ''}" style="padding:4px 10px; font-size:0.72rem;" onclick="setActiveShiftSlot('EVENING')">🌙 ${t('晚班', 'Evening', '遅番', '오후')}</button>
             <button type="button" class="pos-cat-pill ${curSlot === 'FULL' ? 'active' : ''}" style="padding:4px 10px; font-size:0.72rem;" onclick="setActiveShiftSlot('FULL')">📅 ${t('全日', 'Full Day', '終日', '종일')}</button>
+            <button type="button" class="btn-outline" style="padding:4px 8px; font-size:0.72rem;" onclick="openShiftZReportModal(false)" title="${t('重新向雲端撈取當日完整訂單重算', 'Recalculate from cloud')}">🔄</button>
           </div>
         </div>
         ${cloudZ ? `
@@ -3267,14 +3303,14 @@ function openShiftZReportModal(skipCloudFetch = false) {
             </div>
           ` : ''}
           ${pettyEntries.length === 0 ? `
-            <div style="font-size:0.74rem; color:var(--text-muted);">${t('今日尚無中途零用金支出或補入紀錄', 'No petty cash entries today', '本日の入出金記録なし', '오늘 소액 현금 기록 없음')}</div>
+            <div style="font-size:0.74rem; color:var(--text-muted);">${t('此日尚無中途零用金支出或補入紀錄', 'No petty cash entries on this date', 'この日の入出金記録なし', '해당 날짜 소액 현금 기록 없음')}</div>
           ` : `
             <div style="display:flex; flex-direction:column; gap:4px; max-height:110px; overflow-y:auto;">
               ${pettyEntries.map(e => `
                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; background:#F8FAFC; padding:4px 8px; border-radius:6px; border:1px solid #E2E8F0;">
                   <span>
                     <strong style="color:${e.type === 'OUT' ? 'var(--red)' : 'var(--green)'};">${e.type === 'OUT' ? `${t('支出', 'Out')} -$` : `${t('補入', 'In')} +$`}${e.amount}</strong>
-                    ・ ${escapeHtml(e.reason)} <span style="color:var(--text-muted);">(${escapeHtml(e.time)})</span>
+                    ・ ${escapeHtml(e.reason || e.note || '')} <span style="color:var(--text-muted);">(${escapeHtml(e.time || '')})</span>
                   </span>
                   ${!lockedShiftInfo ? `<button type="button" onclick="removeShiftPettyCashEntry(${escapeJsAttr(e.id)})" style="border:none; background:transparent; color:var(--red); font-weight:900; cursor:pointer; font-size:0.74rem;">✕</button>` : ''}
                 </div>
@@ -3293,8 +3329,10 @@ function openShiftZReportModal(skipCloudFetch = false) {
             </button>
           </div>
         ` : `
-          <button type="button" class="btn-tip-action" style="width:100%; background:#0F172A; padding:9px;" onclick="lockTodayShiftSettlement(${expectedTotalCashInDrawer}, ${actualCountedNum}, ${cashVariance})">
-            🔒 ${t('確認完成本班日結並鎖定當日帳務 (防篡改)', 'Confirm & Lock Shift Z-Report', 'シフト精算を確定してロック', '교대 정산 확정 및 장부 잠금')}
+          <button type="button" class="btn-tip-action" ${!cloudZ ? 'disabled' : ''} style="width:100%; background:${cloudZ ? '#0F172A' : '#94A3B8'}; padding:9px;" onclick="lockTodayShiftSettlement(${expectedTotalCashInDrawer}, ${actualCountedNum}, ${cashVariance})">
+            ${cloudZ
+              ? `🔒 ${t('確認完成本班日結並鎖定當日帳務 (防篡改)', 'Confirm & Lock Shift Z-Report', 'シフト精算を確定してロック', '교대 정산 확정 및 장부 잠금')}`
+              : `⏳ ${t('正在核對雲端完整訂單，完成後即可關班鎖定...', 'Syncing full-day orders before lock...')}`}
           </button>
         `}
       </div>
@@ -3309,7 +3347,7 @@ function openShiftZReportModal(skipCloudFetch = false) {
         </div>
 
         <div style="font-size:0.76rem; line-height:1.5;">
-          <div>${t('營業收款日', 'Business Date')}：${todayStr}</div>
+          <div>${t('營業收款日', 'Business Date')}：${shiftDate}</div>
           <div>${t('出表時間', 'Generated')}：${getTaipeiTimeHHMMSS()}</div>
           <div>${t('值班人員', 'Cashier')}：${escapeHtml(trTerm(state.shiftCashierName || (lockedShiftInfo && lockedShiftInfo.cashier) || '當班收銀員'))}</div>
           <div>${t('當班收款單數', 'Paid Orders')}：${paidOrderCount} (${t('內用', 'Dine-in')} ${dineInCount} / ${t('外帶', 'Takeout')} ${takeoutCount})</div>
@@ -3374,13 +3412,63 @@ function openShiftZReportModal(skipCloudFetch = false) {
   }
   document.getElementById('receiptPrintModal')?.classList.add('open');
 }
-// ==================== 6.2 廚房控單 (KDS) — 規格拆解看板 + 鏡頭光學掃碼核銷 ====================
-async function fetchKdsOrdersByDateFromCloud(storeId, dateStr) {
-  if (!storeId || !dateStr || !isMerchantSessionValidNow()) return;
-  const reqSeq = (state.kdsHistoryReqSeq || 0) + 1;
-  state.kdsHistoryReqSeq = reqSeq;
-  state.kdsHistoryDateOrders = { storeId, dateStr, orders: [], loading: true };
-  renderMerchantOrdersOnly();
+// ==================== 6.2 廚房控單 (KDS) — 規格拆解看板 + 鏡頭光學掃碼核銷 + 按需日期區間/雲端查單 ====================
+function findMerchantOrderById(orderId) {
+  if (!orderId) return null;
+  const fromLive = state.orders.find(o => o && o.orderId === orderId);
+  if (fromLive) return fromLive;
+  const pools = [
+    state.kdsRangeOrders && state.kdsRangeOrders.orders,
+    state.kdsSearchOrders && state.kdsSearchOrders.orders,
+    state.analyticsRangeOrders && state.analyticsRangeOrders.orders
+  ];
+  for (const arr of pools) {
+    if (Array.isArray(arr)) {
+      const hit = arr.find(o => o && o.orderId === orderId);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+function syncMutatedOrderAcrossCaches(order) {
+  if (!order || !order.orderId) return;
+  const pools = [
+    state.orders,
+    state.kdsRangeOrders && state.kdsRangeOrders.orders,
+    state.kdsSearchOrders && state.kdsSearchOrders.orders,
+    state.analyticsRangeOrders && state.analyticsRangeOrders.orders
+  ];
+  pools.forEach(arr => {
+    if (!Array.isArray(arr)) return;
+    const target = arr.find(o => o && o.orderId === order.orderId);
+    if (target && target !== order) {
+      Object.assign(target, order);
+    }
+  });
+}
+
+async function fetchKdsOrdersByDateRangeFromCloud(storeId, startDate, endDate, options = {}) {
+  if (!storeId || !isMerchantSessionValidNow()) return;
+  const mode = options.mode || 'DATE';
+  const includeAllHistory = Boolean(options.includeAllHistory);
+  const reqSeq = (state.kdsRangeReqSeq || 0) + 1;
+  state.kdsRangeReqSeq = reqSeq;
+  state.kdsRangeOrders = {
+    storeId,
+    mode,
+    startDate: includeAllHistory ? '' : startDate,
+    endDate: includeAllHistory ? '' : endDate,
+    includeAllHistory,
+    orders: [],
+    truncated: false,
+    loading: true,
+    error: '',
+    loadedAt: 0
+  };
+  if (state.routeMode === 'store' && state.storeTabMode === 'kds') {
+    renderMerchantOrdersOnly();
+  }
   try {
     const res = await fetch(GAS_URL, {
       method: 'POST',
@@ -3390,24 +3478,44 @@ async function fetchKdsOrdersByDateFromCloud(storeId, dateStr) {
         action: 'getOrdersByDateRange',
         ...getMerchantAuthPayload(),
         storeId,
-        startDate: dateStr,
-        endDate: dateStr,
-        limit: 1000
+        startDate: includeAllHistory ? '' : startDate,
+        endDate: includeAllHistory ? '' : endDate,
+        includeAllHistory,
+        limit: options.limit || 3000
       })
     });
     const data = await res.json();
-    if (state.kdsHistoryReqSeq !== reqSeq) return;
+    if (state.kdsRangeReqSeq !== reqSeq) return;
     if (data && data.success && Array.isArray(data.orders)) {
       const cleaned = data.orders
         .map(raw => (typeof sanitizeIncomingOrder === 'function' ? sanitizeIncomingOrder(raw) : raw))
         .filter(o => o && !isCorruptedOrMockOrder(o));
-      state.kdsHistoryDateOrders = { storeId, dateStr, orders: cleaned, loading: false };
+      state.kdsRangeOrders = {
+        storeId,
+        mode,
+        startDate: includeAllHistory ? '' : startDate,
+        endDate: includeAllHistory ? '' : endDate,
+        includeAllHistory,
+        orders: cleaned,
+        truncated: Boolean(data.truncated),
+        loading: false,
+        error: '',
+        loadedAt: Date.now()
+      };
     } else {
-      state.kdsHistoryDateOrders = { storeId, dateStr, orders: [], loading: false };
+      state.kdsRangeOrders = {
+        ...state.kdsRangeOrders,
+        loading: false,
+        error: (data && data.message) ? String(data.message) : '查詢失敗'
+      };
     }
   } catch (e) {
-    if (state.kdsHistoryReqSeq === reqSeq) {
-      state.kdsHistoryDateOrders = { storeId, dateStr, orders: [], loading: false };
+    if (state.kdsRangeReqSeq === reqSeq) {
+      state.kdsRangeOrders = {
+        ...state.kdsRangeOrders,
+        loading: false,
+        error: String(e && e.message ? e.message : '網路連線異常')
+      };
     }
   }
   if (state.routeMode === 'store' && state.storeTabMode === 'kds') {
@@ -3415,19 +3523,176 @@ async function fetchKdsOrdersByDateFromCloud(storeId, dateStr) {
   }
 }
 
-function setKdsDateFilter(dateVal) {
-  state.kdsSelectedDate = dateVal === 'ALL' ? 'ALL' : normalizeDateStr(dateVal);
+function loadKdsFullTodayOrders(forceReload = false) {
   const storeId = state.merchantStoreId;
   const todayStr = getTodayDateStr();
-  const recentCutoffStr = getDateOffsetFromStr(todayStr, -2);
-  // 僅當手動選取超過近 3 天視窗的歷史日期時，才按需呼叫一次 getOrdersByDateRange（平常今日/明日完全零額外查詢）
-  if (storeId && state.kdsSelectedDate !== 'ALL' && state.kdsSelectedDate < recentCutoffStr) {
-    const cached = state.kdsHistoryDateOrders;
-    if (!cached || cached.storeId !== storeId || cached.dateStr !== state.kdsSelectedDate) {
-      fetchKdsOrdersByDateFromCloud(storeId, state.kdsSelectedDate);
+  state.kdsSearchOrders = null;
+  state.kdsDateMode = 'FULL_TODAY';
+  state.kdsSelectedDate = todayStr;
+  state.kdsStartDate = todayStr;
+  state.kdsEndDate = todayStr;
+  const cached = state.kdsRangeOrders;
+  const cacheHit = !forceReload && cached && !cached.loading && !cached.error
+    && cached.storeId === storeId && !cached.includeAllHistory
+    && cached.startDate === todayStr && cached.endDate === todayStr;
+  if (storeId && !cacheHit) {
+    fetchKdsOrdersByDateRangeFromCloud(storeId, todayStr, todayStr, { mode: 'FULL_TODAY', limit: 3000 });
+    return;
+  }
+  renderMerchantOrdersOnly();
+}
+
+function setKdsDateFilter(dateVal) {
+  const storeId = state.merchantStoreId;
+  const todayStr = getTodayDateStr();
+  state.kdsSearchOrders = null;
+
+  if (dateVal === 'LIVE_TODAY') {
+    state.kdsDateMode = 'LIVE_TODAY';
+    state.kdsSelectedDate = todayStr;
+    state.kdsStartDate = todayStr;
+    state.kdsEndDate = todayStr;
+    renderMerchantOrdersOnly();
+    return;
+  }
+
+  if (dateVal === 'ALL') {
+    state.kdsDateMode = 'ALL_HISTORY';
+    state.kdsSelectedDate = 'ALL';
+    const cached = state.kdsRangeOrders;
+    const cacheHit = cached && !cached.loading && !cached.error && cached.storeId === storeId && cached.includeAllHistory;
+    if (storeId && !cacheHit) {
+      fetchKdsOrdersByDateRangeFromCloud(storeId, '', '', { mode: 'ALL_HISTORY', includeAllHistory: true, limit: 3000 });
       return;
     }
+    renderMerchantOrdersOnly();
+    return;
   }
+
+  const cleanDate = normalizeDateStr(dateVal);
+  state.kdsSelectedDate = cleanDate;
+  state.kdsStartDate = cleanDate;
+  state.kdsEndDate = cleanDate;
+
+  // 若點回今日且原本是即時模式，維持輕量 LIVE_TODAY（零額外 D1 讀取）
+  if (cleanDate === todayStr && state.kdsDateMode === 'LIVE_TODAY') {
+    renderMerchantOrdersOnly();
+    return;
+  }
+
+  state.kdsDateMode = cleanDate === todayStr ? 'FULL_TODAY' : 'DATE';
+  const cached = state.kdsRangeOrders;
+  const cacheHit = cached && !cached.loading && !cached.error
+    && cached.storeId === storeId && !cached.includeAllHistory
+    && cached.startDate <= cleanDate && cached.endDate >= cleanDate;
+  if (storeId && !cacheHit) {
+    fetchKdsOrdersByDateRangeFromCloud(storeId, cleanDate, cleanDate, { mode: state.kdsDateMode, limit: 2000 });
+    return;
+  }
+  renderMerchantOrdersOnly();
+}
+
+function applyKdsCustomDateRange() {
+  const sEl = document.getElementById('kdsRangeStartInput');
+  const eEl = document.getElementById('kdsRangeEndInput');
+  const todayStr = getTodayDateStr();
+  let sVal = normalizeDateStr((sEl && sEl.value) || state.kdsStartDate || todayStr) || todayStr;
+  let eVal = normalizeDateStr((eEl && eEl.value) || state.kdsEndDate || todayStr) || todayStr;
+  if (sVal > eVal) { const tmp = sVal; sVal = eVal; eVal = tmp; }
+  state.kdsSearchOrders = null;
+  state.kdsStartDate = sVal;
+  state.kdsEndDate = eVal;
+  state.kdsDateMode = sVal === eVal ? (sVal === todayStr ? 'FULL_TODAY' : 'DATE') : 'RANGE';
+  state.kdsSelectedDate = sVal === eVal ? sVal : 'RANGE';
+  if (state.merchantStoreId) {
+    fetchKdsOrdersByDateRangeFromCloud(state.merchantStoreId, sVal, eVal, { mode: state.kdsDateMode, limit: 3000 });
+    return;
+  }
+  renderMerchantOrdersOnly();
+}
+
+function refreshKdsRangeOrdersNow() {
+  const storeId = state.merchantStoreId;
+  if (!storeId) return;
+  const todayStr = getTodayDateStr();
+  const mode = state.kdsDateMode || 'LIVE_TODAY';
+  if (mode === 'ALL_HISTORY') {
+    fetchKdsOrdersByDateRangeFromCloud(storeId, '', '', { mode: 'ALL_HISTORY', includeAllHistory: true, limit: 3000 });
+  } else if (mode === 'RANGE') {
+    fetchKdsOrdersByDateRangeFromCloud(storeId, state.kdsStartDate || todayStr, state.kdsEndDate || todayStr, { mode: 'RANGE', limit: 3000 });
+  } else {
+    const targetD = (state.kdsSelectedDate && state.kdsSelectedDate !== 'ALL' && state.kdsSelectedDate !== 'RANGE')
+      ? state.kdsSelectedDate
+      : todayStr;
+    state.kdsDateMode = targetD === todayStr ? 'FULL_TODAY' : 'DATE';
+    fetchKdsOrdersByDateRangeFromCloud(storeId, targetD, targetD, { mode: state.kdsDateMode, limit: 3000 });
+  }
+}
+
+async function runKdsCloudOrderSearch(explicitQuery) {
+  const storeId = state.merchantStoreId;
+  const qRaw = String(explicitQuery !== undefined ? explicitQuery : (state.kdsSearchQuery || '')).trim();
+  if (!qRaw) {
+    clearKdsCloudSearch();
+    return;
+  }
+  if (!storeId || !isMerchantSessionValidNow()) return;
+  state.kdsSearchQuery = qRaw;
+  const reqSeq = (state.kdsSearchReqSeq || 0) + 1;
+  state.kdsSearchReqSeq = reqSeq;
+  state.kdsSearchOrders = { storeId, query: qRaw, orders: [], loading: true, error: '' };
+  renderMerchantOrdersOnly();
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'lookupOrders',
+        ...getMerchantAuthPayload(),
+        storeId,
+        query: qRaw
+      })
+    });
+    const data = await res.json();
+    if (state.kdsSearchReqSeq !== reqSeq) return;
+    if (data && data.success && Array.isArray(data.orders)) {
+      const cleaned = data.orders
+        .map(raw => (typeof sanitizeIncomingOrder === 'function' ? sanitizeIncomingOrder(raw) : raw))
+        .filter(o => o && !isCorruptedOrMockOrder(o));
+      state.kdsSearchOrders = { storeId, query: qRaw, orders: cleaned, loading: false, error: '' };
+    } else {
+      state.kdsSearchOrders = {
+        storeId,
+        query: qRaw,
+        orders: [],
+        loading: false,
+        error: (data && data.message) ? String(data.message) : '查無符合條件的雲端訂單'
+      };
+    }
+  } catch (e) {
+    if (state.kdsSearchReqSeq === reqSeq) {
+      state.kdsSearchOrders = {
+        storeId,
+        query: qRaw,
+        orders: [],
+        loading: false,
+        error: String(e && e.message ? e.message : '雲端查單失敗')
+      };
+    }
+  }
+  if (state.routeMode === 'store' && state.storeTabMode === 'kds') {
+    renderMerchantOrdersOnly();
+  }
+}
+
+function clearKdsCloudSearch() {
+  if (state.kdsSearchDebounceTimer) {
+    clearTimeout(state.kdsSearchDebounceTimer);
+    state.kdsSearchDebounceTimer = null;
+  }
+  state.kdsSearchQuery = '';
+  state.kdsSearchOrders = null;
   renderMerchantOrdersOnly();
 }
 
@@ -3444,7 +3709,29 @@ function toggleKdsSound() {
 
 function handleKdsSearchInput(val) {
   state.kdsSearchQuery = val;
+  const trimmed = String(val || '').trim();
+  if (state.kdsSearchDebounceTimer) {
+    clearTimeout(state.kdsSearchDebounceTimer);
+    state.kdsSearchDebounceTimer = null;
+  }
+  if (!trimmed) {
+    state.kdsSearchOrders = null;
+    renderMerchantOrdersOnly(null, true);
+    return;
+  }
+  // 先即時過濾目前畫面已載入的訂單（零額外網路請求）
+  if (state.kdsSearchOrders && state.kdsSearchOrders.query !== trimmed) {
+    state.kdsSearchOrders = null;
+  }
   renderMerchantOrdersOnly(null, true);
+  // 若輸入 ≥ 3 字元（如單號 001 / 手機末碼或全文 / 核銷碼 / ORD-），停頓 550ms 後自動補查雲端歷史單，避免漏掉超出 80 筆或跨日訂單
+  if (trimmed.length >= 3) {
+    state.kdsSearchDebounceTimer = setTimeout(() => {
+      if (String(state.kdsSearchQuery || '').trim() === trimmed && state.routeMode === 'store' && state.storeTabMode === 'kds') {
+        runKdsCloudOrderSearch(trimmed);
+      }
+    }, 550);
+  }
 }
 
 /**
@@ -4042,6 +4329,7 @@ async function executeMerchantOrderMutation(order, prevSnapshot, apiPayload, suc
   }
   state.mutatingOrderIds[order.orderId] = true;
   state.pendingLocalOrdersMap[order.orderId] = Date.now();
+  syncMutatedOrderAcrossCaches(order);
   acknowledgeAllNewKdsOrders(order.orderId);
   saveCachedOrders(state.orders);
   enrichStoresAndAi();
@@ -4063,6 +4351,7 @@ async function executeMerchantOrderMutation(order, prevSnapshot, apiPayload, suc
     if (!data || !data.success) {
       // 伺服器明確拒絕：立即回滾本機狀態並告知店員真實原因 (B3)
       Object.assign(order, prevSnapshot);
+      syncMutatedOrderAcrossCaches(order);
       delete state.pendingLocalOrdersMap[order.orderId];
       saveCachedOrders(state.orders);
       enrichStoresAndAi();
@@ -4099,7 +4388,7 @@ async function forceStartCookingScheduledOrder(orderId) {
     return;
   }
   if (state.mutatingOrderIds[orderId]) return;
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
   const prevSnapshot = {
     status: order.status,
@@ -4142,7 +4431,7 @@ async function toggleKdsOrderItemChecked(orderId, itemKey) {
     checkMerchantSecurityGate();
     return;
   }
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
   if (!order.itemCheckedMap || typeof order.itemCheckedMap !== 'object') {
     order.itemCheckedMap = {};
@@ -4201,7 +4490,7 @@ async function recallMerchantOrderStatus(orderId, targetStatus) {
     return;
   }
   if (state.mutatingOrderIds[orderId]) return;
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
 
   const prevStatus = order.status;
@@ -4245,7 +4534,7 @@ async function promptSendMerchantOrderMessage(orderId) {
     checkMerchantSecurityGate();
     return;
   }
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
   const msg = await showAppPromptModal({
     title: `💬 傳送櫃檯留言給 #${order.pickupNumber}`,
@@ -4290,7 +4579,7 @@ function openKdsModifyOrderModal(orderId) {
     return;
   }
   ensureSharedModalsMounted();
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
   if (order.status === '已完成' || String(order.status).includes('已取消')) {
     showToast('⚠️ 已完成或已作廢訂單無法改單');
@@ -4346,7 +4635,7 @@ function addDishToModifyDraft(menuId) {
 function renderKdsModifyOrderModal() {
   const box = document.getElementById('kdsModifyOrderBody');
   const titleEl = document.getElementById('kdsModifyOrderTitle');
-  const order = state.orders.find(o => o.orderId === state.modifyingOrderId);
+  const order = findMerchantOrderById(state.modifyingOrderId);
   const store = state.stores.find(s => s.id === (order ? order.storeId : state.merchantStoreId));
   if (!box || !order) return;
   if (titleEl) titleEl.innerText = `✏️ ${t('改單 / 加點 / 單品作廢', 'Modify / Add / Void Item', '注文修正・追加・単品取消', '주문 수정 / 추가 / 단품 취소')} (#${order.pickupNumber})`;
@@ -4414,7 +4703,7 @@ function renderKdsModifyOrderModal() {
 }
 
 async function commitKdsModifyOrder() {
-  const order = state.orders.find(o => o.orderId === state.modifyingOrderId);
+  const order = findMerchantOrderById(state.modifyingOrderId);
   if (!order) return;
   const draft = state.modifyingOrderItemsDraft || [];
   if (draft.length === 0) {
@@ -4498,23 +4787,47 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
   const panel = document.getElementById('storePanel-kds');
   if (!store || !panel) return;
 
+  const todayStr = getTodayDateStr();
+  const tomorrowStr = getFutureDateStr(1);
+  const kdsMode = state.kdsDateMode || 'LIVE_TODAY';
+  const kdsStart = state.kdsStartDate || todayStr;
+  const kdsEnd = state.kdsEndDate || todayStr;
+
   const liveStoreOrders = state.orders.filter(o => o.storeId === store.id);
+  const kdsRange = state.kdsRangeOrders;
+  const isRangeMatchesStore = Boolean(kdsRange && kdsRange.storeId === store.id);
+  const isKdsRangeLoading = Boolean(kdsMode !== 'LIVE_TODAY' && isRangeMatchesStore && kdsRange.loading);
+  const kdsRangeError = (kdsMode !== 'LIVE_TODAY' && isRangeMatchesStore && !kdsRange.loading) ? (kdsRange.error || '') : '';
+
+  const kdsSearch = state.kdsSearchOrders;
+  const trimmedQ = (state.kdsSearchQuery || '').trim();
+  const isCloudSearchActive = Boolean(trimmedQ && kdsSearch && kdsSearch.storeId === store.id && kdsSearch.query === trimmedQ);
+  const isCloudSearchLoading = Boolean(isCloudSearchActive && kdsSearch.loading);
+
   let storeOrders = liveStoreOrders;
-  const kdsHist = state.kdsHistoryDateOrders;
-  const isKdsHistLoading = Boolean(kdsHist && kdsHist.storeId === store.id && kdsHist.dateStr === state.kdsSelectedDate && kdsHist.loading);
-  if (kdsHist && kdsHist.storeId === store.id && kdsHist.dateStr === state.kdsSelectedDate && Array.isArray(kdsHist.orders) && kdsHist.orders.length > 0) {
+  if (kdsMode !== 'LIVE_TODAY' && isRangeMatchesStore && Array.isArray(kdsRange.orders)) {
     const mergedMap = new Map();
-    kdsHist.orders.forEach(o => { if (o && o.orderId) mergedMap.set(o.orderId, o); });
-    liveStoreOrders.forEach(o => { if (o && o.orderId) mergedMap.set(o.orderId, o); });
+    kdsRange.orders.forEach(o => { if (o && o.orderId) mergedMap.set(o.orderId, o); });
+    // 同 orderId 以即時 state.orders 覆蓋，保留較新狀態與叫號次數
+    liveStoreOrders.forEach(o => {
+      if (!o || !o.orderId) return;
+      if (kdsMode === 'ALL_HISTORY') {
+        mergedMap.set(o.orderId, o);
+      } else {
+        const pD = normalizeDateStr(o.pickupDate || todayStr);
+        if (kdsMode === 'RANGE' && pD >= kdsStart && pD <= kdsEnd) mergedMap.set(o.orderId, o);
+        else if ((kdsMode === 'FULL_TODAY' || kdsMode === 'DATE') && pD === state.kdsSelectedDate) mergedMap.set(o.orderId, o);
+      }
+    });
     storeOrders = Array.from(mergedMap.values());
   }
+
   if (typeof checkAndAutoPrint === 'function') {
     checkAndAutoPrint(liveStoreOrders.filter(o => o.status !== '已完成' && !String(o.status).includes('已取消')));
   }
-  const todayStr = getTodayDateStr();
-  const tomorrowStr = getFutureDateStr(1);
 
-  const activeCookingOrders = storeOrders.filter(o => o.status === '製作中');
+  // 爐上備料看即時製作中單（永遠不漏今日製作中）
+  const activeCookingOrders = liveStoreOrders.filter(o => o.status === '製作中');
   const stationFilter = state.kdsStationFilter || 'ALL';
   const batchItemMap = {};
   let totalActivePortions = 0;
@@ -4546,18 +4859,50 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
   const sortedBatchItems = Object.values(batchItemMap).sort((a, b) => b.qty - a.qty);
 
   const dateCountMap = {};
-  storeOrders.forEach(o => {
+  liveStoreOrders.forEach(o => {
     const d = normalizeDateStr(o.pickupDate || todayStr);
     dateCountMap[d] = (dateCountMap[d] || 0) + 1;
   });
+  if (kdsMode !== 'LIVE_TODAY' && isRangeMatchesStore && Array.isArray(kdsRange.orders)) {
+    const rangeDateCounts = {};
+    storeOrders.forEach(o => {
+      const d = normalizeDateStr(o.pickupDate || todayStr);
+      rangeDateCounts[d] = (rangeDateCounts[d] || 0) + 1;
+    });
+    Object.entries(rangeDateCounts).forEach(([d, cnt]) => {
+      if (cnt > (dateCountMap[d] || 0)) dateCountMap[d] = cnt;
+    });
+  }
   // 僅於快捷膠囊列顯示「未來預訂日期 (d > tomorrowStr)」或目前透過日曆手動選取的單一查詢日，不再把歷史舊日期塞滿頂部列
   const extraDates = Object.keys(dateCountMap)
-    .filter(d => d > tomorrowStr || (state.kdsSelectedDate === d && d !== todayStr && d !== tomorrowStr))
+    .filter(d => d > tomorrowStr || (kdsMode === 'DATE' && state.kdsSelectedDate === d && d !== todayStr && d !== tomorrowStr))
     .sort();
 
   let dateScopedOrders = storeOrders;
-  if (state.kdsSelectedDate !== 'ALL') {
-    dateScopedOrders = dateScopedOrders.filter(o => normalizeDateStr(o.pickupDate || todayStr) === state.kdsSelectedDate);
+  if (isCloudSearchActive && !isCloudSearchLoading) {
+    // 雲端搜尋模式：合併雲端查回的跨日歷史訂單 + 本機符合關鍵字的即時單（不受目前日期篩選限制）
+    const searchMap = new Map();
+    (Array.isArray(kdsSearch.orders) ? kdsSearch.orders : []).forEach(o => {
+      if (o && o.orderId) searchMap.set(o.orderId, o);
+    });
+    const qLow = trimmedQ.toLowerCase();
+    storeOrders.forEach(o => {
+      if (!o || !o.orderId) return;
+      const hit = String(o.pickupNumber || '').toLowerCase().includes(qLow)
+        || String(o.verificationCode || '').toLowerCase().includes(qLow)
+        || String(o.customerPhone || '').toLowerCase().includes(qLow)
+        || String(o.customerNote || '').toLowerCase().includes(qLow)
+        || String(o.orderId || '').toLowerCase().includes(qLow);
+      if (hit) searchMap.set(o.orderId, o);
+    });
+    dateScopedOrders = Array.from(searchMap.values());
+  } else if (kdsMode === 'RANGE') {
+    dateScopedOrders = storeOrders.filter(o => {
+      const pD = normalizeDateStr(o.pickupDate || todayStr);
+      return pD >= kdsStart && pD <= kdsEnd;
+    });
+  } else if (kdsMode !== 'ALL_HISTORY' && state.kdsSelectedDate !== 'ALL') {
+    dateScopedOrders = storeOrders.filter(o => normalizeDateStr(o.pickupDate || todayStr) === state.kdsSelectedDate);
   }
 
   const countAll = dateScopedOrders.length;
@@ -4589,8 +4934,8 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
     });
   }
 
-  const q = (state.kdsSearchQuery || '').trim().toLowerCase();
-  if (q) {
+  const q = trimmedQ.toLowerCase();
+  if (q && !isCloudSearchActive) {
     filtered = filtered.filter(o =>
       String(o.pickupNumber || '').toLowerCase().includes(q) ||
       String(o.verificationCode || '').toLowerCase().includes(q) ||
@@ -4622,15 +4967,20 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
     filtered.sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
   }
 
-  const kdsOrdersCardsHtml = isKdsHistLoading ? `
+  const kdsOrdersCardsHtml = (isKdsRangeLoading || isCloudSearchLoading) ? `
     <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-secondary);">
       <div style="font-size:2.2rem; margin-bottom:8px;">⏳</div>
-      <div style="font-size:1rem; font-weight:800;">${t(`正在從雲端查詢 ${state.kdsSelectedDate} 的歷史訂單...`, `Loading historical orders for ${state.kdsSelectedDate}...`)}</div>
+      <div style="font-size:1rem; font-weight:800;">
+        ${isCloudSearchLoading
+          ? t(`正在從雲端資料庫搜尋「${trimmedQ}」...`, `Searching cloud database for "${trimmedQ}"...`)
+          : t(`正在從雲端載入完整訂單列表（${kdsMode === 'ALL_HISTORY' ? '全部歷史' : (kdsMode === 'RANGE' ? `${kdsStart} ~ ${kdsEnd}` : state.kdsSelectedDate)}）...`, `Loading full orders from D1...`)}
+      </div>
     </div>
   ` : filtered.length === 0 ? `
     <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-muted);">
       <div style="font-size:2.4rem; margin-bottom:8px;">📭</div>
       <div style="font-size:1rem; font-weight:800;">${t('此日期 / 分站 / 篩選條件下目前沒有訂單', 'No orders matching this date / station / filter', 'この条件に一致する注文はありません', '해당 조건에 맞는 주문이 없습니다')}</div>
+      ${q ? `<div style="margin-top:10px;"><button type="button" class="btn-tip-action" style="padding:6px 14px; font-size:0.8rem; background:#4F46E5;" onclick="runKdsCloudOrderSearch()">☁️ ${t(`在雲端全部歷史訂單中搜尋「${trimmedQ}」`, `Search all cloud history for "${trimmedQ}"`)}</button></div>` : ''}
     </div>
   ` : filtered.map(o => {
     const items = Array.isArray(o.structuredItems) ? o.structuredItems : [];
@@ -4850,10 +5200,53 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
     return;
   }
 
+  const prevActiveEl = document.activeElement;
+  const restoreSearchFocus = Boolean(prevActiveEl && prevActiveEl.id === 'kdsSearchInputBox');
+  const prevSearchSelStart = restoreSearchFocus ? prevActiveEl.selectionStart : null;
+  const prevSearchSelEnd = restoreSearchFocus ? prevActiveEl.selectionEnd : null;
+
   const unackCountForStore = Array.from(state.unacknowledgedOrderIds).filter(oid => {
-    const ord = state.orders.find(o => o.orderId === oid);
+    const ord = findMerchantOrderById(oid);
     return ord && ord.storeId === store.id && ord.status === '製作中';
   }).length;
+
+  const todayLiveCount = liveStoreOrders.filter(o => normalizeDateStr(o.pickupDate || todayStr) === todayStr).length;
+  const kdsSourceBannerHtml = isCloudSearchActive
+    ? `
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; background:#EEF2FF; border:1px solid #C7D2FE; color:#312E81; padding:7px 12px; border-radius:10px; font-size:0.78rem; font-weight:800;">
+        <span>
+          ${isCloudSearchLoading
+            ? `⏳ ${t(`正在向雲端搜尋「${trimmedQ}」...`, `Searching cloud for "${trimmedQ}"...`)}`
+            : `☁️ ${t(`雲端全歷史搜尋「${trimmedQ}」完成，共找到 ${dateScopedOrders.length} 筆符合訂單（不受近 80 筆與日期限制）`, `Cloud search "${trimmedQ}": ${dateScopedOrders.length} orders found`)}`}
+          ${kdsSearch && kdsSearch.error ? ` · ⚠️ ${escapeHtml(kdsSearch.error)}` : ''}
+        </span>
+        <button type="button" class="pos-cat-pill active" style="padding:3px 10px; font-size:0.72rem;" onclick="clearKdsCloudSearch()">✖ ${t('清除雲端搜尋', 'Clear Search')}</button>
+      </div>
+    `
+    : (kdsMode !== 'LIVE_TODAY'
+      ? `
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; background:${kdsRangeError ? '#FEF2F2' : '#ECFDF5'}; border:1px solid ${kdsRangeError ? '#FECACA' : '#A7F3D0'}; color:${kdsRangeError ? '#B91C1C' : '#065F46'}; padding:7px 12px; border-radius:10px; font-size:0.78rem; font-weight:800;">
+          <span>
+            ${isKdsRangeLoading
+              ? `⏳ ${t('正在從 D1 資料庫載入完整訂單列表...', 'Loading full orders from D1...')}`
+              : (kdsRangeError
+                ? `⚠️ ${escapeHtml(kdsRangeError)}`
+                : `☁️ ${t(`已透過日期索引載入完整訂單（${kdsMode === 'ALL_HISTORY' ? '全部歷史' : (kdsMode === 'RANGE' ? `${kdsStart} ~ ${kdsEnd}` : state.kdsSelectedDate)}，共 ${dateScopedOrders.length} 筆${kdsRange && kdsRange.truncated ? '，已達單次上限' : ''}）`, `Loaded ${dateScopedOrders.length} full orders from D1`)}`)}
+          </span>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="btn-outline" style="padding:3px 9px; font-size:0.72rem; background:#FFFFFF;" onclick="refreshKdsRangeOrdersNow()">🔄 ${t('重新查詢', 'Reload')}</button>
+            <button type="button" class="btn-outline" style="padding:3px 9px; font-size:0.72rem; background:#FFFFFF;" onclick="setKdsDateFilter('LIVE_TODAY')">⚡ ${t('返回今日即時輕量模式', 'Back to Live Mode')}</button>
+          </div>
+        </div>
+      `
+      : (todayLiveCount >= 65
+        ? `
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; background:#FFFBEB; border:1px solid #FDE68A; color:#92400E; padding:7px 12px; border-radius:10px; font-size:0.76rem; font-weight:800;">
+            <span>⚡ ${t(`目前為省流量即時模式（背景同步僅取最新 80 筆）；今日單量已達 ${todayLiveCount} 筆，如需檢視今天全部訂單請點右側載入`, `Live mode shows latest 80 orders; ${todayLiveCount} orders today.`)}</span>
+            <button type="button" class="btn-tip-action" style="padding:4px 10px; font-size:0.74rem; background:#D97706;" onclick="loadKdsFullTodayOrders(true)">📋 ${t('查全部今日訂單', 'Load All Today')}</button>
+          </div>
+        `
+        : ''));
 
   panel.innerHTML = `
     <div class="kds-panel-wrap">
@@ -4918,30 +5311,39 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <span style="font-size:0.84rem; font-weight:900; color:var(--text-primary);">📅 ${t('取餐日期：', 'Pickup Date:', '受取日：', '픽업 날짜:')}</span>
-            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === todayStr ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(todayStr)})">
-              ${t('今日', 'Today', '本日', '오늘')} (${todayStr.slice(5)}) [${dateCountMap[todayStr] || 0}]
+            <button type="button" class="pos-cat-pill ${kdsMode === 'LIVE_TODAY' && !isCloudSearchActive ? 'active' : ''}" onclick="setKdsDateFilter('LIVE_TODAY')" title="${t('省流量模式：僅顯示最新 80 筆即時訂單', 'Lightweight live mode (latest 80 orders)')}">
+              ⚡ ${t('今日即時', 'Today Live', '本日最新', '오늘 실시간')} (${todayStr.slice(5)}) [${todayLiveCount}]
             </button>
-            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === tomorrowStr ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(tomorrowStr)})">
+            <button type="button" class="pos-cat-pill ${kdsMode === 'FULL_TODAY' && !isCloudSearchActive ? 'active' : ''}" onclick="loadKdsFullTodayOrders(true)" title="${t('向資料庫查出今天完整全部訂單（突破 80 筆限制）', 'Load all of today\'s orders from D1 (no 80-order cap)')}">
+              📋 ${t('查全部今日訂單', 'All Today (Full)', '本日全件', '오늘 전체')}${kdsMode === 'FULL_TODAY' ? ` [${dateCountMap[todayStr] || 0}]` : ''}
+            </button>
+            <button type="button" class="pos-cat-pill ${kdsMode === 'DATE' && state.kdsSelectedDate === tomorrowStr && !isCloudSearchActive ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(tomorrowStr)})">
               ${t('明日', 'Tomorrow', '明日', '내일')} (${tomorrowStr.slice(5)}) [${dateCountMap[tomorrowStr] || 0}]
             </button>
             ${extraDates.map(d => `
-              <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === d ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(d)})">
+              <button type="button" class="pos-cat-pill ${kdsMode === 'DATE' && state.kdsSelectedDate === d && !isCloudSearchActive ? 'active' : ''}" onclick="setKdsDateFilter(${escapeJsAttr(d)})">
                 📅 ${escapeHtml(d.slice(5))} [${dateCountMap[d] || 0}]
               </button>
             `).join('')}
-            <button type="button" class="pos-cat-pill ${state.kdsSelectedDate === 'ALL' ? 'active' : ''}" onclick="setKdsDateFilter('ALL')">
-              🗂️ ${t('全部日期', 'All Dates', 'すべての日付', '전체 날짜')} [${storeOrders.length}]
+            <button type="button" class="pos-cat-pill ${kdsMode === 'ALL_HISTORY' && !isCloudSearchActive ? 'active' : ''}" onclick="setKdsDateFilter('ALL')">
+              🗂️ ${t('全部歷史', 'All History', '全履歴', '전체 이력')}${kdsMode === 'ALL_HISTORY' ? ` [${storeOrders.length}]` : ''}
             </button>
-            <input type="date" class="select-input" style="width:auto; padding:4px 8px; font-size:0.78rem;" value="${state.kdsSelectedDate === 'ALL' ? todayStr : escapeHtml(state.kdsSelectedDate)}" onchange="setKdsDateFilter(this.value)">
           </div>
 
-          <div style="display:flex; align-items:center; gap:6px;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <input type="date" id="kdsRangeStartInput" class="select-input" style="width:auto; padding:4px 7px; font-size:0.76rem;" value="${escapeHtml(kdsStart)}" onchange="if(document.getElementById('kdsRangeEndInput') && document.getElementById('kdsRangeEndInput').value < this.value) document.getElementById('kdsRangeEndInput').value = this.value;">
+            <span style="font-weight:800; font-size:0.76rem;">~</span>
+            <input type="date" id="kdsRangeEndInput" class="select-input" style="width:auto; padding:4px 7px; font-size:0.76rem;" value="${escapeHtml(kdsEnd)}">
+            <button type="button" class="btn-tip-action" style="padding:5px 10px; font-size:0.75rem; background:#4F46E5;" onclick="applyKdsCustomDateRange()">🔍 ${t('查日期區間', 'Query Range', '期間照会', '기간 조회')}</button>
             <button type="button" class="filter-chip ${state.kdsSoundEnabled ? 'active' : ''}" style="padding:5px 10px; font-size:0.76rem;" onclick="toggleKdsSound()">
               ${state.kdsSoundEnabled ? `🔊 ${t('新單語音播報：開', 'New Order Voice: ON', '新規音声：ON', '신규 음성: 켜짐')}` : `🔇 ${t('新單語音播報：關', 'New Order Voice: OFF', '新規音声：OFF', '신규 음성: 꺼짐')}`}
             </button>
-            <input type="search" id="kdsSearchInputBox" class="select-input" style="width:210px; padding:6px 10px; font-size:0.8rem;" placeholder="🔍 ${t('搜尋電話、核銷碼或單號...', 'Search phone, code, or #...', '電話・認証コード・番号で検索...', '전화, 코드, 번호 검색...')}" value="${escapeHtml(state.kdsSearchQuery)}" oninput="handleKdsSearchInput(this.value)">
+            <input type="search" id="kdsSearchInputBox" class="select-input" style="width:200px; padding:6px 10px; font-size:0.8rem;" placeholder="🔍 ${t('單號、手機或核銷碼 (Enter查雲端)', 'Order #, phone or code...')}" value="${escapeHtml(state.kdsSearchQuery)}" oninput="handleKdsSearchInput(this.value)" onkeydown="if(event.key==='Enter'){ event.preventDefault(); runKdsCloudOrderSearch(this.value); }">
+            <button type="button" class="btn-tip-action" style="padding:6px 10px; font-size:0.76rem; background:#0F172A;" onclick="runKdsCloudOrderSearch()" title="${t('直接從雲端資料庫搜尋歷史單號、手機號碼或核銷碼', 'Search full order history in cloud D1')}">☁️ ${t('雲端查單', 'Cloud Search')}</button>
           </div>
         </div>
+
+        ${kdsSourceBannerHtml}
 
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -4975,6 +5377,15 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
       </div>
     </div>
   `;
+  if (restoreSearchFocus) {
+    const nextSearchEl = document.getElementById('kdsSearchInputBox');
+    if (nextSearchEl) {
+      nextSearchEl.focus();
+      if (prevSearchSelStart !== null && typeof nextSearchEl.setSelectionRange === 'function') {
+        try { nextSearchEl.setSelectionRange(prevSearchSelStart, prevSearchSelEnd); } catch (e) {}
+      }
+    }
+  }
 }
 
 async function cancelMerchantOrder(orderId) {
@@ -4983,7 +5394,7 @@ async function cancelMerchantOrder(orderId) {
     return;
   }
   if (state.mutatingOrderIds[orderId]) return;
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
 
   // 二-1：收銀員執行退單 / 退款須由店長輸入 PIN 現場覆核授權
@@ -5067,7 +5478,7 @@ function setReceiptPrintMode(mode) {
 
 function openReceiptPrintModal(orderId, forcedMode) {
   ensureSharedModalsMounted();
-  const o = state.orders.find(ord => ord.orderId === orderId);
+  const o = findMerchantOrderById(orderId);
   if (!o) return;
   state.printingOrderId = orderId;
   if (forcedMode) state.receiptPrintMode = forcedMode;
@@ -5097,7 +5508,7 @@ function openReceiptPrintModal(orderId, forcedMode) {
     </div>
     ${MerchantHardwarePrinter.isConnected('COUNTER') || MerchantHardwarePrinter.isConnected('KITCHEN') ? `
       <div class="no-print" style="margin-bottom:10px;">
-        <button type="button" class="btn-tip-action" style="width:100%; background:#059669; padding:8px; font-size:0.82rem;" onclick="MerchantHardwarePrinter.printOrderByStationRoutes(state.orders.find(x=>x.orderId===${escapeJsAttr(o.orderId)}), false).then(ok=>showToast(ok ? t('✅ ESC/POS 靜默直印已送出！', '✅ Sent to thermal printer!') : t('⚠️ 印表機未回應', '⚠️ Printer did not respond')))">
+        <button type="button" class="btn-tip-action" style="width:100%; background:#059669; padding:8px; font-size:0.82rem;" onclick="MerchantHardwarePrinter.printOrderByStationRoutes(findMerchantOrderById(${escapeJsAttr(o.orderId)}), false).then(ok=>showToast(ok ? t('✅ ESC/POS 靜默直印已送出！', '✅ Sent to thermal printer!') : t('⚠️ 印表機未回應', '⚠️ Printer did not respond')))">
           ⚡ ${t('ESC/POS 熱感機直接靜默出單（免經瀏覽器列印視窗）', 'Silent Direct Print via ESC/POS Thermal Printer', 'ESC/POS サーマル直接印刷', 'ESC/POS 영수증 프린터 즉시 출력')}
         </button>
       </div>
@@ -5293,7 +5704,7 @@ function closeReceiptPrintModal() {
 }
 
 function openOrderPayModal(orderId, autoCompleteAfterPay = false) {
-  const o = state.orders.find(ord => ord.orderId === orderId);
+  const o = findMerchantOrderById(orderId);
   if (!o) return;
   state.payingOrderId = orderId;
   state.payingOrderMethod = '現場現金';
@@ -5332,7 +5743,7 @@ function setOrderPayMethod(method) {
 
 function renderOrderPayModalContent() {
   const box = document.getElementById('orderPayModalBody');
-  const o = state.orders.find(ord => ord.orderId === state.payingOrderId);
+  const o = findMerchantOrderById(state.payingOrderId);
   if (!box || !o) return;
 
   const total = Number(o.finalTotal) || 0;
@@ -5438,7 +5849,7 @@ async function confirmOrderPayment() {
     checkMerchantSecurityGate();
     return;
   }
-  const o = state.orders.find(ord => ord.orderId === state.payingOrderId);
+  const o = findMerchantOrderById(state.payingOrderId);
   if (!o) return;
 
   await withActiveButtonBusy(async () => {
@@ -5516,7 +5927,7 @@ function openChangeOrderPaymentMethodModal(orderId) {
     checkMerchantSecurityGate();
     return;
   }
-  const o = state.orders.find(ord => ord.orderId === orderId);
+  const o = findMerchantOrderById(orderId);
   if (!o) return;
   let modal = document.getElementById('changeOrderPayMethodModal');
   if (!modal) {
@@ -5567,7 +5978,7 @@ function closeChangeOrderPayMethodModal() {
 }
 
 async function commitChangeOrderPaymentMethod(orderId, newMethod) {
-  const o = state.orders.find(ord => ord.orderId === orderId);
+  const o = findMerchantOrderById(orderId);
   if (!o) return;
   await withActiveButtonBusy(async () => {
     const prev = {
@@ -5624,7 +6035,7 @@ async function requeueOrderPrintJob(orderId) {
     checkMerchantSecurityGate();
     return;
   }
-  const o = state.orders.find(ord => ord.orderId === orderId);
+  const o = findMerchantOrderById(orderId);
   if (!o) return;
   await withActiveButtonBusy(async () => {
     try {
@@ -5655,7 +6066,7 @@ async function markOrderReady(orderId) {
     checkMerchantSecurityGate();
     return;
   }
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
 
   const prevSnapshot = {
@@ -5694,7 +6105,7 @@ async function completeOrderFinal(orderId) {
     checkMerchantSecurityGate();
     return;
   }
-  const order = state.orders.find(o => o.orderId === orderId);
+  const order = findMerchantOrderById(orderId);
   if (!order) return;
 
   if (String(order.status).includes('已取消')) {

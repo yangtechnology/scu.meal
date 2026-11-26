@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.5`;
+    script.src = `${base}merchant.js?v=26.6`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1543,8 +1543,20 @@ var state = {
   analyticsOrdersError: '',
   analyticsRangeReqSeq: 0,
   analyticsSelectedFilter: null,
-  kdsHistoryDateOrders: null,
-  kdsHistoryReqSeq: 0,
+
+  // 訂單管理 (KDS) 按需日期區間與雲端查單快取（預設 LIVE_TODAY 吃輕量 initBundle，按需才查 D1）
+  kdsDateMode: 'LIVE_TODAY', // 'LIVE_TODAY' | 'FULL_TODAY' | 'DATE' | 'RANGE' | 'ALL_HISTORY'
+  kdsStartDate: getTodayDateStr(),
+  kdsEndDate: getTodayDateStr(),
+  kdsRangeOrders: null,      // { storeId, mode, startDate, endDate, orders: [], truncated: false, loading: false, error: '', loadedAt: 0 }
+  kdsRangeReqSeq: 0,
+  kdsSearchOrders: null,     // { storeId, query, orders: [], loading: false, error: '' }
+  kdsSearchReqSeq: 0,
+  kdsSearchDebounceTimer: null,
+
+  // 交班日結營業日選擇與雲端權威請求序號
+  shiftReportDate: getTodayDateStr(),
+  shiftZReportReqSeq: 0,
 
   // 店家菜單管理與視覺掃描狀態
   scannedMenuCandidates: [],
