@@ -1,7 +1,7 @@
 // =========================================================================
 // MealFlow v26.0 — 潔淨高效 PWA Service Worker（徹底防止舊版 JS/CSS 快取回退）
 // =========================================================================
-const CACHE_NAME = 'mealflow-pwa-v26.7';
+const CACHE_NAME = 'mealflow-pwa-v26.8';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -13,10 +13,10 @@ const APP_SHELL_ASSETS = [
   './board/index.html',
   './board/qr.js?v=26.0',
   './board/manifest.json',
-  './styles.css?v=26.7',
+  './styles.css?v=26.8',
   './i18n.js?v=26.0',
-  './app.js?v=26.7',
-  './merchant.js?v=26.7',
+  './app.js?v=26.8',
+  './merchant.js?v=26.8',
   './jsQR.min.js',
   './logo-icon.jpg',
   './logo-text.png',

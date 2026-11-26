@@ -4727,8 +4727,11 @@ body.xp2-mode #storePanel-pos {
 .xp2-cat-btn {
   background: linear-gradient(180deg, #43F543 0%, #06C706 58%, #00A300 100%);
   color: #05220B;
-  font-size: 19px;
-  letter-spacing: 0.5px;
+  font-size: 23px;
+  font-weight: 900;
+  padding: 2px;
+  line-height: 1.08;
+  letter-spacing: 0.3px;
 }
 
 .xp2-cat-btn.active {
@@ -4783,7 +4786,8 @@ body.xp2-mode #storePanel-pos {
 .xp2-dish-btn {
   background: linear-gradient(180deg, #43D7F5 0%, #15AEDD 62%, #0B93C4 100%);
   color: #051829;
-  padding: 2px 3px;
+  padding: 2px;
+  line-height: 1.08;
 }
 
 .xp2-dish-btn:active {
@@ -4795,7 +4799,8 @@ body.xp2-mode #storePanel-pos {
 .xp2-drink-btn {
   background: linear-gradient(180deg, #C782FF 0%, #9E47F5 62%, #8228DE 100%);
   color: #140526;
-  padding: 2px 3px;
+  padding: 2px;
+  line-height: 1.08;
 }
 
 .xp2-drink-btn:active {
@@ -4804,6 +4809,11 @@ body.xp2-mode #storePanel-pos {
 }
 
 /* 最底 2 列：一鍵客製化紫／藍格 */
+.xp2-mod-btn {
+  padding: 2px;
+  line-height: 1.08;
+}
+
 .xp2-mod-purple {
   background: linear-gradient(180deg, #BD6DFF 0%, #9333EA 60%, #771FC9 100%);
   color: #FFFFFF;
@@ -4840,12 +4850,22 @@ body.xp2-mode #storePanel-pos {
 .xp2-tile-title {
   display: block;
   width: 100%;
-  font-size: 16px;
+  font-size: 22px;
   font-weight: 900;
-  line-height: 1.12;
+  line-height: 1.08;
+  white-space: normal;
   word-break: break-all;
+  overflow-wrap: break-word;
   overflow: hidden;
-  max-height: 2.35em;
+  max-height: 3.32em;
+}
+
+.xp2-drink-btn .xp2-tile-title {
+  font-size: 24px;
+}
+
+.xp2-mod-btn .xp2-tile-title {
+  font-size: 20px;
 }
 
 .xp2-tile-price {
@@ -4896,7 +4916,7 @@ body.xp2-mode #storePanel-pos {
 }
 
 .xp2-modal-box {
-  width: 500px;
+  width: 540px;
   max-width: 96%;
   max-height: 94%;
   overflow-y: auto;
@@ -4917,6 +4937,52 @@ body.xp2-mode #storePanel-pos {
   padding-bottom: 8px;
   margin-bottom: 8px;
   border-bottom: 2px solid #CBD5E1;
+}
+
+.xp2-modal-title-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.xp2-modal-title-text {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 8px;
+  font-size: 19px;
+  font-weight: 900;
+  color: #0F172A;
+  line-height: 1.2;
+}
+
+.xp2-modal-fast-exact-btn {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  height: 46px;
+  padding: 0 14px;
+  border: 2px solid #047857;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #22C55E 0%, #16A34A 58%, #15803D 100%);
+  color: #FFFFFF;
+  font-size: 17px;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.xp2-modal-fast-exact-btn:active {
+  background: #166534 !important;
+}
+
+.xp2-modal-fast-exact-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .xp2-co-summary {
@@ -5222,10 +5288,16 @@ body.xp2-mode .modal-overlay {
     font-size: 17px;
   }
   .xp2-cat-btn {
-    font-size: 16px;
+    font-size: 20px;
   }
   .xp2-tile-title {
-    font-size: 14px;
+    font-size: 19px;
+  }
+  .xp2-drink-btn .xp2-tile-title {
+    font-size: 20px;
+  }
+  .xp2-mod-btn .xp2-tile-title {
+    font-size: 18px;
   }
   .xp2-tile-price {
     font-size: 12px;
@@ -5246,10 +5318,14 @@ body.xp2-mode .modal-overlay {
     min-height: 38px;
   }
   .xp2-cat-btn {
-    font-size: 14px;
+    font-size: 17px;
   }
-  .xp2-tile-title {
-    font-size: 12px;
+  .xp2-tile-title,
+  .xp2-drink-btn .xp2-tile-title {
+    font-size: 16px;
+  }
+  .xp2-mod-btn .xp2-tile-title {
+    font-size: 15px;
   }
   .xp2-tile-price {
     font-size: 11px;

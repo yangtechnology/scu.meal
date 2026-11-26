@@ -1754,6 +1754,16 @@ function xp2CheckoutTapKey(k) {
   xp2RenderCheckoutModal();
 }
 
+async function xp2InstantExactCashCheckout() {
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (!store || state.posCart.length === 0 || state.isPosSubmitting) return;
+  const { finalTotal } = calcCurrentPosTotals(store);
+  state.posPayment = '現場現金';
+  state.posCashReceived = String(finalTotal);
+  xp2CloseCheckoutModal();
+  await submitMerchantPosOrder({ fastMode: true });
+}
+
 async function xp2ConfirmCheckout() {
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (!store || state.posCart.length === 0 || state.isPosSubmitting) return;
@@ -1793,7 +1803,10 @@ function xp2RenderCheckoutModal() {
   const isLpReady = cleanOtk.length === 18 || (Boolean(state.posLinePayManualConfirmed) && cleanRef.length >= 4);
 
   body.innerHTML = `
-    <div class="xp2-modal-title">🧾 結帳確認 #${escapeHtml(nextPreviewSeq)}（${escapeHtml(state.posDineType)}）</div>
+    <div class="xp2-modal-title xp2-modal-title-row">
+      <span class="xp2-modal-title-text">🧾 結帳確認 #${escapeHtml(nextPreviewSeq)}（${escapeHtml(state.posDineType)}）</span>
+      <button type="button" class="xp2-modal-fast-exact-btn" ${state.isPosSubmitting ? 'disabled' : ''} onclick="xp2InstantExactCashCheckout()">⚡ 剛好（直接出單）</button>
+    </div>
     <div class="xp2-co-summary">
       <div class="xp2-co-summary-left">
         <div>${state.posCart.reduce((s, i) => s + (i.qty || 1), 0)} 份餐點${takeoutFee > 0 ? ' · 外帶+$1' : ''}${cutleryFee > 0 ? ` · 餐具+$${cutleryFee}` : ''}${comboDiscount > 0 ? ` · 組合折-$${comboDiscount}` : ''}</div>
@@ -2023,7 +2036,7 @@ function renderXp2ClassicPosPanel(store) {
           <div class="xp2-grid-cell">
             <button type="button" class="xp2-btn xp2-dish-btn ${isOut ? 'xp2-cell-soldout' : ''}" ${isOut ? 'disabled' : ''} onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
               <span class="xp2-tile-title">${escapeHtml(m.name)}</span>
-              <span class="xp2-tile-price">${isOut ? '售完' : `$${m.price}`}</span>
+              ${isOut ? '<span class="xp2-tile-price">售完</span>' : ''}
             </button>
           </div>
         `);
@@ -2049,7 +2062,7 @@ function renderXp2ClassicPosPanel(store) {
           <div class="xp2-grid-cell">
             <button type="button" class="xp2-btn xp2-drink-btn ${isOut ? 'xp2-cell-soldout' : ''}" ${isOut ? 'disabled' : ''} onclick="handleMenuItemClick(${escapeJsAttr(dm.id)}, true)">
               <span class="xp2-tile-title">${escapeHtml(dm.name)}</span>
-              <span class="xp2-tile-price">${isOut ? '售完' : `$${dm.price}`}</span>
+              ${isOut ? '<span class="xp2-tile-price">售完</span>' : ''}
             </button>
           </div>
         `);
