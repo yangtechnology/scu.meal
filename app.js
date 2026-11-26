@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.4`;
+    script.src = `${base}merchant.js?v=26.5`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1533,12 +1533,18 @@ var state = {
   modifyingOrderItemsDraft: [],
   recentlyAutoFiredOrderIds: new Set(),
 
-  // 營運分析時間維度與全區間後端統計 (二-5)
+  // 營運分析時間維度與全區間後端統計 (二-5) + 按需歷史訂單區間快取
   analyticsPeriod: 'DAY',
   analyticsStartDate: getTodayDateStr(),
   analyticsEndDate: getTodayDateStr(),
   analyticsCloudData: null,
+  analyticsRangeOrders: null,
+  analyticsOrdersLoading: false,
+  analyticsOrdersError: '',
+  analyticsRangeReqSeq: 0,
   analyticsSelectedFilter: null,
+  kdsHistoryDateOrders: null,
+  kdsHistoryReqSeq: 0,
 
   // 店家菜單管理與視覺掃描狀態
   scannedMenuCandidates: [],

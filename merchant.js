@@ -446,6 +446,10 @@ function switchMerchantStore(storeId) {
   state.posServiceFeeRate = 0;
   state.posManualDiscountReason = '';
   state.analyticsCloudData = null;
+  state.analyticsRangeOrders = null;
+  state.analyticsOrdersLoading = false;
+  state.analyticsOrdersError = '';
+  state.kdsHistoryDateOrders = null;
   state.shiftZReportCloudData = null;
   const topSel = document.getElementById('storeTopSwitcher');
   if (topSel && topSel.value !== storeId) topSel.value = storeId;
@@ -2881,9 +2885,10 @@ function updateShiftSettlementField(field, val) {
   openShiftZReportModal();
 }
 
-// 一-5：多班別交班切換 (MORNING: 00:00~14:59 / EVENING: 15:00~23:59 / FULL: 全日)
+// 一-5：多班別交班切換 (CURRENT_OPEN / MORNING: 00:00~14:59 / EVENING: 15:00~23:59 / FULL: 全日)
 function setActiveShiftSlot(slot) {
-  const clean = ['MORNING', 'EVENING', 'FULL'].includes(String(slot).toUpperCase()) ? String(slot).toUpperCase() : 'FULL';
+  const upper = String(slot || '').toUpperCase();
+  const clean = ['CURRENT_OPEN', 'MORNING', 'EVENING', 'FULL'].includes(upper) ? upper : 'FULL';
   state.activeShiftSlot = clean;
   try { localStorage.setItem('mealflow_active_shift_slot', clean); } catch (e) {}
   openShiftZReportModal();
@@ -3150,7 +3155,7 @@ function openShiftZReportModal(skipCloudFetch = false) {
   const crossDayPrepaidTotal = crossDayPrepaidFulfilledToday.reduce((s, o) => s + (Number(o.finalTotal) || 0), 0);
 
   const foodGrossSubtotal = cloudZ ? Number(cloudZ.grossSubtotal || 0) : paidOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0);
-  const cutleryFeeSum = paidOrders.reduce((s, o) => s + (Number(o.cutleryFee) || 0), 0);
+  const cutleryFeeSum = cloudZ ? Number(cloudZ.cutleryFeeSum || 0) : paidOrders.reduce((s, o) => s + (Number(o.cutleryFee) || 0), 0);
   const serviceFeeSum = cloudZ ? Number(cloudZ.serviceFeeSum || 0) : paidOrders.reduce((s, o) => s + (Number(o.serviceFee) || 0), 0);
   const promoDiscountSum = cloudZ ? Number(cloudZ.discountTotal || 0) : paidOrders.reduce((s, o) => s + (Number(o.discount) || 0), 0);
   const manualDiscountSum = cloudZ ? 0 : paidOrders.reduce((s, o) => s + (Number(o.manualDiscount) || 0), 0);
@@ -3370,8 +3375,59 @@ function openShiftZReportModal(skipCloudFetch = false) {
   document.getElementById('receiptPrintModal')?.classList.add('open');
 }
 // ==================== 6.2 廚房控單 (KDS) — 規格拆解看板 + 鏡頭光學掃碼核銷 ====================
+async function fetchKdsOrdersByDateFromCloud(storeId, dateStr) {
+  if (!storeId || !dateStr || !isMerchantSessionValidNow()) return;
+  const reqSeq = (state.kdsHistoryReqSeq || 0) + 1;
+  state.kdsHistoryReqSeq = reqSeq;
+  state.kdsHistoryDateOrders = { storeId, dateStr, orders: [], loading: true };
+  renderMerchantOrdersOnly();
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'getOrdersByDateRange',
+        ...getMerchantAuthPayload(),
+        storeId,
+        startDate: dateStr,
+        endDate: dateStr,
+        limit: 1000
+      })
+    });
+    const data = await res.json();
+    if (state.kdsHistoryReqSeq !== reqSeq) return;
+    if (data && data.success && Array.isArray(data.orders)) {
+      const cleaned = data.orders
+        .map(raw => (typeof sanitizeIncomingOrder === 'function' ? sanitizeIncomingOrder(raw) : raw))
+        .filter(o => o && !isCorruptedOrMockOrder(o));
+      state.kdsHistoryDateOrders = { storeId, dateStr, orders: cleaned, loading: false };
+    } else {
+      state.kdsHistoryDateOrders = { storeId, dateStr, orders: [], loading: false };
+    }
+  } catch (e) {
+    if (state.kdsHistoryReqSeq === reqSeq) {
+      state.kdsHistoryDateOrders = { storeId, dateStr, orders: [], loading: false };
+    }
+  }
+  if (state.routeMode === 'store' && state.storeTabMode === 'kds') {
+    renderMerchantOrdersOnly();
+  }
+}
+
 function setKdsDateFilter(dateVal) {
   state.kdsSelectedDate = dateVal === 'ALL' ? 'ALL' : normalizeDateStr(dateVal);
+  const storeId = state.merchantStoreId;
+  const todayStr = getTodayDateStr();
+  const recentCutoffStr = getDateOffsetFromStr(todayStr, -2);
+  // 僅當手動選取超過近 3 天視窗的歷史日期時，才按需呼叫一次 getOrdersByDateRange（平常今日/明日完全零額外查詢）
+  if (storeId && state.kdsSelectedDate !== 'ALL' && state.kdsSelectedDate < recentCutoffStr) {
+    const cached = state.kdsHistoryDateOrders;
+    if (!cached || cached.storeId !== storeId || cached.dateStr !== state.kdsSelectedDate) {
+      fetchKdsOrdersByDateFromCloud(storeId, state.kdsSelectedDate);
+      return;
+    }
+  }
   renderMerchantOrdersOnly();
 }
 
@@ -4442,9 +4498,18 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
   const panel = document.getElementById('storePanel-kds');
   if (!store || !panel) return;
 
-  const storeOrders = state.orders.filter(o => o.storeId === store.id);
+  const liveStoreOrders = state.orders.filter(o => o.storeId === store.id);
+  let storeOrders = liveStoreOrders;
+  const kdsHist = state.kdsHistoryDateOrders;
+  const isKdsHistLoading = Boolean(kdsHist && kdsHist.storeId === store.id && kdsHist.dateStr === state.kdsSelectedDate && kdsHist.loading);
+  if (kdsHist && kdsHist.storeId === store.id && kdsHist.dateStr === state.kdsSelectedDate && Array.isArray(kdsHist.orders) && kdsHist.orders.length > 0) {
+    const mergedMap = new Map();
+    kdsHist.orders.forEach(o => { if (o && o.orderId) mergedMap.set(o.orderId, o); });
+    liveStoreOrders.forEach(o => { if (o && o.orderId) mergedMap.set(o.orderId, o); });
+    storeOrders = Array.from(mergedMap.values());
+  }
   if (typeof checkAndAutoPrint === 'function') {
-    checkAndAutoPrint(storeOrders.filter(o => o.status !== '已完成' && !String(o.status).includes('已取消')));
+    checkAndAutoPrint(liveStoreOrders.filter(o => o.status !== '已完成' && !String(o.status).includes('已取消')));
   }
   const todayStr = getTodayDateStr();
   const tomorrowStr = getFutureDateStr(1);
@@ -4557,7 +4622,12 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
     filtered.sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
   }
 
-  const kdsOrdersCardsHtml = filtered.length === 0 ? `
+  const kdsOrdersCardsHtml = isKdsHistLoading ? `
+    <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-secondary);">
+      <div style="font-size:2.2rem; margin-bottom:8px;">⏳</div>
+      <div style="font-size:1rem; font-weight:800;">${t(`正在從雲端查詢 ${state.kdsSelectedDate} 的歷史訂單...`, `Loading historical orders for ${state.kdsSelectedDate}...`)}</div>
+    </div>
+  ` : filtered.length === 0 ? `
     <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-muted);">
       <div style="font-size:2.4rem; margin-bottom:8px;">📭</div>
       <div style="font-size:1rem; font-weight:800;">${t('此日期 / 分站 / 篩選條件下目前沒有訂單', 'No orders matching this date / station / filter', 'この条件に一致する注文はありません', '해당 조건에 맞는 주문이 없습니다')}</div>
@@ -5791,6 +5861,7 @@ async function fetchStoreAnalyticsFromCloud(storeId, startDate, endDate) {
       body: JSON.stringify({
         action: 'getStoreAnalytics',
         ...getMerchantAuthPayload(),
+        managerOverridePin: state.tempManagerOverridePin || '',
         storeId,
         startDate,
         endDate
@@ -5807,6 +5878,60 @@ async function fetchStoreAnalyticsFromCloud(storeId, startDate, endDate) {
   } catch (e) {}
 }
 
+async function fetchOrdersByDateRangeFromCloud(storeId, startDate, endDate, options = {}) {
+  if (!storeId || !isMerchantSessionValidNow()) return;
+  const reqSeq = (state.analyticsRangeReqSeq || 0) + 1;
+  state.analyticsRangeReqSeq = reqSeq;
+  state.analyticsOrdersLoading = true;
+  state.analyticsOrdersError = '';
+  const includeAllHistory = Boolean(options && options.includeAllHistory);
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'getOrdersByDateRange',
+        ...getMerchantAuthPayload(),
+        storeId,
+        startDate: includeAllHistory ? '' : startDate,
+        endDate: includeAllHistory ? '' : endDate,
+        includeAllHistory,
+        limit: options.limit || 3000
+      })
+    });
+    const data = await res.json();
+    if (state.analyticsRangeReqSeq !== reqSeq) return;
+    if (data && data.success && Array.isArray(data.orders)) {
+      const cleanedOrders = data.orders
+        .map(raw => (typeof sanitizeIncomingOrder === 'function' ? sanitizeIncomingOrder(raw) : raw))
+        .filter(o => o && !isCorruptedOrMockOrder(o));
+      state.analyticsRangeOrders = {
+        storeId,
+        startDate,
+        endDate,
+        includeAllHistory,
+        orders: cleanedOrders,
+        truncated: Boolean(data.truncated),
+        loadedAt: Date.now()
+      };
+      state.analyticsOrdersLoading = false;
+      state.analyticsOrdersError = '';
+    } else {
+      state.analyticsOrdersLoading = false;
+      state.analyticsOrdersError = (data && data.message) ? String(data.message) : '載入歷史訂單失敗';
+    }
+  } catch (e) {
+    if (state.analyticsRangeReqSeq !== reqSeq) return;
+    state.analyticsOrdersLoading = false;
+    state.analyticsOrdersError = String(e && e.message ? e.message : '網路連線異常');
+  }
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (store && state.storeTabMode === 'analytics') {
+    renderMerchantAnalyticsPanel(store, true);
+  }
+}
+
 function setAnalyticsQuickRange(rangeKey) {
   const todayStr = getTodayDateStr();
   if (rangeKey === 'DAY') {
@@ -5821,8 +5946,14 @@ function setAnalyticsQuickRange(rangeKey) {
     state.analyticsPeriod = 'MONTH';
     state.analyticsStartDate = getDateOffsetFromStr(todayStr, -29);
     state.analyticsEndDate = todayStr;
+  } else if (rangeKey === 'ALL') {
+    state.analyticsPeriod = 'ALL';
+    state.analyticsStartDate = '2024-01-01';
+    state.analyticsEndDate = todayStr;
   }
   state.analyticsCloudData = null;
+  state.analyticsRangeOrders = null;
+  state.analyticsOrdersError = '';
   state.analyticsSelectedFilter = null;
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (store) renderMerchantAnalyticsPanel(store);
@@ -5839,8 +5970,19 @@ function applyAnalyticsCustomDateRange() {
   state.analyticsEndDate = eVal;
   state.analyticsPeriod = sVal === eVal ? 'DAY' : 'CUSTOM';
   state.analyticsCloudData = null;
+  state.analyticsRangeOrders = null;
+  state.analyticsOrdersError = '';
+  state.analyticsSelectedFilter = null;
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (store) renderMerchantAnalyticsPanel(store);
+}
+
+function refreshAnalyticsRangeNow() {
+  state.analyticsCloudData = null;
+  state.analyticsRangeOrders = null;
+  state.analyticsOrdersError = '';
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  if (store) renderMerchantAnalyticsPanel(store, false);
 }
 
 function exportStoreAnalyticsCsv() {
@@ -5872,7 +6014,12 @@ function exportStoreAnalyticsCsv() {
     return;
   }
 
-  const orders = state.orders.filter(o => o.storeId === store.id);
+  const rangeCache = (state.analyticsRangeOrders && state.analyticsRangeOrders.storeId === store.id && Array.isArray(state.analyticsRangeOrders.orders))
+    ? state.analyticsRangeOrders.orders
+    : null;
+  const orders = rangeCache && rangeCache.length > 0
+    ? rangeCache
+    : state.orders.filter(o => o.storeId === store.id);
   if (orders.length === 0) {
     showToast(`⚠️ ${t('目前無訂單資料可匯出', 'No orders to export')}`);
     return;
@@ -5897,7 +6044,7 @@ function exportStoreAnalyticsCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `MealFlow_${store.name}_營運財務報表_${getTodayDateStr()}.csv`;
+  a.download = `MealFlow_${store.name}_營運財務報表_${state.analyticsStartDate || getTodayDateStr()}_${state.analyticsEndDate || getTodayDateStr()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -5913,25 +6060,55 @@ function renderMerchantAnalyticsPanel(store, skipCloudFetch = false) {
   const todayStr = getTodayDateStr();
   const startDate = state.analyticsStartDate || todayStr;
   const endDate = state.analyticsEndDate || todayStr;
+  const isAllHistory = period === 'ALL';
 
+  const cachedOk = Boolean(
+    state.analyticsCloudData
+    && state.analyticsCloudData.storeId === store.id
+    && state.analyticsCloudData.startDate === startDate
+    && state.analyticsCloudData.endDate === endDate
+  );
+  const rangeCachedOk = Boolean(
+    state.analyticsRangeOrders
+    && state.analyticsRangeOrders.storeId === store.id
+    && state.analyticsRangeOrders.startDate === startDate
+    && state.analyticsRangeOrders.endDate === endDate
+    && Boolean(state.analyticsRangeOrders.includeAllHistory) === isAllHistory
+  );
+
+  // 只在進入分析分頁、切換店家或手動變更日期區間時按需呼叫一次；背景 initBundle 輪詢命中快取絕不重複查 D1
   if (!skipCloudFetch) {
-    const cachedOk = state.analyticsCloudData
-      && state.analyticsCloudData.storeId === store.id
-      && state.analyticsCloudData.startDate === startDate
-      && state.analyticsCloudData.endDate === endDate;
     if (!cachedOk) {
       fetchStoreAnalyticsFromCloud(store.id, startDate, endDate);
     }
+    if (!rangeCachedOk && !state.analyticsOrdersLoading) {
+      fetchOrdersByDateRangeFromCloud(store.id, startDate, endDate, { includeAllHistory: isAllHistory });
+    }
   }
-  const cloudA = (state.analyticsCloudData && state.analyticsCloudData.storeId === store.id && state.analyticsCloudData.startDate === startDate && state.analyticsCloudData.endDate === endDate)
-    ? state.analyticsCloudData
-    : null;
-  const past7StartStr = getDateOffsetFromStr(todayStr, -6);
 
-  const allValidStoreOrders = state.orders.filter(o => o.storeId === store.id && !String(o.status).includes('已取消'));
-  const hasSeedOrders = state.orders.some(o => o.isSeedSample);
+  const cloudA = cachedOk ? state.analyticsCloudData : null;
+  const rangeData = rangeCachedOk ? state.analyticsRangeOrders : null;
 
-  let periodTitle = t(`今日各時段真實實收營收 (${todayStr})`, `Today's Hourly Paid Revenue (${todayStr})`, `本日の時間帯別売上 (${todayStr})`, `오늘 시간대별 실수령 매출 (${todayStr})`);
+  // 合併「按需歷史區間訂單 (getOrdersByDateRange)」與「即時近期訂單 (state.orders)」，以 orderId 去重並保留較新即時狀態
+  const mergedOrdersMap = new Map();
+  if (rangeData && Array.isArray(rangeData.orders)) {
+    rangeData.orders.forEach(o => {
+      if (o && o.orderId && o.storeId === store.id) mergedOrdersMap.set(o.orderId, o);
+    });
+  }
+  state.orders.forEach(o => {
+    if (o && o.orderId && o.storeId === store.id) {
+      mergedOrdersMap.set(o.orderId, o);
+    }
+  });
+  const mergedStoreOrders = Array.from(mergedOrdersMap.values())
+    .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
+
+  const allValidStoreOrders = mergedStoreOrders.filter(o => !String(o.status).includes('已取消') && String(o.status) !== '已退單');
+
+  let periodTitle = startDate === todayStr
+    ? t(`今日各時段真實實收營收 (${startDate})`, `Today's Hourly Paid Revenue (${startDate})`, `本日の時間帯別売上 (${startDate})`, `오늘 시간대별 실수령 매출 (${startDate})`)
+    : t(`單日各時段真實實收營收 (${startDate})`, `Daily Hourly Paid Revenue (${startDate})`, `日別時間帯売上 (${startDate})`, `일별 시간대 매출 (${startDate})`);
   let buckets = [];
   let periodOrders = [];
 
@@ -5941,8 +6118,12 @@ function renderMerchantAnalyticsPanel(store, skipCloudFetch = false) {
     return normalizeDateStr(o.pickupDate);
   };
 
-  if (period === 'DAY') {
-    periodOrders = allValidStoreOrders.filter(o => getOrderAccountingDate(o) === todayStr);
+  if (period === 'DAY' && startDate === endDate) {
+    periodOrders = allValidStoreOrders.filter(o => {
+      const accD = getOrderAccountingDate(o);
+      const pD = normalizeDateStr(o.pickupDate);
+      return accD === startDate || pD === startDate;
+    });
     buckets = [
       { key: '10', label: t('10-11時', '10-11h', '10-11時', '10-11시'), match: o => parseOrderHour(o) <= 10 },
       { key: '11', label: t('11-12時', '11-12h', '11-12時', '11-12시'), match: o => parseOrderHour(o) === 11 },
@@ -5953,24 +6134,32 @@ function renderMerchantAnalyticsPanel(store, skipCloudFetch = false) {
       { key: '18', label: t('18時後', '18h+', '18時以降', '18시 이후'), match: o => parseOrderHour(o) >= 18 }
     ];
   } else if (period === 'WEEK') {
-    periodTitle = t(`過去 7 日每日真實營收趨勢 (${past7StartStr.slice(5)} ~ ${todayStr.slice(5)})`, `7-Day Revenue Trend (${past7StartStr.slice(5)}–${todayStr.slice(5)})`, `過去7日間の売上推移 (${past7StartStr.slice(5)}〜${todayStr.slice(5)})`, `최근 7일 매출 추이 (${past7StartStr.slice(5)}~${todayStr.slice(5)})`);
+    periodTitle = t(`過去 7 日每日真實營收趨勢 (${startDate.slice(5)} ~ ${endDate.slice(5)})`, `7-Day Revenue Trend (${startDate.slice(5)}–${endDate.slice(5)})`, `過去7日間の売上推移 (${startDate.slice(5)}〜${endDate.slice(5)})`, `최근 7일 매출 추이 (${startDate.slice(5)}~${endDate.slice(5)})`);
     const dayOffsets = [-6, -5, -4, -3, -2, -1, 0];
-    const allowedDates = new Set(dayOffsets.map(off => getDateOffsetFromStr(todayStr, off)));
-    periodOrders = allValidStoreOrders.filter(o => allowedDates.has(getOrderAccountingDate(o)));
+    const allowedDates = new Set(dayOffsets.map(off => getDateOffsetFromStr(endDate, off)));
+    periodOrders = allValidStoreOrders.filter(o => allowedDates.has(getOrderAccountingDate(o)) || allowedDates.has(normalizeDateStr(o.pickupDate)));
     buckets = dayOffsets.map(off => {
-      const dStr = getDateOffsetFromStr(todayStr, off);
-      const shortLabel = off === 0 ? `${t('今日', 'Today', '本日', '오늘')}(${dStr.slice(5)})` : dStr.slice(5);
+      const dStr = getDateOffsetFromStr(endDate, off);
+      const shortLabel = dStr === todayStr ? `${t('今日', 'Today', '本日', '오늘')}(${dStr.slice(5)})` : dStr.slice(5);
       return {
         key: dStr,
         label: shortLabel,
-        match: o => getOrderAccountingDate(o) === dStr
+        match: o => getOrderAccountingDate(o) === dStr || (normalizeDateStr(o.pickupDate) === dStr && !allowedDates.has(getOrderAccountingDate(o)))
       };
     });
   } else {
-    periodTitle = t('歷史與未來預訂全區間分析', 'Full-Range & Future Pre-order Analytics', '全期間・未来予約分析', '전체 기간 및 예약 분석');
-    periodOrders = allValidStoreOrders;
-    const uniqueDates = [...new Set(allValidStoreOrders.map(o => getOrderAccountingDate(o)))].sort();
-    buckets = (uniqueDates.length > 0 ? uniqueDates : [todayStr]).map(dStr => ({
+    periodTitle = isAllHistory
+      ? t('完整歷史與未來預訂全區間分析', 'All-History & Pre-order Analytics', '全履歴・予約分析', '전체 이력 및 예약 분석')
+      : t(`區間每日真實營收趨勢 (${startDate} ~ ${endDate})`, `Daily Revenue Trend (${startDate} – ${endDate})`, `期間売上推移 (${startDate}〜${endDate})`, `기간별 매출 추이 (${startDate}~${endDate})`);
+    periodOrders = isAllHistory
+      ? allValidStoreOrders
+      : allValidStoreOrders.filter(o => {
+          const accD = getOrderAccountingDate(o);
+          const pD = normalizeDateStr(o.pickupDate);
+          return (accD >= startDate && accD <= endDate) || (pD >= startDate && pD <= endDate);
+        });
+    const uniqueDates = [...new Set(periodOrders.map(o => getOrderAccountingDate(o)))].sort();
+    buckets = (uniqueDates.length > 0 ? uniqueDates : [startDate]).map(dStr => ({
       key: dStr,
       label: dStr.slice(5),
       match: o => getOrderAccountingDate(o) === dStr
@@ -6002,26 +6191,33 @@ function renderMerchantAnalyticsPanel(store, skipCloudFetch = false) {
   const minUnit = t('分', 'm', '分', '분');
 
   const maxBar = Math.max(...bucketStats.map(b => b.rev), 100);
+  const bucketCount = Math.max(1, bucketStats.length);
+  const xLabelStep = bucketCount > 18 ? Math.ceil(bucketCount / 8) : (bucketCount > 10 ? Math.ceil(bucketCount / 9) : 1);
+  const showBarTopText = bucketCount <= 12;
   const barSvgHtml = `
     <svg viewBox="0 0 460 195" style="width:100%; height:190px; overflow:visible;" onmouseleave="hideAnalyticsTooltip()">
       ${bucketStats.map((b, i) => {
-        const colW = 390 / bucketStats.length;
-        const barW = Math.min(42, colW - 12);
+        const colW = 390 / bucketCount;
+        const gap = bucketCount > 16 ? 2 : (bucketCount > 10 ? 5 : 12);
+        const barW = Math.max(3, Math.min(42, colW - gap));
         const x = 40 + i * colW + (colW - barW) / 2;
         const h = b.rev > 0 ? Math.max(14, Math.round((b.rev / maxBar) * 128)) : 6;
         const y = 152 - h;
         const isSelected = state.analyticsSelectedFilter?.type === 'BUCKET' && state.analyticsSelectedFilter?.key === b.key;
+        const showLabel = (i % xLabelStep === 0) || (i === bucketCount - 1);
         return `
           <g class="chart-interactive-bar ${isSelected ? 'active-bar' : ''}"
              onmousemove="showAnalyticsTooltip(event, ${escapeJsAttr(b.label)}, ${escapeJsAttr('NT$ ' + b.rev.toLocaleString() + ' (' + b.count + ordUnit + ')')}, ${escapeJsAttr(t('點擊柱狀圖可篩選檢視明細', 'Click bar to filter orders'))})"
              ontouchstart="showAnalyticsTooltip(event, ${escapeJsAttr(b.label)}, ${escapeJsAttr('NT$ ' + b.rev.toLocaleString() + ' (' + b.count + ordUnit + ')')}, ${escapeJsAttr(t('點擊篩選明細', 'Tap to filter'))})"
              onclick="filterAnalyticsOrdersByKey('BUCKET', ${escapeJsAttr(b.key)}, ${escapeJsAttr(b.label)})">
-            <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6"
+            <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="${Math.min(6, Math.max(2, barW / 2))}"
                   fill="${isSelected ? '#F97316' : (b.rev > 0 ? 'url(#barGrad)' : '#E2E8F0')}"
                   stroke="${isSelected ? '#C2410C' : 'none'}" stroke-width="2" />
-            <text x="${x + barW / 2}" y="${y - 16}" text-anchor="middle" font-size="9.5" font-weight="800" fill="#64748B">${b.count}${ordUnit}</text>
-            <text x="${x + barW / 2}" y="${y - 5}" text-anchor="middle" font-size="10.5" font-weight="900" fill="${isSelected ? '#C2410C' : '#0F172A'}">$${b.rev}</text>
-            <text x="${x + barW / 2}" y="170" text-anchor="middle" font-size="10.5" font-weight="800" fill="${isSelected ? '#EA580C' : '#475569'}">${escapeHtml(b.label)}</text>
+            ${showBarTopText ? `
+              <text x="${x + barW / 2}" y="${y - 16}" text-anchor="middle" font-size="9.5" font-weight="800" fill="#64748B">${b.count}${ordUnit}</text>
+              <text x="${x + barW / 2}" y="${y - 5}" text-anchor="middle" font-size="10.5" font-weight="900" fill="${isSelected ? '#C2410C' : '#0F172A'}">$${b.rev}</text>
+            ` : ''}
+            ${showLabel ? `<text x="${x + barW / 2}" y="170" text-anchor="middle" font-size="${bucketCount > 10 ? '9' : '10.5'}" font-weight="800" fill="${isSelected ? '#EA580C' : '#475569'}">${escapeHtml(b.label)}</text>` : ''}
           </g>
         `;
       }).join('')}
@@ -6149,18 +6345,29 @@ function renderMerchantAnalyticsPanel(store, skipCloudFetch = false) {
           </h3>
           <div style="font-size:0.78rem; color:var(--text-secondary);">
             ${cloudA
-              ? `☁️ ${t(`後端全試算表權威掃描 (${cloudA.totalRowsScanned} 筆) · 區間 ${cloudA.startDate} ~ ${cloudA.endDate}（對比前期 ${cloudA.prevStartDate} ~ ${cloudA.prevEndDate}）`, `Server full-sheet scan (${cloudA.totalRowsScanned} rows) · ${cloudA.startDate} to ${cloudA.endDate} vs ${cloudA.prevStartDate}–${cloudA.prevEndDate}`)}`
-              : `⏳ ${t('正在從雲端載入全區間跨期營運統計（不受 2,500 筆限制）...', 'Loading full-range cloud analytics...')}`}
+              ? `☁️ ${t(`後端權威掃描 (${cloudA.totalRowsScanned} 筆) · 區間 ${cloudA.startDate} ~ ${cloudA.endDate}（對比前期 ${cloudA.prevStartDate} ~ ${cloudA.prevEndDate}）`, `Server scan (${cloudA.totalRowsScanned} rows) · ${cloudA.startDate} to ${cloudA.endDate} vs ${cloudA.prevStartDate}–${cloudA.prevEndDate}`)}`
+              : `⏳ ${t('正在從雲端載入全區間跨期營運統計...', 'Loading full-range cloud analytics...')}`}
+            <span style="margin-left:8px; font-weight:800; color:${state.analyticsOrdersError ? '#DC2626' : (rangeData ? '#059669' : '#B45309')};">
+              ${state.analyticsOrdersLoading
+                ? `⏳ ${t('按需載入歷史明細中...', 'Loading historical orders...')}`
+                : (state.analyticsOrdersError
+                  ? `⚠️ ${escapeHtml(state.analyticsOrdersError)}`
+                  : (rangeData
+                    ? `✅ ${t(`已載入區間歷史明細 ${rangeData.orders.length} 筆${rangeData.truncated ? '（已達單次上限）' : ''}`, `Loaded ${rangeData.orders.length} range orders`)}`
+                    : ''))}
+            </span>
           </div>
         </div>
         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-          <button type="button" class="pos-cat-pill ${period === 'DAY' ? 'active' : ''}" onclick="setAnalyticsQuickRange('DAY')">📅 ${t('今日', 'Today', '本日', '오늘')}</button>
+          <button type="button" class="pos-cat-pill ${period === 'DAY' && startDate === todayStr ? 'active' : ''}" onclick="setAnalyticsQuickRange('DAY')">📅 ${t('今日', 'Today', '本日', '오늘')}</button>
           <button type="button" class="pos-cat-pill ${period === 'WEEK' ? 'active' : ''}" onclick="setAnalyticsQuickRange('WEEK')">📆 ${t('近7日', '7 Days', '7日間', '최근 7일')}</button>
           <button type="button" class="pos-cat-pill ${period === 'MONTH' ? 'active' : ''}" onclick="setAnalyticsQuickRange('MONTH')">🗓️ ${t('近30日', '30 Days', '30日間', '최근 30일')}</button>
+          <button type="button" class="pos-cat-pill ${period === 'ALL' ? 'active' : ''}" onclick="setAnalyticsQuickRange('ALL')">📚 ${t('全部歷史', 'All History', '全履歴', '전체 이력')}</button>
           <input type="date" id="analyticsStartDateInput" class="select-input" style="width:auto; padding:4px 7px; font-size:0.76rem;" value="${escapeHtml(startDate)}">
           <span style="font-weight:800; font-size:0.76rem;">~</span>
           <input type="date" id="analyticsEndDateInput" class="select-input" style="width:auto; padding:4px 7px; font-size:0.76rem;" value="${escapeHtml(endDate)}">
           <button type="button" class="btn-tip-action" style="padding:5px 10px; font-size:0.75rem; background:#4F46E5;" onclick="applyAnalyticsCustomDateRange()">🔍 ${t('查詢', 'Query', '照会', '조회')}</button>
+          <button type="button" class="btn-outline" style="padding:5px 9px; font-size:0.75rem;" onclick="refreshAnalyticsRangeNow()" title="${t('手動重新向後端拉取此日期區間最新訂單', 'Reload this date range from server')}">🔄</button>
           <button type="button" class="btn-tip-action" style="padding:5px 10px; font-size:0.75rem; background:#0F172A;" onclick="openShiftZReportModal()">🧾 ${t('交班日結', 'Z-Report')}</button>
           <button type="button" class="btn-outline" style="padding:5px 10px; font-size:0.75rem;" onclick="exportStoreAnalyticsCsv()">📥 ${t('匯出 CSV', 'Export CSV')}</button>
         </div>
@@ -6274,16 +6481,19 @@ function renderMerchantAnalyticsPanel(store, skipCloudFetch = false) {
             <line x1="35" y1="62" x2="435" y2="62" stroke="#FCA5A5" stroke-dasharray="4 4" stroke-width="1.5" />
             <polygon points="${areaPoints}" fill="rgba(16, 185, 129, 0.14)" />
             <polyline fill="none" stroke="#10B981" stroke-width="3" points="${polylinePoints}" />
-            ${pts.map(p => `
+            ${pts.map((p, i) => {
+              const showPtLabel = (i % xLabelStep === 0) || (i === pts.length - 1);
+              return `
               <g style="cursor:pointer;"
                  onmousemove="showAnalyticsTooltip(event, ${escapeJsAttr('⏱️ ' + p.label)}, ${escapeJsAttr('~' + p.w + minUnit + ' (' + p.count + ordUnit + ' / $' + p.rev + ')')}, ${escapeJsAttr(t('點擊篩選此時段訂單', 'Click to filter'))})"
                  ontouchstart="showAnalyticsTooltip(event, ${escapeJsAttr('⏱️ ' + p.label)}, ${escapeJsAttr('~' + p.w + minUnit + ' (' + p.count + ordUnit + ' / $' + p.rev + ')')}, ${escapeJsAttr(t('點擊篩選此時段訂單', 'Tap to filter'))})"
                  onclick="filterAnalyticsOrdersByKey('BUCKET', ${escapeJsAttr(p.key)}, ${escapeJsAttr(p.label)})">
-                <circle class="chart-interactive-point" cx="${p.x}" cy="${p.y}" r="5.5" fill="#FFFFFF" stroke="#059669" stroke-width="3" />
-                <text x="${p.x}" y="${p.y - 10}" text-anchor="middle" font-size="10" font-weight="900" fill="#065F46">${p.w}${minUnit}(${p.count}${ordUnit})</text>
-                <text x="${p.x}" y="164" text-anchor="middle" font-size="10.5" font-weight="700" fill="#64748B">${escapeHtml(p.label)}</text>
+                <circle class="chart-interactive-point" cx="${p.x}" cy="${p.y}" r="${pts.length > 16 ? '3.5' : '5.5'}" fill="#FFFFFF" stroke="#059669" stroke-width="${pts.length > 16 ? '2' : '3'}" />
+                ${showBarTopText ? `<text x="${p.x}" y="${p.y - 10}" text-anchor="middle" font-size="10" font-weight="900" fill="#065F46">${p.w}${minUnit}(${p.count}${ordUnit})</text>` : ''}
+                ${showPtLabel ? `<text x="${p.x}" y="164" text-anchor="middle" font-size="${pts.length > 10 ? '9' : '10.5'}" font-weight="700" fill="#64748B">${escapeHtml(p.label)}</text>` : ''}
               </g>
-            `).join('')}
+            `;
+            }).join('')}
             <line x1="35" y1="145" x2="435" y2="145" stroke="#CBD5E1" stroke-width="1.5" />
           </svg>
         </div>
