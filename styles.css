@@ -4081,3 +4081,1187 @@ body.xp-mode #xpExitModeBtn:active {
   background-color: #E2E8F0 !important;
   border-color: #94A3B8 !important;
 }
+
+/* ============================================================================
+ * XP=2 傳統 POS 復刻模式 (?xp=2)
+ * 嚴格相容老舊 Chrome（無 Grid / 無 flex gap / 無 inset / 無 dvh / 無 CSS 變數）
+ * 100vh 滿版鎖死不捲動、相容 4:3 舊螢幕與電阻式觸控螢幕
+ * ============================================================================ */
+body.xp2-mode {
+  height: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background-color: #B8C5D6 !important;
+  font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+body.xp2-mode * {
+  box-sizing: border-box !important;
+  transition: none !important;
+  animation: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.xp2-mode .app-header,
+body.xp2-mode .store-left-rail,
+body.xp2-mode .merchant-audio-banner,
+body.xp2-mode #xpExitModeBtn {
+  display: none !important;
+}
+
+body.xp2-mode main.container,
+body.xp2-mode .container,
+body.xp2-mode .page-container,
+body.xp2-mode #viewStore.active,
+body.xp2-mode .store-shell-layout,
+body.xp2-mode .store-workspace-shell,
+body.xp2-mode .store-stage-area,
+body.xp2-mode #storePanel-pos {
+  display: block !important;
+  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* 外層滿版鎖死容器 */
+.xp2-shell {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 200;
+  width: 100%;
+  height: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  background-color: #BCC8D8;
+  padding: 4px;
+  overflow: hidden;
+}
+
+/* 共通經典立體按鈕基礎樣式（含電阻式觸控明確點擊反饋） */
+.xp2-btn {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 2px 3px;
+  border-width: 2px;
+  border-style: solid;
+  border-top-color: #FFFFFF;
+  border-left-color: #FFFFFF;
+  border-right-color: #334155;
+  border-bottom-color: #1E293B;
+  border-radius: 3px;
+  font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif;
+  font-weight: 900;
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+  outline: none;
+  line-height: 1.15;
+}
+
+.xp2-btn:active {
+  border-top-color: #1E293B !important;
+  border-left-color: #1E293B !important;
+  border-right-color: #FFFFFF !important;
+  border-bottom-color: #FFFFFF !important;
+  padding-top: 4px !important;
+  padding-left: 5px !important;
+}
+
+.xp2-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ==================== 左欄（約 28% 寬度） ==================== */
+.xp2-left-col {
+  -webkit-flex: 0 0 28%;
+  flex: 0 0 28%;
+  width: 28%;
+  min-width: 225px;
+  max-width: 390px;
+  height: 100%;
+  padding-right: 4px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 左上資訊塊 */
+.xp2-info-box {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  background: linear-gradient(180deg, #A4B7CF 0%, #8CA4C2 100%);
+  border: 2px solid #5B718E;
+  border-radius: 2px;
+  padding: 5px 8px;
+  color: #0F172A;
+  margin-bottom: 3px;
+}
+
+.xp2-info-line {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.32;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xp2-info-store {
+  font-size: 16px;
+  font-weight: 900;
+  color: #091526;
+}
+
+.xp2-info-seq {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  background-color: #1E3A8A;
+  color: #FFFFFF;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+/* 內用/外帶狀態 + 總金額列 */
+.xp2-status-bar {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #F3D4E3 0%, #E2B5CC 100%);
+  border: 2px solid #9D6B84;
+  border-radius: 2px;
+  padding: 5px 8px;
+  margin-bottom: 3px;
+}
+
+.xp2-status-tags {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  min-width: 0;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+}
+
+.xp2-status-pill {
+  display: inline-block;
+  margin: 1px 4px 1px 0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.xp2-status-pill.dinein {
+  background-color: #1D4ED8;
+  color: #FFFFFF;
+}
+
+.xp2-status-pill.takeout {
+  background-color: #DC2626;
+  color: #FFFFFF;
+}
+
+.xp2-status-pill.extra {
+  background-color: #065F46;
+  color: #FFFFFF;
+}
+
+.xp2-status-pill.discount {
+  background-color: #047857;
+  color: #FFFFFF;
+}
+
+.xp2-status-pill.input {
+  background-color: #FEF08A;
+  color: #7C2D12;
+  border: 1px solid #CA8A04;
+}
+
+.xp2-total-amount {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  font-size: 28px;
+  font-weight: 900;
+  color: #991B1B;
+  line-height: 1;
+  padding-left: 6px;
+}
+
+/* 非阻擋剛出單找零快報 */
+.xp2-change-strip {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  background-color: #065F46;
+  color: #FFFFFF;
+  border: 2px solid #047857;
+  padding: 4px 6px;
+  margin-bottom: 3px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.xp2-change-strip-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xp2-change-strip-acts {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin-left: 4px;
+}
+
+.xp2-mini-strip-btn {
+  background-color: #FFFFFF;
+  color: #065F46;
+  border: 1px solid #047857;
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin-left: 3px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+/* 中間點單清單 */
+.xp2-cart-list {
+  -webkit-flex: 1 1 0%;
+  flex: 1 1 0%;
+  min-height: 0;
+  background-color: #FFFFFF;
+  border: 2px solid #64748B;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+.xp2-cart-empty {
+  padding: 28px 10px;
+  text-align: center;
+  color: #64748B;
+}
+
+.xp2-cart-row {
+  padding: 8px 8px;
+  border-bottom: 1px solid #CBD5E1;
+  background-color: #FFFFFF;
+  color: #0F172A;
+  cursor: pointer;
+}
+
+.xp2-cart-row:nth-child(even) {
+  background-color: #F8FAFC;
+}
+
+.xp2-cart-row.selected {
+  background-color: #1D4ED8 !important;
+  color: #FFFFFF !important;
+  border-left: 6px solid #FACC15;
+  padding-left: 5px;
+}
+
+.xp2-cart-row-top {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.xp2-cart-name {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 900;
+  word-break: break-all;
+}
+
+.xp2-cart-qty {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin-left: 6px;
+  font-size: 15px;
+  font-weight: 900;
+  color: #B45309;
+}
+
+.xp2-cart-sub {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  min-width: 48px;
+  text-align: right;
+  margin-left: 6px;
+  font-size: 16px;
+  font-weight: 900;
+  color: #B91C1C;
+}
+
+.xp2-cart-row.selected .xp2-cart-qty,
+.xp2-cart-row.selected .xp2-cart-sub {
+  color: #FEF08A;
+}
+
+.xp2-cart-mods {
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #7E22CE;
+  line-height: 1.25;
+}
+
+.xp2-cart-row.selected .xp2-cart-mods {
+  color: #E0F2FE;
+}
+
+/* 左欄底部大按鈕 */
+.xp2-left-bottom {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+}
+
+.xp2-left-btn-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  height: 44px;
+  margin-bottom: 3px;
+}
+
+.xp2-left-btn-row:last-child {
+  margin-bottom: 0;
+}
+
+.xp2-ctrl-btn {
+  -webkit-flex: 1 1 0%;
+  flex: 1 1 0%;
+  margin-right: 3px;
+  background: linear-gradient(180deg, #E2E8F0 0%, #CBD5E1 100%);
+  color: #0F172A;
+  font-size: 17px;
+}
+
+.xp2-ctrl-btn:last-child {
+  margin-right: 0;
+}
+
+.xp2-ctrl-del {
+  background: linear-gradient(180deg, #FECACA 0%, #F87171 100%);
+  color: #7F1D1D;
+}
+
+.xp2-ctrl-clear {
+  background: linear-gradient(180deg, #FEF3C7 0%, #FCD34D 100%);
+  color: #78350F;
+}
+
+.xp2-ctrl-exit {
+  background: linear-gradient(180deg, #CBD5E1 0%, #94A3B8 100%);
+  color: #0F172A;
+  font-size: 15px;
+}
+
+/* ==================== 右欄（約 72% 寬度） ==================== */
+.xp2-right-col {
+  -webkit-flex: 1 1 72%;
+  flex: 1 1 72%;
+  min-width: 0;
+  height: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 右欄頂部（約 25% 高度） */
+.xp2-top-area {
+  -webkit-flex: 0 0 25%;
+  flex: 0 0 25%;
+  height: 25%;
+  min-height: 144px;
+  max-height: 215px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.xp2-shortcuts-col {
+  -webkit-flex: 0 0 28%;
+  flex: 0 0 28%;
+  width: 28%;
+  height: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding-right: 3px;
+}
+
+.xp2-numpad-col {
+  -webkit-flex: 0 0 54%;
+  flex: 0 0 54%;
+  width: 54%;
+  height: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding-right: 3px;
+}
+
+.xp2-checkout-col {
+  -webkit-flex: 0 0 18%;
+  flex: 0 0 18%;
+  width: 18%;
+  height: 100%;
+}
+
+.xp2-top-row {
+  -webkit-flex: 1 1 33.333%;
+  flex: 1 1 33.333%;
+  height: 33.333%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+}
+
+.xp2-top-cell {
+  height: 100%;
+  padding: 1px;
+}
+
+.xp2-w20 {
+  -webkit-flex: 0 0 20%;
+  flex: 0 0 20%;
+  width: 20%;
+}
+
+.xp2-w50 {
+  -webkit-flex: 0 0 50%;
+  flex: 0 0 50%;
+  width: 50%;
+}
+
+.xp2-w100 {
+  -webkit-flex: 0 0 100%;
+  flex: 0 0 100%;
+  width: 100%;
+}
+
+/* 左側快捷鍵 */
+.xp2-func-btn {
+  background: linear-gradient(180deg, #C7D2EC 0%, #A3B2D6 100%);
+  color: #0F172A;
+  font-size: 16px;
+}
+
+.xp2-func-btn.active-dine {
+  background: linear-gradient(180deg, #3B82F6 0%, #1D4ED8 100%);
+  color: #FFFFFF;
+  border-color: #93C5FD #1E3A8A #1E3A8A #93C5FD;
+}
+
+.xp2-func-btn.active-takeout {
+  background: linear-gradient(180deg, #F97316 0%, #DC2626 100%);
+  color: #FFFFFF;
+  border-color: #FDBA74 #7F1D1D #7F1D1D #FDBA74;
+}
+
+.xp2-func-btn.active-opt {
+  background: linear-gradient(180deg, #10B981 0%, #047857 100%);
+  color: #FFFFFF;
+  border-color: #6EE7B7 #064E3B #064E3B #6EE7B7;
+}
+
+/* 中間藍色數字鍵盤 */
+.xp2-num-btn {
+  background: linear-gradient(180deg, #8EB0EE 0%, #5F85CE 100%);
+  color: #071326;
+  font-size: 24px;
+}
+
+.xp2-num-btn:active {
+  background: #3B63B0 !important;
+  color: #FFFFFF !important;
+}
+
+.xp2-num-unit {
+  background: linear-gradient(180deg, #A2BDF0 0%, #7093D6 100%);
+  font-size: 21px;
+}
+
+.xp2-num-clear {
+  background: linear-gradient(180deg, #CBD5E1 0%, #94A3B8 100%);
+  font-size: 17px;
+  color: #7F1D1D;
+}
+
+.xp2-num-op {
+  background: linear-gradient(180deg, #93C5FD 0%, #60A5FA 100%);
+  font-size: 20px;
+}
+
+.xp2-num-sub {
+  display: block;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.xp2-num-cash {
+  background: linear-gradient(180deg, #BBF7D0 0%, #4ADE80 100%);
+  color: #064E3B;
+  font-size: 17px;
+}
+
+/* 最右側跨三列超大 + 結帳按鈕 */
+.xp2-checkout-big-btn {
+  background: linear-gradient(180deg, #F2CBE0 0%, #DC9EC1 100%);
+  color: #1F1229;
+  padding: 4px;
+}
+
+.xp2-checkout-big-btn:active {
+  background: #C47BA5 !important;
+  color: #FFFFFF !important;
+}
+
+.xp2-checkout-big-title {
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.xp2-checkout-big-amt {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 900;
+  color: #991B1B;
+}
+
+.xp2-checkout-big-chg {
+  margin-top: 3px;
+  padding: 2px 5px;
+  background-color: #FEF08A;
+  color: #7C2D12;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+/* ==================== 右欄中間（亮綠色 8 欄分類列） ==================== */
+.xp2-cat-row {
+  -webkit-flex: 0 0 10%;
+  flex: 0 0 10%;
+  height: 10%;
+  min-height: 46px;
+  max-height: 62px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  margin-bottom: 3px;
+}
+
+.xp2-grid-cell {
+  -webkit-flex: 0 0 12.5%;
+  flex: 0 0 12.5%;
+  width: 12.5%;
+  height: 100%;
+  padding: 1.5px;
+}
+
+.xp2-cat-btn {
+  background: linear-gradient(180deg, #43F543 0%, #06C706 58%, #00A300 100%);
+  color: #05220B;
+  font-size: 19px;
+  letter-spacing: 0.5px;
+}
+
+.xp2-cat-btn.active {
+  background: linear-gradient(180deg, #FEF08A 0%, #4ADE80 100%);
+  color: #052E16;
+  border-width: 3px;
+  border-color: #FACC15 #15803D #15803D #FACC15;
+}
+
+.xp2-cat-pager {
+  background: linear-gradient(180deg, #A3E635 0%, #65A30D 100%);
+  font-size: 15px;
+}
+
+/* ==================== 右欄主體（8 欄 × 6 列觸控方格陣列） ==================== */
+.xp2-matrix-body {
+  -webkit-flex: 1 1 0%;
+  flex: 1 1 0%;
+  min-height: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.xp2-matrix-row {
+  -webkit-flex: 1 1 16.6667%;
+  flex: 1 1 16.6667%;
+  height: 16.6667%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* 空格（經典深藍灰立體空方格） */
+.xp2-cell-empty {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #839AB5 0%, #526882 100%);
+  border: 2px solid;
+  border-top-color: #B4C4D8;
+  border-left-color: #B4C4D8;
+  border-right-color: #36475C;
+  border-bottom-color: #2B394A;
+  border-radius: 3px;
+}
+
+/* 前 4 列：亮藍／青色品項格 */
+.xp2-dish-btn {
+  background: linear-gradient(180deg, #43D7F5 0%, #15AEDD 62%, #0B93C4 100%);
+  color: #051829;
+  padding: 2px 3px;
+}
+
+.xp2-dish-btn:active {
+  background: #0284C7 !important;
+  color: #FFFFFF !important;
+}
+
+/* 右側第 8 欄：紫色常駐飲料格 */
+.xp2-drink-btn {
+  background: linear-gradient(180deg, #C782FF 0%, #9E47F5 62%, #8228DE 100%);
+  color: #140526;
+  padding: 2px 3px;
+}
+
+.xp2-drink-btn:active {
+  background: #6D28D9 !important;
+  color: #FFFFFF !important;
+}
+
+/* 最底 2 列：一鍵客製化紫／藍格 */
+.xp2-mod-purple {
+  background: linear-gradient(180deg, #BD6DFF 0%, #9333EA 60%, #771FC9 100%);
+  color: #FFFFFF;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+}
+
+.xp2-mod-blue {
+  background: linear-gradient(180deg, #38BDF8 0%, #0284C7 62%, #0369A1 100%);
+  color: #FFFFFF;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+}
+
+.xp2-mod-active {
+  background: linear-gradient(180deg, #FEF08A 0%, #FACC15 100%) !important;
+  color: #7C2D12 !important;
+  text-shadow: none !important;
+  border-width: 3px !important;
+  border-color: #EA580C #9A3412 #9A3412 #EA580C !important;
+}
+
+.xp2-pager-btn {
+  background: linear-gradient(180deg, #FDE68A 0%, #F59E0B 100%) !important;
+  color: #451A03 !important;
+  text-shadow: none !important;
+}
+
+.xp2-cell-soldout {
+  background: #94A3B8 !important;
+  color: #475569 !important;
+  text-shadow: none !important;
+  opacity: 0.65 !important;
+}
+
+.xp2-tile-title {
+  display: block;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.12;
+  word-break: break-all;
+  overflow: hidden;
+  max-height: 2.35em;
+}
+
+.xp2-tile-price {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  color: #082F49;
+}
+
+.xp2-mod-purple .xp2-tile-price,
+.xp2-mod-blue .xp2-tile-price {
+  color: #FEF08A;
+}
+
+.xp2-mod-active .xp2-tile-price {
+  color: #9A3412;
+}
+
+.xp2-tile-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* ==================== XP=2 極簡收款與統編彈窗（相容老舊 Chrome） ==================== */
+.xp2-modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 600;
+  background-color: rgba(15, 23, 42, 0.72);
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.xp2-modal-overlay.open {
+  display: -webkit-flex;
+  display: flex;
+}
+
+.xp2-modal-box {
+  width: 500px;
+  max-width: 96%;
+  max-height: 94%;
+  overflow-y: auto;
+  background-color: #F8FAFC;
+  border: 3px solid #1E293B;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.xp2-modal-box-sm {
+  width: 380px;
+}
+
+.xp2-modal-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #0F172A;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid #CBD5E1;
+}
+
+.xp2-co-summary {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  background-color: #FFFFFF;
+  border: 2px solid #94A3B8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.xp2-co-summary-left {
+  font-size: 14px;
+  font-weight: 800;
+  color: #334155;
+}
+
+.xp2-co-summary-total {
+  font-size: 28px;
+  font-weight: 900;
+  color: #DC2626;
+}
+
+.xp2-co-pay-tabs {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  margin-bottom: 10px;
+}
+
+.xp2-co-pay-tab {
+  -webkit-flex: 1 1 50%;
+  flex: 1 1 50%;
+  height: 52px;
+  margin-right: 6px;
+  border: 2px solid #94A3B8;
+  border-radius: 4px;
+  background-color: #E2E8F0;
+  color: #334155;
+  font-size: 19px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.xp2-co-pay-tab:last-child {
+  margin-right: 0;
+}
+
+.xp2-co-pay-tab.active-cash {
+  background-color: #1D4ED8;
+  border-color: #1E3A8A;
+  color: #FFFFFF;
+}
+
+.xp2-co-pay-tab.active-lp {
+  background-color: #00B900;
+  border-color: #047857;
+  color: #FFFFFF;
+}
+
+.xp2-co-cash-board {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  background-color: #0F172A;
+  color: #FFFFFF;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.xp2-co-cash-col {
+  -webkit-flex: 1 1 50%;
+  flex: 1 1 50%;
+}
+
+.xp2-co-cash-right {
+  text-align: right;
+}
+
+.xp2-co-cash-lbl {
+  font-size: 13px;
+  color: #94A3B8;
+  font-weight: 800;
+}
+
+.xp2-co-cash-val {
+  font-size: 24px;
+  font-weight: 900;
+  color: #38BDF8;
+}
+
+.xp2-co-cash-chg {
+  font-size: 26px;
+  font-weight: 900;
+  color: #4ADE80;
+}
+
+.xp2-co-cash-chg.short {
+  color: #F87171;
+}
+
+.xp2-co-quick-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  margin-bottom: 8px;
+}
+
+.xp2-co-quick-btn {
+  -webkit-flex: 1 1 25%;
+  flex: 1 1 25%;
+  height: 46px;
+  margin-right: 5px;
+  border: 2px solid #64748B;
+  border-radius: 4px;
+  background-color: #FFFFFF;
+  color: #0F172A;
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.xp2-co-quick-btn:last-child {
+  margin-right: 0;
+}
+
+.xp2-co-quick-btn.exact {
+  background-color: #DCFCE7;
+  border-color: #16A34A;
+  color: #166534;
+}
+
+.xp2-taxid-display {
+  background-color: #FFFFFF;
+  border: 2px solid #334155;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 26px;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: 3px;
+  color: #0F172A;
+}
+
+.xp2-co-lp-box {
+  background-color: #ECFDF5;
+  border: 2px solid #10B981;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.xp2-co-lp-input {
+  width: 100%;
+  height: 44px;
+  padding: 6px 10px;
+  border: 2px solid #059669;
+  border-radius: 4px;
+  background-color: #FFFFFF;
+  font-size: 18px;
+  font-weight: 900;
+  font-family: monospace;
+}
+
+.xp2-mini-pad {
+  margin-bottom: 10px;
+}
+
+.xp2-mini-pad-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  margin-bottom: 5px;
+}
+
+.xp2-mini-pad-row:last-child {
+  margin-bottom: 0;
+}
+
+.xp2-mini-key {
+  -webkit-flex: 1 1 33.33%;
+  flex: 1 1 33.33%;
+  height: 46px;
+  margin-right: 5px;
+  border: 2px solid #64748B;
+  border-radius: 4px;
+  background-color: #E2E8F0;
+  color: #0F172A;
+  font-size: 22px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.xp2-mini-key:last-child {
+  margin-right: 0;
+}
+
+.xp2-mini-key:active {
+  background-color: #94A3B8;
+}
+
+.xp2-mini-key-warn {
+  background-color: #FEE2E2;
+  color: #991B1B;
+  font-size: 17px;
+}
+
+.xp2-modal-footer {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+}
+
+.xp2-modal-btn {
+  height: 54px;
+  border: 2px solid #1E293B;
+  border-radius: 4px;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.xp2-modal-btn-cancel {
+  -webkit-flex: 0 0 32%;
+  flex: 0 0 32%;
+  margin-right: 8px;
+  background-color: #E2E8F0;
+  color: #1E293B;
+}
+
+.xp2-modal-btn-ok {
+  -webkit-flex: 1 1 68%;
+  flex: 1 1 68%;
+  background-color: #059669;
+  border-color: #065F46;
+  color: #FFFFFF;
+}
+
+.xp2-modal-btn-lp {
+  -webkit-flex: 1 1 68%;
+  flex: 1 1 68%;
+  background-color: #00B900;
+  border-color: #047857;
+  color: #FFFFFF;
+}
+
+.xp2-modal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 舊版 Chrome 通用彈窗相容（PIN 鎖定、確認窗） */
+body.xp2-mode .modal-overlay {
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  z-index: 650 !important;
+}
+
+/* 4:3 舊螢幕（1024x768 / 800x600）字體與間距緊湊微調 */
+@media (max-width: 1080px), (max-height: 740px) {
+  .xp2-info-store {
+    font-size: 14px;
+  }
+  .xp2-info-line {
+    font-size: 12px;
+  }
+  .xp2-total-amount {
+    font-size: 24px;
+  }
+  .xp2-func-btn {
+    font-size: 14px;
+  }
+  .xp2-num-btn {
+    font-size: 20px;
+  }
+  .xp2-num-unit {
+    font-size: 18px;
+  }
+  .xp2-num-clear,
+  .xp2-num-cash {
+    font-size: 14px;
+  }
+  .xp2-checkout-big-title {
+    font-size: 20px;
+  }
+  .xp2-checkout-big-amt {
+    font-size: 17px;
+  }
+  .xp2-cat-btn {
+    font-size: 16px;
+  }
+  .xp2-tile-title {
+    font-size: 14px;
+  }
+  .xp2-tile-price {
+    font-size: 12px;
+  }
+  .xp2-left-btn-row {
+    height: 38px;
+  }
+  .xp2-ctrl-btn {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 860px), (max-height: 620px) {
+  .xp2-top-area {
+    min-height: 120px;
+  }
+  .xp2-cat-row {
+    min-height: 38px;
+  }
+  .xp2-cat-btn {
+    font-size: 14px;
+  }
+  .xp2-tile-title {
+    font-size: 12px;
+  }
+  .xp2-tile-price {
+    font-size: 11px;
+  }
+  .xp2-num-btn {
+    font-size: 17px;
+  }
+  .xp2-checkout-big-title {
+    font-size: 17px;
+  }
+  .xp2-cart-name,
+  .xp2-cart-sub {
+    font-size: 14px;
+  }
+}

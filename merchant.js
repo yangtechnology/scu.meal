@@ -1199,6 +1199,9 @@ async function clearPosCart(skipConfirm = false) {
   state.posCart = [];
   state.xpInlineModTargetCartIdx = -1;
   state.xpInlineModPreselect = {};
+  state.xp2SelectedCartIdx = -1;
+  state.xp2KeypadBuffer = '';
+  state.xp2ModPage = 0;
   state.posCashReceived = '';
   state.posSplitCashAmount = '';
   state.posManualDiscount = 0;
@@ -1212,6 +1215,1043 @@ async function clearPosCart(skipConfirm = false) {
   state.posLinePayManualRef = '';
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (store) renderPosCashierPanel(store);
+}
+
+// ==================== XP=2 傳統 POS 復刻模式 (?xp=2) ====================
+function isXp2DrinkCategory(catName) {
+  const c = String(catName || '').trim();
+  return /飲料|飲品|茶飲|冷飲|熱飲/.test(c);
+}
+
+function formatXp2NowText() {
+  const d = new Date();
+  const pad = n => (n < 10 ? '0' + n : String(n));
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function ensureXp2ClockRunning() {
+  if (window._xp2ClockTimer) return;
+  window._xp2ClockTimer = setInterval(function () {
+    if (!state.xp2Mode || state.routeMode !== 'store') {
+      clearInterval(window._xp2ClockTimer);
+      window._xp2ClockTimer = null;
+      return;
+    }
+    const el = document.getElementById('xp2ClockText');
+    if (el) el.textContent = formatXp2NowText();
+  }, 1000);
+}
+
+function getXp2SelectedCartIndex() {
+  if (!Array.isArray(state.posCart) || state.posCart.length === 0) return -1;
+  const idx = Number(state.xp2SelectedCartIdx);
+  if (Number.isInteger(idx) && idx >= 0 && idx < state.posCart.length) return idx;
+  return state.posCart.length - 1;
+}
+
+function buildXp2DefaultSelectionsForMenu(menuItem) {
+  const selections = {};
+  if (!menuItem || !menuItem.options || typeof menuItem.options !== 'object') return selections;
+  Object.entries(menuItem.options).forEach(([gName, grp]) => {
+    if (!gName || gName.startsWith('__') || !grp) return;
+    const gType = grp.type === 'qty' ? 'qty' : (grp.type === 'checkbox' ? 'checkbox' : 'radio');
+    const rawChoices = Array.isArray(grp.choices) ? grp.choices : (Array.isArray(grp) ? grp : []);
+    const choices = rawChoices.map(normalizeChoiceSpec).filter(c => c.label && !c.soldOut);
+    if (choices.length === 0) return;
+    const minSel = Math.max(0, parseInt(grp.minSelect !== undefined ? grp.minSelect : (gType === 'radio' ? 1 : 0), 10) || 0);
+    if (gType === 'radio') {
+      if (minSel > 0) {
+        selections[gName] = choices[0].label;
+      }
+    } else if (minSel > 0) {
+      if (gType === 'qty') {
+        selections[gName] = minSel > 1 ? `${choices[0].label} ×${minSel}` : choices[0].label;
+      } else {
+        selections[gName] = choices.slice(0, minSel).map(c => c.label).join(', ');
+      }
+    }
+  });
+  return selections;
+}
+
+function xp2FlattenModifiersForMenu(menuItem) {
+  const list = [];
+  if (!menuItem || !menuItem.options || typeof menuItem.options !== 'object') return list;
+  Object.entries(menuItem.options).forEach(([gName, grp]) => {
+    if (!gName || gName.startsWith('__') || !grp) return;
+    const gType = grp.type === 'qty' ? 'qty' : (grp.type === 'checkbox' ? 'checkbox' : 'radio');
+    const maxSel = Math.max(0, parseInt(grp.maxSelect || 0, 10) || 0);
+    const minSel = Math.max(0, parseInt(grp.minSelect !== undefined ? grp.minSelect : (gType === 'radio' ? 1 : 0), 10) || 0);
+    const rawChoices = Array.isArray(grp.choices) ? grp.choices : (Array.isArray(grp) ? grp : []);
+    rawChoices.forEach(rawC => {
+      const spec = normalizeChoiceSpec(rawC);
+      if (!spec.label) return;
+      list.push({
+        groupName: gName,
+        groupType: gType,
+        maxSelect: maxSel,
+        minSelect: minSel,
+        label: spec.label,
+        extra: spec.extra,
+        soldOut: spec.soldOut
+      });
+    });
+  });
+  return list;
+}
+
+function xp2GetModifierActiveState(cartItem, mod) {
+  if (!cartItem || !cartItem.selections || !mod) return { active: false, qty: 0 };
+  const rawVal = String(cartItem.selections[mod.groupName] || '').trim();
+  if (!rawVal) return { active: false, qty: 0 };
+  if (mod.groupType === 'radio') {
+    const on = rawVal === mod.label;
+    return { active: on, qty: on ? 1 : 0 };
+  }
+  if (mod.groupType === 'qty') {
+    const qMap = parseQtySelectionMap(rawVal);
+    const cnt = qMap[mod.label] || 0;
+    return { active: cnt > 0, qty: cnt };
+  }
+  const arr = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+  const on = arr.indexOf(mod.label) >= 0;
+  return { active: on, qty: on ? 1 : 0 };
+}
+
+function handleXp2DishClick(item) {
+  if (!item) return;
+  if (item.soldOut) {
+    showToast(`🚫「${item.name}」目前已售罄`);
+    return;
+  }
+  const cat = String(item.category || '主廚推薦').trim();
+  const hasOpts = Boolean(item.options && Object.keys(item.options).filter(k => !k.startsWith('__')).length > 0);
+  const defaultSelections = buildXp2DefaultSelectionsForMenu(item);
+  const extraTotal = calcMenuSelectionsExtraPriceForXp(item, defaultSelections);
+  const addQty = Math.max(1, Number(state.posQtyMultiplier) || 1);
+  const newItemObj = {
+    id: item.id,
+    category: cat,
+    name: item.name,
+    baseName: item.name,
+    basePrice: Number(item.price) || 0,
+    price: Math.max(0, (Number(item.price) || 0) + extraTotal),
+    qty: addQty,
+    selections: defaultSelections
+  };
+
+  if (hasOpts) {
+    // 具客製化選項之餐點獨立成列並立即選中，方便直接於底部 2 列一鍵微調不影響前一份
+    state.posCart.push(newItemObj);
+    state.xp2SelectedCartIdx = state.posCart.length - 1;
+  } else {
+    mergeOrPushCartItem(state.posCart, newItemObj, -1);
+    const sig = getItemSignature(newItemObj);
+    const foundIdx = state.posCart.findIndex(it => getItemSignature(it) === sig);
+    state.xp2SelectedCartIdx = foundIdx >= 0 ? foundIdx : (state.posCart.length - 1);
+  }
+  state.posQtyMultiplier = 1;
+  state.xp2ModPage = 0;
+
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) {
+    renderXp2ClassicPosPanel(store);
+    const selRow = document.querySelector('#storePanel-pos .xp2-cart-row.selected');
+    if (selRow && typeof selRow.scrollIntoView === 'function') {
+      try { selRow.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+    }
+  }
+}
+
+function xp2ToggleModifier(groupName, choiceLabel, groupType, maxSelect, minSelect) {
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (!store) return;
+  const selIdx = getXp2SelectedCartIndex();
+  if (selIdx < 0 || !state.posCart[selIdx]) {
+    showToast('請先點選左側點單中的餐點');
+    return;
+  }
+  const cartItem = state.posCart[selIdx];
+  const menuItem = (store.menus || []).find(m => String(m.id) === String(cartItem.id));
+  if (!menuItem) return;
+
+  const curSel = { ...(cartItem.selections || {}) };
+  const cleanGrp = String(groupName || '').trim();
+  const cleanLbl = String(choiceLabel || '').trim();
+  if (!cleanGrp || !cleanLbl) return;
+
+  if (groupType === 'radio') {
+    if (String(curSel[cleanGrp] || '').trim() === cleanLbl) {
+      if (Number(minSelect) === 0) {
+        delete curSel[cleanGrp];
+      } else {
+        return; // 必選單選維持選中
+      }
+    } else {
+      curSel[cleanGrp] = cleanLbl;
+    }
+  } else if (groupType === 'qty') {
+    const qMap = parseQtySelectionMap(curSel[cleanGrp]);
+    const bufNum = parseInt(state.xp2KeypadBuffer || '', 10);
+    const curVal = qMap[cleanLbl] || 0;
+    let nextVal = curVal > 0 ? 0 : 1;
+    if (Number.isFinite(bufNum) && bufNum >= 1 && bufNum <= 20) {
+      nextVal = bufNum;
+      state.xp2KeypadBuffer = '';
+    }
+    const otherTotal = Object.entries(qMap).reduce((sum, [k, v]) => sum + (k === cleanLbl ? 0 : v), 0);
+    if (maxSelect > 0 && otherTotal + nextVal > maxSelect) {
+      showToast(`⚠️「${cleanGrp}」最多可選 ${maxSelect} 份`);
+      return;
+    }
+    if (nextVal > 0) qMap[cleanLbl] = nextVal;
+    else delete qMap[cleanLbl];
+    const serialized = serializeQtySelectionMap(qMap);
+    if (serialized) curSel[cleanGrp] = serialized;
+    else delete curSel[cleanGrp];
+  } else {
+    const arr = String(curSel[cleanGrp] || '').split(',').map(s => s.trim()).filter(Boolean);
+    const pos = arr.indexOf(cleanLbl);
+    if (pos >= 0) {
+      arr.splice(pos, 1);
+    } else {
+      if (maxSelect > 0 && arr.length >= maxSelect) {
+        showToast(`⚠️「${cleanGrp}」最多可選 ${maxSelect} 項`);
+        return;
+      }
+      arr.push(cleanLbl);
+    }
+    if (arr.length > 0) curSel[cleanGrp] = arr.join(', ');
+    else delete curSel[cleanGrp];
+  }
+
+  const extraTotal = calcMenuSelectionsExtraPriceForXp(menuItem, curSel);
+  state.posCart[selIdx] = {
+    ...cartItem,
+    selections: curSel,
+    price: Math.max(0, (Number(menuItem.price) || 0) + extraTotal)
+  };
+  state.xp2SelectedCartIdx = selIdx;
+  renderXp2ClassicPosPanel(store);
+}
+
+function xp2SelectCartItem(idx) {
+  if (!Array.isArray(state.posCart) || idx < 0 || idx >= state.posCart.length) return;
+  state.xp2SelectedCartIdx = idx;
+  state.xp2ModPage = 0;
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2MoveSelection(delta) {
+  if (!Array.isArray(state.posCart) || state.posCart.length === 0) return;
+  const cur = getXp2SelectedCartIndex();
+  const next = Math.max(0, Math.min(state.posCart.length - 1, cur + delta));
+  state.xp2SelectedCartIdx = next;
+  state.xp2ModPage = 0;
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) {
+    renderXp2ClassicPosPanel(store);
+    const selRow = document.querySelector('#storePanel-pos .xp2-cart-row.selected');
+    if (selRow && typeof selRow.scrollIntoView === 'function') {
+      try { selRow.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+    }
+  }
+}
+
+function xp2DeleteSelectedItem() {
+  if (!Array.isArray(state.posCart) || state.posCart.length === 0) return;
+  const selIdx = getXp2SelectedCartIndex();
+  if (selIdx < 0 || !state.posCart[selIdx]) return;
+  state.posCart.splice(selIdx, 1);
+  if (state.posCart.length === 0) {
+    state.xp2SelectedCartIdx = -1;
+  } else {
+    state.xp2SelectedCartIdx = Math.min(selIdx, state.posCart.length - 1);
+  }
+  state.xp2ModPage = 0;
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2ClearCart() {
+  clearPosCart(false);
+}
+
+function xp2SelectCategory(cat) {
+  state.posSelectedCategory = cat;
+  state.xp2DishPage = 0;
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2ChangeCatPage(delta) {
+  state.xp2CatPage = Math.max(0, (Number(state.xp2CatPage) || 0) + delta);
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2ChangeDishPage(delta) {
+  state.xp2DishPage = Math.max(0, (Number(state.xp2DishPage) || 0) + delta);
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2ChangeModPage(delta) {
+  state.xp2ModPage = Math.max(0, (Number(state.xp2ModPage) || 0) + delta);
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2SetDineType(dtype) {
+  state.posDineType = dtype === '外帶自取' ? '外帶自取' : '內用自取';
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2ToggleCutlery() {
+  state.posNeedCutlery = !state.posNeedCutlery;
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2TapKeypad(key) {
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (!store) return;
+  const curBuf = String(state.xp2KeypadBuffer || '');
+
+  if (/^[0-9]$/.test(key)) {
+    if (curBuf === '0') {
+      state.xp2KeypadBuffer = key === '0' ? '0' : key;
+    } else if (curBuf.length < 6) {
+      state.xp2KeypadBuffer = curBuf + key;
+    }
+    renderXp2ClassicPosPanel(store);
+    return;
+  }
+
+  if (key === 'CLEAR') {
+    state.xp2KeypadBuffer = '';
+    state.posCashReceived = '';
+    state.posQtyMultiplier = 1;
+    renderXp2ClassicPosPanel(store);
+    return;
+  }
+
+  if (key === '100') {
+    const n = parseInt(curBuf || '0', 10) || 0;
+    const nextVal = n === 0 ? 100 : (n < 100 ? n * 100 : Math.min(99900, n + 100));
+    state.xp2KeypadBuffer = String(nextVal);
+    renderXp2ClassicPosPanel(store);
+    return;
+  }
+
+  if (key === '1000') {
+    const n = parseInt(curBuf || '0', 10) || 0;
+    const nextVal = n === 0 ? 1000 : (n < 100 ? n * 1000 : Math.min(99000, n + 1000));
+    state.xp2KeypadBuffer = String(nextVal);
+    renderXp2ClassicPosPanel(store);
+    return;
+  }
+
+  if (key === 'QTY') {
+    const n = parseInt(curBuf || '0', 10) || 0;
+    const selIdx = getXp2SelectedCartIndex();
+    if (n > 0 && n <= 99) {
+      if (selIdx >= 0 && state.posCart[selIdx]) {
+        state.posCart[selIdx].qty = n;
+        state.xp2KeypadBuffer = '';
+      } else {
+        state.posQtyMultiplier = n;
+        state.xp2KeypadBuffer = '';
+        showToast(`下次點餐數量設為 ×${n}`);
+      }
+    } else if (!curBuf && selIdx >= 0 && state.posCart[selIdx]) {
+      state.posCart[selIdx].qty = (state.posCart[selIdx].qty || 1) + 1;
+    } else {
+      showToast('數量請輸入 1 ~ 99');
+    }
+    renderXp2ClassicPosPanel(store);
+    return;
+  }
+
+  if (key === 'CASH') {
+    if (state.posCart.length === 0) {
+      showToast('請先點選餐點');
+      return;
+    }
+    const n = parseInt(curBuf || '0', 10) || 0;
+    if (n > 0) {
+      state.posCashReceived = String(n);
+      state.xp2KeypadBuffer = '';
+    }
+    xp2OpenCheckoutModal('現場現金');
+  }
+}
+
+function ensureXp2ModalsMounted() {
+  if (typeof document === 'undefined' || !document.body) return;
+  if (!document.getElementById('xp2CheckoutModal')) {
+    const overlay = document.createElement('div');
+    overlay.id = 'xp2CheckoutModal';
+    overlay.className = 'xp2-modal-overlay';
+    overlay.innerHTML = '<div class="xp2-modal-box" id="xp2CheckoutModalBody"></div>';
+    document.body.appendChild(overlay);
+  }
+  if (!document.getElementById('xp2TaxIdModal')) {
+    const overlay = document.createElement('div');
+    overlay.id = 'xp2TaxIdModal';
+    overlay.className = 'xp2-modal-overlay';
+    overlay.innerHTML = '<div class="xp2-modal-box xp2-modal-box-sm" id="xp2TaxIdModalBody"></div>';
+    document.body.appendChild(overlay);
+  }
+}
+
+function xp2OpenTaxIdModal() {
+  ensureXp2ModalsMounted();
+  state.xp2TaxIdDraft = String(state.posTaxId || '').replace(/\D/g, '').slice(0, 8);
+  xp2RenderTaxIdModal();
+  const el = document.getElementById('xp2TaxIdModal');
+  if (el) el.classList.add('open');
+}
+
+function xp2CloseTaxIdModal() {
+  const el = document.getElementById('xp2TaxIdModal');
+  if (el) el.classList.remove('open');
+}
+
+function xp2TaxIdTap(k) {
+  const cur = String(state.xp2TaxIdDraft || '');
+  if (k === 'CLR') {
+    state.xp2TaxIdDraft = '';
+  } else if (k === 'BACK') {
+    state.xp2TaxIdDraft = cur.slice(0, -1);
+  } else if (/^[0-9]$/.test(k) && cur.length < 8) {
+    state.xp2TaxIdDraft = cur + k;
+  }
+  xp2RenderTaxIdModal();
+}
+
+function xp2ConfirmTaxId() {
+  const clean = String(state.xp2TaxIdDraft || '').replace(/\D/g, '');
+  if (clean && clean.length !== 8) {
+    showToast('⚠️ 統一編號須為 8 碼數字（或清空不使用）');
+    return;
+  }
+  if (clean && typeof validateTaiwanTaxId === 'function' && !validateTaiwanTaxId(clean)) {
+    showToast('⚠️ 統一編號檢核碼不正確，請再確認 8 碼數字');
+    return;
+  }
+  state.posTaxId = clean;
+  xp2CloseTaxIdModal();
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store) renderXp2ClassicPosPanel(store);
+}
+
+function xp2RenderTaxIdModal() {
+  const body = document.getElementById('xp2TaxIdModalBody');
+  if (!body) return;
+  const val = String(state.xp2TaxIdDraft || '');
+  body.innerHTML = `
+    <div class="xp2-modal-title">🏢 輸入統一編號（8 碼）</div>
+    <div class="xp2-taxid-display">${val ? escapeHtml(val) : '<span style="color:#94A3B8;">未輸入統編</span>'}</div>
+    <div class="xp2-mini-pad">
+      <div class="xp2-mini-pad-row">
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('7')">7</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('8')">8</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('9')">9</button>
+      </div>
+      <div class="xp2-mini-pad-row">
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('4')">4</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('5')">5</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('6')">6</button>
+      </div>
+      <div class="xp2-mini-pad-row">
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('1')">1</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('2')">2</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('3')">3</button>
+      </div>
+      <div class="xp2-mini-pad-row">
+        <button type="button" class="xp2-mini-key xp2-mini-key-warn" onclick="xp2TaxIdTap('CLR')">清除</button>
+        <button type="button" class="xp2-mini-key" onclick="xp2TaxIdTap('0')">0</button>
+        <button type="button" class="xp2-mini-key xp2-mini-key-warn" onclick="xp2TaxIdTap('BACK')">⌫</button>
+      </div>
+    </div>
+    <div class="xp2-modal-footer">
+      <button type="button" class="xp2-modal-btn xp2-modal-btn-cancel" onclick="xp2CloseTaxIdModal()">取消</button>
+      <button type="button" class="xp2-modal-btn xp2-modal-btn-ok" onclick="xp2ConfirmTaxId()">確定統編</button>
+    </div>
+  `;
+}
+
+function xp2OpenCheckoutModal(preferredPay) {
+  if (!isMerchantSessionValidNow()) {
+    checkMerchantSecurityGate();
+    return;
+  }
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (!store || state.posCart.length === 0) {
+    showToast('請先點選餐點再結帳');
+    return;
+  }
+  const todayStr = getTodayDateStr();
+  if (getLockedShiftRecord(store.id, todayStr) && state.posTimeMode !== 'RESERVE') {
+    showToast(`🔒 本店今日 (${todayStr}) 已完成交班日結鎖定`);
+    return;
+  }
+  const bufNum = parseInt(state.xp2KeypadBuffer || '0', 10) || 0;
+  if (bufNum > 0) {
+    state.posCashReceived = String(bufNum);
+    state.xp2KeypadBuffer = '';
+  }
+  state.posPayment = preferredPay === 'LINE Pay' ? 'LINE Pay' : '現場現金';
+  if (state.posPayment === 'LINE Pay') {
+    state.posLinePayManualConfirmed = true;
+  }
+  ensureXp2ModalsMounted();
+  xp2RenderCheckoutModal();
+  const el = document.getElementById('xp2CheckoutModal');
+  if (el) el.classList.add('open');
+}
+
+function xp2CloseCheckoutModal() {
+  const el = document.getElementById('xp2CheckoutModal');
+  if (el) el.classList.remove('open');
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (store && state.xp2Mode) renderXp2ClassicPosPanel(store);
+}
+
+function xp2CheckoutSetPay(method) {
+  state.posPayment = method === 'LINE Pay' ? 'LINE Pay' : '現場現金';
+  if (state.posPayment === 'LINE Pay') {
+    state.posLinePayManualConfirmed = true;
+  }
+  xp2RenderCheckoutModal();
+}
+
+function xp2CheckoutQuickCash(amt) {
+  state.posPayment = '現場現金';
+  state.posCashReceived = String(amt);
+  xp2RenderCheckoutModal();
+}
+
+function xp2CheckoutTapKey(k) {
+  if (state.posPayment === 'LINE Pay') {
+    const cur = String(state.posLinePayManualRef || '');
+    if (k === 'CLR') state.posLinePayManualRef = '';
+    else if (k === 'BACK') state.posLinePayManualRef = cur.slice(0, -1);
+    else if (/^[0-9]$/.test(k) && cur.length < 8) state.posLinePayManualRef = cur + k;
+    state.posLinePayManualConfirmed = true;
+    xp2RenderCheckoutModal();
+    return;
+  }
+  const cur = String(state.posCashReceived || '');
+  if (k === 'CLR') state.posCashReceived = '';
+  else if (k === 'BACK') state.posCashReceived = cur.slice(0, -1);
+  else if (/^[0-9]$/.test(k) && cur.length < 6) {
+    state.posCashReceived = cur === '0' ? k : (cur + k);
+  }
+  xp2RenderCheckoutModal();
+}
+
+async function xp2ConfirmCheckout() {
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (!store || state.posCart.length === 0 || state.isPosSubmitting) return;
+  const { finalTotal } = calcCurrentPosTotals(store);
+  if (state.posPayment === '現場現金') {
+    const recNum = state.posCashReceived !== '' ? parseFloat(state.posCashReceived) : finalTotal;
+    if (recNum < finalTotal) {
+      showToast(`⚠️ 實收現金不足 $${finalTotal - recNum}`);
+      return;
+    }
+  } else if (state.posPayment === 'LINE Pay') {
+    const otk = String(state.posLinePayOneTimeKey || '').replace(/\D/g, '');
+    const ref = String(state.posLinePayManualRef || '').trim();
+    if (otk.length !== 18 && !(state.posLinePayManualConfirmed && ref.length >= 4)) {
+      showToast('⚠️ 請掃描 18 碼條碼，或點下方數字輸入 LINE Pay 交易末 4 碼');
+      return;
+    }
+  }
+  xp2CloseCheckoutModal();
+  await submitMerchantPosOrder({ fastMode: true });
+}
+
+function xp2RenderCheckoutModal() {
+  const body = document.getElementById('xp2CheckoutModalBody');
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (!body || !store) return;
+
+  const { cutleryFee, takeoutFee, comboDiscount, finalTotal } = calcCurrentPosTotals(store);
+  const nextPreviewSeq = generatePreviewNextSeq(store.id, getTodayDateStr());
+  const isLinePay = state.posPayment === 'LINE Pay';
+  const cashRecNum = state.posCashReceived !== '' ? (parseInt(state.posCashReceived, 10) || 0) : finalTotal;
+  const isCashShort = !isLinePay && state.posCashReceived !== '' && cashRecNum < finalTotal;
+  const changeAmt = Math.max(0, cashRecNum - finalTotal);
+
+  const cleanOtk = String(state.posLinePayOneTimeKey || '').replace(/\D/g, '');
+  const cleanRef = String(state.posLinePayManualRef || '').trim();
+  const isLpReady = cleanOtk.length === 18 || (Boolean(state.posLinePayManualConfirmed) && cleanRef.length >= 4);
+
+  body.innerHTML = `
+    <div class="xp2-modal-title">🧾 結帳確認 #${escapeHtml(nextPreviewSeq)}（${escapeHtml(state.posDineType)}）</div>
+    <div class="xp2-co-summary">
+      <div class="xp2-co-summary-left">
+        <div>${state.posCart.reduce((s, i) => s + (i.qty || 1), 0)} 份餐點${takeoutFee > 0 ? ' · 外帶+$1' : ''}${cutleryFee > 0 ? ` · 餐具+$${cutleryFee}` : ''}${comboDiscount > 0 ? ` · 組合折-$${comboDiscount}` : ''}</div>
+        ${state.posTaxId ? `<div style="font-size:13px; color:#1D4ED8;">統一編號：${escapeHtml(state.posTaxId)}</div>` : ''}
+      </div>
+      <div class="xp2-co-summary-total">NT$ ${finalTotal}</div>
+    </div>
+
+    <div class="xp2-co-pay-tabs">
+      <button type="button" class="xp2-co-pay-tab ${!isLinePay ? 'active-cash' : ''}" onclick="xp2CheckoutSetPay('現場現金')">💵 現金收款</button>
+      <button type="button" class="xp2-co-pay-tab ${isLinePay ? 'active-lp' : ''}" onclick="xp2CheckoutSetPay('LINE Pay')">💚 LINE Pay</button>
+    </div>
+
+    ${!isLinePay ? `
+      <div class="xp2-co-cash-board">
+        <div class="xp2-co-cash-col">
+          <div class="xp2-co-cash-lbl">顧客實收</div>
+          <div class="xp2-co-cash-val">${state.posCashReceived !== '' ? `$${escapeHtml(state.posCashReceived)}` : `$${finalTotal} (剛好)`}</div>
+        </div>
+        <div class="xp2-co-cash-col xp2-co-cash-right">
+          <div class="xp2-co-cash-lbl">應找零錢</div>
+          <div class="xp2-co-cash-chg ${isCashShort ? 'short' : ''}">${isCashShort ? `不足 $${finalTotal - cashRecNum}` : `$${changeAmt}`}</div>
+        </div>
+      </div>
+
+      <div class="xp2-co-quick-row">
+        <button type="button" class="xp2-co-quick-btn exact" onclick="xp2CheckoutQuickCash(${finalTotal})">剛好 ($${finalTotal})</button>
+        <button type="button" class="xp2-co-quick-btn" onclick="xp2CheckoutQuickCash(100)">$100</button>
+        <button type="button" class="xp2-co-quick-btn" onclick="xp2CheckoutQuickCash(500)">$500</button>
+        <button type="button" class="xp2-co-quick-btn" onclick="xp2CheckoutQuickCash(1000)">$1000</button>
+      </div>
+
+      <div class="xp2-mini-pad">
+        <div class="xp2-mini-pad-row">
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('7')">7</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('8')">8</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('9')">9</button>
+        </div>
+        <div class="xp2-mini-pad-row">
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('4')">4</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('5')">5</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('6')">6</button>
+        </div>
+        <div class="xp2-mini-pad-row">
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('1')">1</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('2')">2</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('3')">3</button>
+        </div>
+        <div class="xp2-mini-pad-row">
+          <button type="button" class="xp2-mini-key xp2-mini-key-warn" onclick="xp2CheckoutTapKey('CLR')">清除</button>
+          <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('0')">0</button>
+          <button type="button" class="xp2-mini-key xp2-mini-key-warn" onclick="xp2CheckoutTapKey('BACK')">⌫</button>
+        </div>
+      </div>
+    ` : `
+      <div class="xp2-co-lp-box">
+        <div style="font-size:14px; font-weight:900; color:#065F46; margin-bottom:6px;">方式 1：掃碼槍刷 18 碼條碼（刷完自動出單）</div>
+        <input type="tel" maxlength="18" class="xp2-co-lp-input" placeholder="請刷顧客 18 碼付款碼..." value="${escapeHtml(state.posLinePayOneTimeKey || '')}" oninput="state.posLinePayOneTimeKey=this.value.replace(/\\D/g,'').slice(0,18); xp2RenderCheckoutModal();" onkeydown="if(event.key==='Enter' && this.value.replace(/\\D/g,'').length===18){ xp2ConfirmCheckout(); }">
+        <div style="font-size:14px; font-weight:900; color:#065F46; margin:8px 0 6px 0;">方式 2：立牌收款 — 點下方輸入顧客交易末 4 碼</div>
+        <div class="xp2-taxid-display" style="margin-bottom:8px;">${cleanRef ? escapeHtml(cleanRef) : '<span style="color:#94A3B8; font-size:16px;">請點下方數字輸入 4 碼</span>'}</div>
+        <div class="xp2-mini-pad">
+          <div class="xp2-mini-pad-row">
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('7')">7</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('8')">8</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('9')">9</button>
+          </div>
+          <div class="xp2-mini-pad-row">
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('4')">4</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('5')">5</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('6')">6</button>
+          </div>
+          <div class="xp2-mini-pad-row">
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('1')">1</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('2')">2</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('3')">3</button>
+          </div>
+          <div class="xp2-mini-pad-row">
+            <button type="button" class="xp2-mini-key xp2-mini-key-warn" onclick="xp2CheckoutTapKey('CLR')">清除</button>
+            <button type="button" class="xp2-mini-key" onclick="xp2CheckoutTapKey('0')">0</button>
+            <button type="button" class="xp2-mini-key xp2-mini-key-warn" onclick="xp2CheckoutTapKey('BACK')">⌫</button>
+          </div>
+        </div>
+      </div>
+    `}
+
+    <div class="xp2-modal-footer">
+      <button type="button" class="xp2-modal-btn xp2-modal-btn-cancel" onclick="xp2CloseCheckoutModal()">✕ 返回</button>
+      <button type="button" class="xp2-modal-btn ${isLinePay ? 'xp2-modal-btn-lp' : 'xp2-modal-btn-ok'}" ${(isCashShort || (isLinePay && !isLpReady) || state.isPosSubmitting) ? 'disabled' : ''} onclick="xp2ConfirmCheckout()">
+        ${isLinePay ? '✅ 確認 LINE Pay 送單出紙' : `✅ 確認現金收款出紙${changeAmt > 0 ? ` (找$${changeAmt})` : ''}`}
+      </button>
+    </div>
+  `;
+}
+
+function renderXp2ClassicPosPanel(store) {
+  const panel = document.getElementById('storePanel-pos');
+  if (!panel || !store) return;
+
+  ensureXp2ClockRunning();
+
+  const prevCartScroll = document.querySelector('#storePanel-pos .xp2-cart-list')?.scrollTop || 0;
+  const sortedMenus = typeof sortMenusByCategoryPrice === 'function'
+    ? sortMenusByCategoryPrice(store.menus || [], '主廚推薦')
+    : (store.menus || []).slice().sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
+
+  // 分類順序：優先確保飯捲類／酥炸類等主分類一目了然，保留原分類順序
+  const rawCategories = [];
+  sortedMenus.forEach(m => {
+    const c = String(m.category || '主廚推薦').trim() || '主廚推薦';
+    if (rawCategories.indexOf(c) === -1) rawCategories.push(c);
+  });
+
+  if (rawCategories.length > 0) {
+    if (state.xp2DefaultCatAppliedForStore !== store.id) {
+      const riceRollCat = rawCategories.find(c => c.includes('飯捲'));
+      const firstNonDrink = rawCategories.find(c => !isXp2DrinkCategory(c));
+      state.posSelectedCategory = riceRollCat || firstNonDrink || rawCategories[0];
+      state.xp2DefaultCatAppliedForStore = store.id;
+      state.xp2CatPage = 0;
+      state.xp2DishPage = 0;
+    } else if (rawCategories.indexOf(state.posSelectedCategory) === -1) {
+      state.posSelectedCategory = rawCategories[0];
+      state.xp2DishPage = 0;
+    }
+  }
+
+  // 右側常駐飲料區（紫色格子）：抓取所有飲料／飲品分類品項，價格由低到高
+  const drinkMenus = sortedMenus.filter(m => isXp2DrinkCategory(m.category)).sort(compareMenuItemsByPrice);
+  const firstDrinkCat = drinkMenus.length > 0 ? String(drinkMenus[0].category || '').trim() : '';
+  const hasDrinkRail = drinkMenus.length > 0;
+
+  // 當前分類餐點（價格由低到高）
+  const activeCat = state.posSelectedCategory || rawCategories[0] || '';
+  const catDishes = sortedMenus
+    .filter(m => String(m.category || '主廚推薦').trim() === activeCat)
+    .sort(compareMenuItemsByPrice);
+
+  // 8 欄亮綠色分類列分頁計算
+  const catNeedPager = rawCategories.length > 8;
+  const catPerPage = catNeedPager ? 7 : 8;
+  const catMaxPage = Math.max(0, Math.ceil(rawCategories.length / catPerPage) - 1);
+  if ((state.xp2CatPage || 0) > catMaxPage) state.xp2CatPage = 0;
+  const catPage = state.xp2CatPage || 0;
+  const visibleCats = rawCategories.slice(catPage * catPerPage, catPage * catPerPage + catPerPage);
+
+  // 前 4 列主菜區：有右側飲料欄時為 7×4=28 格，否則 8×4=32 格
+  const dishCols = hasDrinkRail ? 7 : 8;
+  const totalDishSlots = dishCols * 4;
+  const dishNeedPager = catDishes.length > totalDishSlots;
+  const dishPerPage = dishNeedPager ? (totalDishSlots - 1) : totalDishSlots;
+  const dishMaxPage = Math.max(0, Math.ceil(catDishes.length / dishPerPage) - 1);
+  if ((state.xp2DishPage || 0) > dishMaxPage) state.xp2DishPage = 0;
+  const dishPage = state.xp2DishPage || 0;
+  const pageDishes = catDishes.slice(dishPage * dishPerPage, dishPage * dishPerPage + dishPerPage);
+
+  // 左側目前選中品項與其底 2 列客製化選項
+  const selectedCartIdx = getXp2SelectedCartIndex();
+  const selectedCartItem = selectedCartIdx >= 0 ? state.posCart[selectedCartIdx] : null;
+  const selectedMenuItem = selectedCartItem
+    ? (store.menus || []).find(m => String(m.id) === String(selectedCartItem.id))
+    : null;
+  const allMods = selectedMenuItem ? xp2FlattenModifiersForMenu(selectedMenuItem) : [];
+  const modNeedPager = allMods.length > 16;
+  const modPerPage = modNeedPager ? 15 : 16;
+  const modMaxPage = Math.max(0, Math.ceil(allMods.length / modPerPage) - 1);
+  if ((state.xp2ModPage || 0) > modMaxPage) state.xp2ModPage = 0;
+  const modPage = state.xp2ModPage || 0;
+  const pageMods = allMods.slice(modPage * modPerPage, modPage * modPerPage + modPerPage);
+
+  const { storeCutleryPrice, cutleryFee, takeoutFee, comboDiscount, finalTotal } = calcCurrentPosTotals(store);
+  const nextPreviewSeq = generatePreviewNextSeq(store.id, getTodayDateStr());
+  const cashierLabel = String(state.shiftCashierName || state.merchantStaffName || '現場收銀').trim();
+  const totalQty = state.posCart.reduce((s, it) => s + (it.qty || 1), 0);
+  const keypadBuf = String(state.xp2KeypadBuffer || '');
+  const keypadNum = parseInt(keypadBuf || '0', 10) || 0;
+  const previewChange = (keypadNum >= finalTotal && finalTotal > 0) ? (keypadNum - finalTotal) : -1;
+  const isLockedShift = Boolean(getLockedShiftRecord(store.id, getTodayDateStr()) && state.posTimeMode !== 'RESERVE');
+  const changeBanner = state.posLastChangeBanner;
+
+  // 組合亮綠色分類列 8 格 HTML
+  const catCellsHtml = [];
+  for (let i = 0; i < 8; i++) {
+    if (catNeedPager && i === 7) {
+      const nextP = catPage < catMaxPage ? 1 : -catPage;
+      catCellsHtml.push(`
+        <div class="xp2-grid-cell">
+          <button type="button" class="xp2-btn xp2-cat-btn xp2-cat-pager" onclick="xp2ChangeCatPage(${nextP})">
+            ${catPage < catMaxPage ? '下頁分類 ▶' : '◀ 回第一頁'}
+          </button>
+        </div>
+      `);
+    } else if (visibleCats[i]) {
+      const cName = visibleCats[i];
+      const isAct = cName === activeCat;
+      catCellsHtml.push(`
+        <div class="xp2-grid-cell">
+          <button type="button" class="xp2-btn xp2-cat-btn ${isAct ? 'active' : ''}" onclick="xp2SelectCategory(${escapeJsAttr(cName)})">
+            ${escapeHtml(cName)}
+          </button>
+        </div>
+      `);
+    } else {
+      catCellsHtml.push('<div class="xp2-grid-cell"><div class="xp2-cell-empty"></div></div>');
+    }
+  }
+
+  // 組合前 4 列（每列 8 格：前 7 格菜品 + 第 8 格常駐紫色飲料）
+  const topRowsHtml = [];
+  for (let r = 0; r < 4; r++) {
+    const rowCells = [];
+    for (let c = 0; c < dishCols; c++) {
+      const slotIdx = r * dishCols + c;
+      if (dishNeedPager && slotIdx === totalDishSlots - 1) {
+        const nextDp = dishPage < dishMaxPage ? 1 : -dishPage;
+        rowCells.push(`
+          <div class="xp2-grid-cell">
+            <button type="button" class="xp2-btn xp2-dish-btn xp2-pager-btn" onclick="xp2ChangeDishPage(${nextDp})">
+              <span class="xp2-tile-title">${dishPage < dishMaxPage ? '下一頁 ▶' : '◀ 第一頁'}</span>
+              <span class="xp2-tile-sub">${dishPage + 1}/${dishMaxPage + 1}</span>
+            </button>
+          </div>
+        `);
+      } else if (pageDishes[slotIdx]) {
+        const m = pageDishes[slotIdx];
+        const isOut = Boolean(m.soldOut);
+        rowCells.push(`
+          <div class="xp2-grid-cell">
+            <button type="button" class="xp2-btn xp2-dish-btn ${isOut ? 'xp2-cell-soldout' : ''}" ${isOut ? 'disabled' : ''} onclick="handleMenuItemClick(${escapeJsAttr(m.id)}, true)">
+              <span class="xp2-tile-title">${escapeHtml(m.name)}</span>
+              <span class="xp2-tile-price">${isOut ? '售完' : `$${m.price}`}</span>
+            </button>
+          </div>
+        `);
+      } else {
+        rowCells.push('<div class="xp2-grid-cell"><div class="xp2-cell-empty"></div></div>');
+      }
+    }
+
+    if (hasDrinkRail) {
+      if (drinkMenus.length > 4 && r === 3) {
+        rowCells.push(`
+          <div class="xp2-grid-cell">
+            <button type="button" class="xp2-btn xp2-drink-btn xp2-pager-btn" onclick="xp2SelectCategory(${escapeJsAttr(firstDrinkCat)})">
+              <span class="xp2-tile-title">更多飲料 ▶</span>
+              <span class="xp2-tile-sub">共 ${drinkMenus.length} 項</span>
+            </button>
+          </div>
+        `);
+      } else if (drinkMenus[r]) {
+        const dm = drinkMenus[r];
+        const isOut = Boolean(dm.soldOut);
+        rowCells.push(`
+          <div class="xp2-grid-cell">
+            <button type="button" class="xp2-btn xp2-drink-btn ${isOut ? 'xp2-cell-soldout' : ''}" ${isOut ? 'disabled' : ''} onclick="handleMenuItemClick(${escapeJsAttr(dm.id)}, true)">
+              <span class="xp2-tile-title">${escapeHtml(dm.name)}</span>
+              <span class="xp2-tile-price">${isOut ? '售完' : `$${dm.price}`}</span>
+            </button>
+          </div>
+        `);
+      } else {
+        rowCells.push('<div class="xp2-grid-cell"><div class="xp2-cell-empty"></div></div>');
+      }
+    }
+
+    topRowsHtml.push(`<div class="xp2-matrix-row">${rowCells.join('')}</div>`);
+  }
+
+  // 組合最底 2 列（8×2 = 16 格一鍵客製化區）
+  const modRowsHtml = [];
+  for (let mr = 0; mr < 2; mr++) {
+    const rowCells = [];
+    for (let mc = 0; mc < 8; mc++) {
+      const mSlot = mr * 8 + mc;
+      if (modNeedPager && mSlot === 15) {
+        const nextMp = modPage < modMaxPage ? 1 : -modPage;
+        rowCells.push(`
+          <div class="xp2-grid-cell">
+            <button type="button" class="xp2-btn xp2-mod-btn xp2-pager-btn" onclick="xp2ChangeModPage(${nextMp})">
+              <span class="xp2-tile-title">${modPage < modMaxPage ? '更多客製 ▶' : '◀ 回上頁'}</span>
+              <span class="xp2-tile-sub">${modPage + 1}/${modMaxPage + 1}</span>
+            </button>
+          </div>
+        `);
+      } else if (pageMods[mSlot]) {
+        const mod = pageMods[mSlot];
+        const actInfo = xp2GetModifierActiveState(selectedCartItem, mod);
+        const colorCls = mod.extra > 0 ? 'xp2-mod-blue' : 'xp2-mod-purple';
+        const qtyTxt = mod.groupType === 'qty' && actInfo.qty > 1 ? ` ×${actInfo.qty}` : '';
+        rowCells.push(`
+          <div class="xp2-grid-cell">
+            <button type="button" class="xp2-btn xp2-mod-btn ${colorCls} ${actInfo.active ? 'xp2-mod-active' : ''} ${mod.soldOut ? 'xp2-cell-soldout' : ''}" ${mod.soldOut ? 'disabled' : ''} onclick="xp2ToggleModifier(${escapeJsAttr(mod.groupName)}, ${escapeJsAttr(mod.label)}, ${escapeJsAttr(mod.groupType)}, ${mod.maxSelect}, ${mod.minSelect})">
+              <span class="xp2-tile-title">${actInfo.active ? '✓ ' : ''}${escapeHtml(mod.label)}${qtyTxt}</span>
+              ${mod.extra > 0 ? `<span class="xp2-tile-price">+$${mod.extra}</span>` : ''}
+            </button>
+          </div>
+        `);
+      } else {
+        rowCells.push('<div class="xp2-grid-cell"><div class="xp2-cell-empty"></div></div>');
+      }
+    }
+    modRowsHtml.push(`<div class="xp2-matrix-row">${rowCells.join('')}</div>`);
+  }
+
+  panel.innerHTML = `
+    <div class="xp2-shell">
+      <!-- ==================== 左欄（28% 寬度） ==================== -->
+      <div class="xp2-left-col">
+        <!-- 頂部資訊塊 -->
+        <div class="xp2-info-box">
+          <div class="xp2-info-line xp2-info-store">${escapeHtml(store.name)} <span class="xp2-info-seq">#${escapeHtml(nextPreviewSeq)}</span></div>
+          <div class="xp2-info-line">收銀員：${escapeHtml(cashierLabel)}　份數：${totalQty} 份</div>
+          <div class="xp2-info-line" id="xp2ClockText">${escapeHtml(formatXp2NowText())}</div>
+        </div>
+
+        <!-- 內用／外帶狀態與總金額條 -->
+        <div class="xp2-status-bar">
+          <div class="xp2-status-tags">
+            <span class="xp2-status-pill ${state.posDineType === '外帶自取' ? 'takeout' : 'dinein'}">${state.posDineType === '外帶自取' ? '外帶+$1' : '內用'}</span>
+            ${state.posNeedCutlery ? `<span class="xp2-status-pill extra">餐具+$${storeCutleryPrice}</span>` : ''}
+            ${state.posTaxId ? `<span class="xp2-status-pill extra">統編:${escapeHtml(state.posTaxId)}</span>` : ''}
+            ${comboDiscount > 0 ? `<span class="xp2-status-pill discount">折-$${comboDiscount}</span>` : ''}
+            ${keypadBuf ? `<span class="xp2-status-pill input">鍵入:${escapeHtml(keypadBuf)}</span>` : ''}
+            ${state.posQtyMultiplier > 1 ? `<span class="xp2-status-pill input">下筆×${state.posQtyMultiplier}</span>` : ''}
+          </div>
+          <div class="xp2-total-amount">$${finalTotal}</div>
+        </div>
+
+        ${changeBanner ? `
+          <div class="xp2-change-strip">
+            <div class="xp2-change-strip-txt">✅ #${escapeHtml(changeBanner.pickupNumber)} 收$${changeBanner.cashReceived} <strong>找$${changeBanner.changeAmount}</strong></div>
+            <div class="xp2-change-strip-acts">
+              <button type="button" class="xp2-mini-strip-btn" onclick="requeueOrderPrintJob(${escapeJsAttr(changeBanner.orderId)})">重印</button>
+              <button type="button" class="xp2-mini-strip-btn" onclick="dismissPosChangeBanner()">✕</button>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 中間點單清單 -->
+        <div class="xp2-cart-list">
+          ${state.posCart.length === 0 ? `
+            <div class="xp2-cart-empty">
+              <div style="font-size:18px; font-weight:900; margin-bottom:4px;">尚無點餐品項</div>
+              <div style="font-size:13px;">請點右側藍格品項或紫格飲料加入</div>
+            </div>
+          ` : state.posCart.map((it, idx) => {
+            const isSelected = idx === selectedCartIdx;
+            const selTags = it.selections && Object.keys(it.selections).length > 0
+              ? Object.values(it.selections).filter(Boolean).join('、')
+              : '';
+            const lineSubtotal = (Number(it.price) || 0) * (it.qty || 1);
+            return `
+              <div class="xp2-cart-row ${isSelected ? 'selected' : ''}" onclick="xp2SelectCartItem(${idx})">
+                <div class="xp2-cart-row-top">
+                  <span class="xp2-cart-name">${idx + 1}. ${escapeHtml(it.baseName || it.name)}</span>
+                  <span class="xp2-cart-qty">×${it.qty || 1}</span>
+                  <span class="xp2-cart-sub">$${lineSubtotal}</span>
+                </div>
+                ${selTags ? `<div class="xp2-cart-mods">${escapeHtml(selTags)}</div>` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- 底部大按鈕 -->
+        <div class="xp2-left-bottom">
+          <div class="xp2-left-btn-row">
+            <button type="button" class="xp2-btn xp2-ctrl-btn" onclick="xp2MoveSelection(-1)">↑</button>
+            <button type="button" class="xp2-btn xp2-ctrl-btn" onclick="xp2MoveSelection(1)">↓</button>
+            <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-del" onclick="xp2DeleteSelectedItem()">- 刪除</button>
+          </div>
+          <div class="xp2-left-btn-row">
+            <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-clear" onclick="xp2ClearCart()">清空</button>
+            <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-exit" onclick="exitXpMode()">切換一般版</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 右欄（72% 寬度） ==================== -->
+      <div class="xp2-right-col">
+        <!-- 右欄頂部（25% 高度）：快捷鍵 + 數字鍵盤 + 跨三列超大結帳鈕 -->
+        <div class="xp2-top-area">
+          <!-- 左側快捷鍵 -->
+          <div class="xp2-shortcuts-col">
+            <div class="xp2-top-row">
+              <div class="xp2-top-cell xp2-w50">
+                <button type="button" class="xp2-btn xp2-func-btn ${state.posDineType === '內用自取' ? 'active-dine' : ''}" onclick="xp2SetDineType('內用自取')">內用</button>
+              </div>
+              <div class="xp2-top-cell xp2-w50">
+                <button type="button" class="xp2-btn xp2-func-btn ${state.posDineType === '外帶自取' ? 'active-takeout' : ''}" onclick="xp2SetDineType('外帶自取')">外帶 +$1</button>
+              </div>
+            </div>
+            <div class="xp2-top-row">
+              <div class="xp2-top-cell xp2-w100">
+                <button type="button" class="xp2-btn xp2-func-btn ${state.posNeedCutlery ? 'active-opt' : ''}" onclick="xp2ToggleCutlery()">
+                  ${state.posNeedCutlery ? '✓ ' : ''}需免洗餐具${storeCutleryPrice > 0 ? ` (+$${storeCutleryPrice})` : ''}
+                </button>
+              </div>
+            </div>
+            <div class="xp2-top-row">
+              <div class="xp2-top-cell xp2-w100">
+                <button type="button" class="xp2-btn xp2-func-btn ${state.posTaxId ? 'active-opt' : ''}" onclick="xp2OpenTaxIdModal()">
+                  ${state.posTaxId ? `統編 ${escapeHtml(state.posTaxId)}` : '統一編號'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 中間數字鍵盤（3 列 × 5 欄） -->
+          <div class="xp2-numpad-col">
+            <div class="xp2-top-row">
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('7')">7</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('8')">8</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('9')">9</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-unit" onclick="xp2TapKeypad('1000')">千</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-clear" onclick="xp2TapKeypad('CLEAR')">清除</button></div>
+            </div>
+            <div class="xp2-top-row">
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('4')">4</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('5')">5</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('6')">6</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-unit" onclick="xp2TapKeypad('100')">百</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-op" onclick="xp2TapKeypad('QTY')">×<span class="xp2-num-sub">數量</span></button></div>
+            </div>
+            <div class="xp2-top-row">
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('1')">1</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('2')">2</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('3')">3</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('0')">0</button></div>
+              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-cash" onclick="xp2TapKeypad('CASH')">實收</button></div>
+            </div>
+          </div>
+
+          <!-- 最右側：跨三列超大 + 結帳 按鈕 -->
+          <div class="xp2-checkout-col">
+            <button type="button" class="xp2-btn xp2-checkout-big-btn" ${(state.posCart.length === 0 || isLockedShift || state.isPosSubmitting) ? 'disabled' : ''} onclick="xp2OpenCheckoutModal('現場現金')">
+              <span class="xp2-checkout-big-title">${isLockedShift ? '🔒 已日結' : '+ 結帳'}</span>
+              ${finalTotal > 0 ? `<span class="xp2-checkout-big-amt">$${finalTotal}</span>` : ''}
+              ${previewChange >= 0 ? `<span class="xp2-checkout-big-chg">收$${keypadNum} 找$${previewChange}</span>` : ''}
+            </button>
+          </div>
+        </div>
+
+        <!-- 右欄中間（亮綠色 8 欄分類列） -->
+        <div class="xp2-cat-row">
+          ${catCellsHtml.join('')}
+        </div>
+
+        <!-- 右欄主體（8 欄 × 6 列傳統觸控方格陣列：前 4 列品項+常駐飲料，底 2 列一鍵客製） -->
+        <div class="xp2-matrix-body">
+          ${topRowsHtml.join('')}
+          ${modRowsHtml.join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const newCartList = document.querySelector('#storePanel-pos .xp2-cart-list');
+  if (newCartList && prevCartScroll > 0) newCartList.scrollTop = prevCartScroll;
 }
 
 // 一-4：POS 單品行內備註與單品招待 / 折扣
@@ -2225,6 +3265,11 @@ function renderPosCashierPanel(store) {
   const panel = document.getElementById('storePanel-pos');
   if (!panel) return;
 
+  if (state.xp2Mode && typeof renderXp2ClassicPosPanel === 'function') {
+    renderXp2ClassicPosPanel(store);
+    return;
+  }
+
   const todayStr = getTodayDateStr();
   if (!state.posReserveDate || normalizeDateStr(state.posReserveDate) < todayStr) {
     state.posReserveDate = todayStr;
@@ -2234,7 +3279,9 @@ function renderPosCashierPanel(store) {
   const prevInlineModScroll = document.querySelector('#storePanel-pos .xp-pos-inline-mod-panel')?.scrollTop || 0;
   const prevReceiptScroll = document.querySelector('#storePanel-pos .pos-receipt-scroll-body')?.scrollTop || 0;
 
-  const menus = (store.menus || []).slice().sort((a, b) => (Number(a.sortOrder) || 999) - (Number(b.sortOrder) || 999));
+  const menus = typeof sortMenusByCategoryPrice === 'function'
+    ? sortMenusByCategoryPrice(store.menus || [], '主廚推薦')
+    : (store.menus || []).slice().sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
   const categories = ['全部', ...new Set(menus.map(m => m.category || '主廚推薦'))];
   if (state.xpMode && categories.length > 1) {
     if (state.xpDefaultCategoryAppliedForStore !== store.id) {
@@ -2807,6 +3854,9 @@ async function submitMerchantPosOrder(opts = {}) {
     state.posCart = [];
     state.xpInlineModTargetCartIdx = -1;
     state.xpInlineModPreselect = {};
+    state.xp2SelectedCartIdx = -1;
+    state.xp2KeypadBuffer = '';
+    state.xp2ModPage = 0;
     state.posCashReceived = '';
     state.posSplitCashAmount = '';
     state.posManualDiscount = 0;
@@ -4647,7 +5697,11 @@ function renderKdsModifyOrderModal() {
   const newTotal = Math.max(0, newSubtotal + (Number(order.cutleryFee) || 0) - discount - manualDiscount);
   const diffAmt = newTotal - (Number(order.finalTotal) || 0);
   const wasPaid = isOrderConsiderPaid(order);
-  const availMenus = store ? (store.menus || []).filter(m => !m.soldOut) : [];
+  const availMenus = store
+    ? (typeof sortMenusByCategoryPrice === 'function'
+        ? sortMenusByCategoryPrice((store.menus || []).filter(m => !m.soldOut), '主廚推薦')
+        : (store.menus || []).filter(m => !m.soldOut))
+    : [];
 
   box.innerHTML = `
     <div style="background:#FFFBEB; border:1px solid #F59E0B; color:#92400E; padding:9px 12px; border-radius:10px; font-size:0.78rem; font-weight:800; margin-bottom:12px;">
@@ -6972,7 +8026,11 @@ function renderMerchantSettingsPanel(store) {
 
   const sub = state.settingsSubTab || 'menu';
   const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
-  const menus = store.menus || [];
+  const rawMenus = store.menus || [];
+  const menusWithOrigIdx = (typeof sortMenusByCategoryPrice === 'function'
+    ? sortMenusByCategoryPrice(rawMenus.map((m, origIdx) => ({ ...m, __origIdx: origIdx })), '主餐')
+    : rawMenus.map((m, origIdx) => ({ ...m, __origIdx: origIdx })));
+  const menus = menusWithOrigIdx;
   const remainMins = Math.max(0, Math.round((state.merchantSessionExpiresAt - Date.now()) / 60000));
   const storeAuditLogs = (state.merchantAuditLogs || []).filter(l => !l.storeId || l.storeId === store.id).slice(0, 30);
 
@@ -7076,7 +8134,8 @@ function renderMerchantSettingsPanel(store) {
             `;
           })()}
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(310px, 1fr)); gap:10px;">
-            ${menus.map((m, idx) => {
+            ${menusWithOrigIdx.map((m) => {
+              const idx = m.__origIdx;
               const optCount = m.options ? Object.keys(m.options).length : 0;
               const isSoldOut = Boolean(m.soldOut);
               const dLimit = Number(m.dailyLimit) || 0;
@@ -8917,13 +9976,21 @@ function getBatchApplyCandidateMenus(store, batchState) {
   }
   const sourceId = String(batchState.sourceMenuId || '').trim();
   const sourceCat = String(batchState.sourceCategory || '').trim();
-  const allOtherItems = store.menus.filter((m, idx) => {
-    const mId = String(m && m.id ? m.id : '').trim();
-    if (!mId) return false;
-    if (sourceId && mId === sourceId) return false;
-    if (!sourceId && idx === batchState.sourceMenuIdx) return false;
-    return true;
-  });
+  const allOtherItems = (typeof sortMenusByCategoryPrice === 'function'
+    ? sortMenusByCategoryPrice(store.menus.filter((m, idx) => {
+        const mId = String(m && m.id ? m.id : '').trim();
+        if (!mId) return false;
+        if (sourceId && mId === sourceId) return false;
+        if (!sourceId && idx === batchState.sourceMenuIdx) return false;
+        return true;
+      }), '主廚推薦')
+    : store.menus.filter((m, idx) => {
+        const mId = String(m && m.id ? m.id : '').trim();
+        if (!mId) return false;
+        if (sourceId && mId === sourceId) return false;
+        if (!sourceId && idx === batchState.sourceMenuIdx) return false;
+        return true;
+      }));
   const sameCatItems = allOtherItems.filter(m => String(m.category || '主廚推薦').trim() === sourceCat);
   const visibleItems = batchState.scope === 'all_store' ? allOtherItems : sameCatItems;
   return { sameCatItems, allOtherItems, visibleItems };

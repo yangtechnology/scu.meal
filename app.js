@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.6`;
+    script.src = `${base}merchant.js?v=26.7`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1470,8 +1470,16 @@ var state = {
   // 店家全螢幕 POS 四大主導覽：'pos' | 'kds' | 'analytics' | 'settings'
   storeTabMode: 'pos',
   xpMode: false,
+  xp2Mode: false,
   xpModeExited: false,
   xpDefaultCategoryAppliedForStore: '',
+  xp2SelectedCartIdx: -1,
+  xp2KeypadBuffer: '',
+  xp2CatPage: 0,
+  xp2DishPage: 0,
+  xp2ModPage: 0,
+  xp2CheckoutPayMethod: '現場現金',
+  xp2TaxIdDraft: '',
   settingsSubTab: 'menu', // 'menu' | 'promo' | 'storeProfile' | 'line'
   merchantStoreId: localStorage.getItem('mealflow_bound_store_id') || localStorage.getItem('mealflow_last_merchant_store_id') || 'S01',
   kdsSoundEnabled: true,
@@ -2155,6 +2163,45 @@ function normalizeMenuItem(m, fallbackStoreId) {
   };
 }
 
+// 全系統菜單統一排序：各分類內優先依價格由低到高，同價再依 sortOrder 與品名排序
+function compareMenuItemsByPrice(a, b) {
+  const pa = Number(a && a.price) || 0;
+  const pb = Number(b && b.price) || 0;
+  if (pa !== pb) return pa - pb;
+  const sa = (a && a.sortOrder !== undefined && a.sortOrder !== '' && Number.isFinite(Number(a.sortOrder)))
+    ? Number(a.sortOrder)
+    : 999;
+  const sb = (b && b.sortOrder !== undefined && b.sortOrder !== '' && Number.isFinite(Number(b.sortOrder)))
+    ? Number(b.sortOrder)
+    : 999;
+  if (sa !== sb) return sa - sb;
+  return String((a && a.name) || '').trim().localeCompare(String((b && b.name) || '').trim(), 'zh-Hant');
+}
+
+function sortMenusByCategoryPrice(menus, defaultCat = '主廚推薦') {
+  if (!Array.isArray(menus) || menus.length <= 1) return Array.isArray(menus) ? menus.slice() : [];
+  const catOrder = [];
+  const byCat = {};
+  for (let i = 0; i < menus.length; i++) {
+    const m = menus[i];
+    const cat = String((m && m.category) || defaultCat).trim() || defaultCat;
+    if (!byCat[cat]) {
+      byCat[cat] = [];
+      catOrder.push(cat);
+    }
+    byCat[cat].push(m);
+  }
+  const result = [];
+  for (let c = 0; c < catOrder.length; c++) {
+    const group = byCat[catOrder[c]];
+    group.sort(compareMenuItemsByPrice);
+    for (let j = 0; j < group.length; j++) {
+      result.push(group[j]);
+    }
+  }
+  return result;
+}
+
 function getStoreIconDisplay(store) {
   if (!store) return '🍱';
   const customIcon = String(store.icon || '').trim();
@@ -2201,7 +2248,7 @@ function enrichStoresAndAi() {
     const rawMenus = Array.isArray(s.menus)
       ? (s.menus.length > 0 || state.hasLoadedCloudStores ? s.menus : (defStore ? defStore.menus : []))
       : (defStore ? defStore.menus : []);
-    const normalizedMenus = rawMenus.map(m => normalizeMenuItem(m, s.id));
+    const normalizedMenus = sortMenusByCategoryPrice(rawMenus.map(m => normalizeMenuItem(m, s.id)));
 
     const isOpen = s.isOpen !== false;
     const cap = Math.max(5, Number(s.maxCapacityPer15Min) || 20);
@@ -3810,12 +3857,24 @@ function syncUrlStateWithHistory(usePush = false) {
   } catch (e) {}
 }
 
-function isXpUrlParamActive() {
+function getXpUrlVersion() {
   try {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('xp') === '1') return true;
+    const v = String(params.get('xp') || '').trim();
+    if (v === '1' || v === '2') return v;
   } catch (e) {}
-  return /(?:^\?|&)xp=1(?:&|$)/.test(window.location.search || '');
+  const search = window.location.search || '';
+  if (/(?:^\?|&)xp=2(?:&|$)/.test(search)) return '2';
+  if (/(?:^\?|&)xp=1(?:&|$)/.test(search)) return '1';
+  return '';
+}
+
+function isXpUrlParamActive() {
+  return getXpUrlVersion() === '1';
+}
+
+function isXp2UrlParamActive() {
+  return getXpUrlVersion() === '2';
 }
 
 function ensureXpExitButton() {
@@ -3833,16 +3892,22 @@ function ensureXpExitButton() {
 
 function exitXpMode() {
   state.xpMode = false;
+  state.xp2Mode = false;
   state.xpModeExited = true;
+  if (window._xp2ClockTimer) {
+    try { clearInterval(window._xp2ClockTimer); } catch (e) {}
+    window._xp2ClockTimer = null;
+  }
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.remove('xp-mode');
+    document.body.classList.remove('xp2-mode');
   }
   updateBodyScrollLock();
   if (typeof renderMerchantView === 'function' && state.routeMode === 'store') {
     renderMerchantView();
   }
   if (typeof showToast === 'function') {
-    showToast('已退出 XP 滿版模式，可查看交班日結與後台設定');
+    showToast('已切換回一般版後台，可查看訂單、交班日結與設定');
   }
 }
 
@@ -3901,18 +3966,31 @@ function detectRouteFromUrl() {
     state.routeMode = 'portal';
   }
 
-  // XP 專屬純 POS 滿版模式：網址帶有 ?xp=1 且進入 store 後台時自動啟用並鎖定切至 POS 點餐頁
-  if (state.routeMode === 'store' && isXpUrlParamActive() && !state.xpModeExited) {
-    state.xpMode = true;
+  // XP 專屬純 POS 滿版模式：?xp=1（既有精簡滿版）與 ?xp=2（傳統 POS 復刻模式）
+  const xpVer = getXpUrlVersion();
+  if (state.routeMode === 'store' && xpVer === '2' && !state.xpModeExited) {
+    state.xpMode = false;
+    state.xp2Mode = true;
     state.storeTabMode = 'pos';
     if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('xp-mode');
+      document.body.classList.add('xp2-mode');
+    }
+  } else if (state.routeMode === 'store' && xpVer === '1' && !state.xpModeExited) {
+    state.xpMode = true;
+    state.xp2Mode = false;
+    state.storeTabMode = 'pos';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('xp2-mode');
       document.body.classList.add('xp-mode');
       ensureXpExitButton();
     }
   } else if (state.routeMode !== 'store') {
     state.xpMode = false;
+    state.xp2Mode = false;
     if (typeof document !== 'undefined' && document.body) {
       document.body.classList.remove('xp-mode');
+      document.body.classList.remove('xp2-mode');
     }
   }
 }
@@ -4964,7 +5042,9 @@ function updateBodyScrollLock() {
   document.body.classList.toggle('store-mode-active', state.routeMode === 'store' || state.routeMode === 'board');
   document.body.classList.toggle('pos-no-scroll', state.routeMode === 'store' && state.isMerchantUnlocked && state.storeTabMode === 'pos');
   const isXpActive = Boolean(state.xpMode && state.routeMode === 'store');
+  const isXp2Active = Boolean(state.xp2Mode && state.routeMode === 'store');
   document.body.classList.toggle('xp-mode', isXpActive);
+  document.body.classList.toggle('xp2-mode', isXp2Active);
   if (isXpActive) ensureXpExitButton();
   applyPosFontSizeClass();
 }
@@ -6406,6 +6486,9 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(item);
   });
+  Object.keys(grouped).forEach(cat => {
+    grouped[cat].sort(compareMenuItemsByPrice);
+  });
 
   const isSearchExpanded = Boolean(state.studentMenuSearchOpen || (state.studentMenuSearch && state.studentMenuSearch.trim()));
   const menuFilterToolbarHtml = items.length > 0 ? `
@@ -6676,6 +6759,12 @@ function handleMenuItemClick(itemId, isPos = false) {
 
   if (item.soldOut) {
     showToast(t(`🚫 「${item.name}」今日已售罄，請挑選其他品項！`, `🚫 "${item.name}" is sold out today!`));
+    return;
+  }
+
+  // XP=2 傳統 POS 復刻模式：點擊任何餐點皆不跳客製彈窗，直接帶入預設規格加入左側點單並選中
+  if (isPos && state.xp2Mode && typeof handleXp2DishClick === 'function') {
+    handleXp2DishClick(item);
     return;
   }
 
