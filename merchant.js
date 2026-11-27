@@ -603,17 +603,31 @@ async function applyMenuSoldOutChange(menuIdx, targetSoldOut, soldOutType = 'TOD
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store || !store.menus[menuIdx]) return;
   const item = store.menus[menuIdx];
-  const prevState = {
-    soldOut: Boolean(item.soldOut),
-    soldOutType: item.soldOutType || 'NONE',
-    soldOutDate: item.soldOutDate || '',
-    needsMorningReview: Boolean(item.needsMorningReview)
-  };
+  const groupName = String(item.soldOutGroup || '').trim();
+  const affectedItems = groupName
+    ? store.menus.filter(m => m && (String(m.id) === String(item.id) || String(m.soldOutGroup || '').trim() === groupName))
+    : [item];
+
+  const prevSnapshots = affectedItems.map(m => ({
+    ref: m,
+    soldOut: Boolean(m.soldOut),
+    soldOutType: m.soldOutType || 'NONE',
+    soldOutDate: m.soldOutDate || '',
+    needsMorningReview: Boolean(m.needsMorningReview)
+  }));
+
   const todayStr = getTodayDateStr();
-  item.soldOut = Boolean(targetSoldOut);
-  item.soldOutType = targetSoldOut ? (soldOutType === 'PERMANENT' ? 'PERMANENT' : 'TODAY') : 'NONE';
-  item.soldOutDate = targetSoldOut ? todayStr : '';
-  item.needsMorningReview = false;
+  const nextSoldOut = Boolean(targetSoldOut);
+  const nextSoldOutType = nextSoldOut ? (soldOutType === 'PERMANENT' ? 'PERMANENT' : 'TODAY') : 'NONE';
+  const nextSoldOutDate = nextSoldOut ? todayStr : '';
+
+  affectedItems.forEach(m => {
+    m.soldOut = nextSoldOut;
+    m.soldOutType = nextSoldOutType;
+    m.soldOutDate = nextSoldOutDate;
+    m.needsMorningReview = false;
+  });
+
   state.lastLocalStoreConfigUpdateTs = Date.now();
   saveLocalStores(state.stores);
   renderMerchantView();
@@ -628,9 +642,9 @@ async function applyMenuSoldOutChange(menuIdx, targetSoldOut, soldOutType = 'TOD
         ...getMerchantAuthPayload(),
         storeId: store.id,
         menuId: item.id,
-        soldOut: item.soldOut,
-        soldOutType: item.soldOutType,
-        soldOutDate: item.soldOutDate
+        soldOut: nextSoldOut,
+        soldOutType: nextSoldOutType,
+        soldOutDate: nextSoldOutDate
       })
     });
     const data = await res.json();
@@ -638,17 +652,50 @@ async function applyMenuSoldOutChange(menuIdx, targetSoldOut, soldOutType = 'TOD
       if (data && String(data.message || '').includes('未知的操作請求')) {
         await syncStoreMenuToCloud(store);
       } else {
-        Object.assign(item, prevState);
+        prevSnapshots.forEach(s => {
+          s.ref.soldOut = s.soldOut;
+          s.ref.soldOutType = s.soldOutType;
+          s.ref.soldOutDate = s.soldOutDate;
+          s.ref.needsMorningReview = s.needsMorningReview;
+        });
         saveLocalStores(state.stores);
         renderMerchantView();
         showToast(`❌ 切換售罄狀態失敗已還原：${(data && data.message) || '請重試'}`);
         return;
       }
     }
-    const modeLabel = item.soldOutType === 'PERMANENT' ? t('完全售完 / 長期缺貨', 'Permanently Out') : t('本日售完', 'Sold Out Today');
-    showToast(item.soldOut ? `🚫 已將「${item.name}」標記為「${modeLabel}」` : `🟢 已將「${item.name}」恢復正常供應`);
+    if (data && Array.isArray(data.affectedMenuIds) && data.affectedMenuIds.length > 0) {
+      const idSet = new Set(data.affectedMenuIds.map(String));
+      let extraTouched = false;
+      (store.menus || []).forEach(m => {
+        if (m && idSet.has(String(m.id))) {
+          if (m.soldOut !== nextSoldOut || m.soldOutType !== nextSoldOutType) {
+            m.soldOut = nextSoldOut;
+            m.soldOutType = nextSoldOutType;
+            m.soldOutDate = nextSoldOutDate;
+            m.needsMorningReview = false;
+            extraTouched = true;
+          }
+        }
+      });
+      if (extraTouched) {
+        saveLocalStores(state.stores);
+        renderMerchantView();
+      }
+    }
+    const finalCount = (data && Array.isArray(data.affectedMenuIds) && data.affectedMenuIds.length > 0)
+      ? data.affectedMenuIds.length
+      : affectedItems.length;
+    const modeLabel = nextSoldOutType === 'PERMANENT' ? t('完全售完 / 長期缺貨', 'Permanently Out') : t('本日售完', 'Sold Out Today');
+    if (finalCount > 1) {
+      showToast(nextSoldOut
+        ? `🔗 已連動售罄 ${finalCount} 項品項（群組：${groupName || data.soldOutGroup || ''}・${modeLabel}）`
+        : `🔗 已連動恢復上架 ${finalCount} 項品項（群組：${groupName || data.soldOutGroup || ''}）`);
+    } else {
+      showToast(nextSoldOut ? `🚫 已將「${item.name}」標記為「${modeLabel}」` : `🟢 已將「${item.name}」恢復正常供應`);
+    }
   } catch (e) {
-    showToast(item.soldOut ? `⚠️ 離線中：已先於本機標記「${item.name}」售罄` : `⚠️ 離線中：已先於本機恢復「${item.name}」供應`);
+    showToast(nextSoldOut ? `⚠️ 離線中：已先於本機標記「${item.name}」售罄` : `⚠️ 離線中：已先於本機恢復「${item.name}」供應`);
   }
 }
 
@@ -1209,6 +1256,7 @@ async function clearPosCart(skipConfirm = false) {
   state.posServiceFeeRate = 0;
   state.posManualDiscountReason = '';
   state.posCustomerNote = '';
+  state.posFriedBagPref = '';
   state.posTaxId = '';
   state.posLinePayOneTimeKey = '';
   state.posLinePayManualConfirmed = false;
@@ -1226,7 +1274,7 @@ function isXp2DrinkCategory(catName) {
 function formatXp2NowText() {
   const d = new Date();
   const pad = n => (n < 10 ? '0' + n : String(n));
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function ensureXp2ClockRunning() {
@@ -1239,7 +1287,7 @@ function ensureXp2ClockRunning() {
     }
     const el = document.getElementById('xp2ClockText');
     if (el) el.textContent = formatXp2NowText();
-  }, 1000);
+  }, 30000);
 }
 
 function getXp2SelectedCartIndex() {
@@ -1714,11 +1762,18 @@ function xp2OpenCheckoutModal(preferredPay) {
   if (el) el.classList.add('open');
 }
 
-function xp2CloseCheckoutModal() {
+function xp2CloseCheckoutModal(skipRender = false) {
   const el = document.getElementById('xp2CheckoutModal');
   if (el) el.classList.remove('open');
-  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
-  if (store && state.xp2Mode) renderXp2ClassicPosPanel(store);
+  if (!skipRender) {
+    const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+    if (store && state.xp2Mode) renderXp2ClassicPosPanel(store);
+  }
+}
+
+function xp2ToggleFriedBagPref(pref) {
+  state.posFriedBagPref = state.posFriedBagPref === pref ? '' : pref;
+  xp2RenderCheckoutModal();
 }
 
 function xp2CheckoutSetPay(method) {
@@ -1760,7 +1815,7 @@ async function xp2InstantExactCashCheckout() {
   const { finalTotal } = calcCurrentPosTotals(store);
   state.posPayment = '現場現金';
   state.posCashReceived = String(finalTotal);
-  xp2CloseCheckoutModal();
+  xp2CloseCheckoutModal(true);
   await submitMerchantPosOrder({ fastMode: true });
 }
 
@@ -1782,7 +1837,7 @@ async function xp2ConfirmCheckout() {
       return;
     }
   }
-  xp2CloseCheckoutModal();
+  xp2CloseCheckoutModal(true);
   await submitMerchantPosOrder({ fastMode: true });
 }
 
@@ -1792,6 +1847,8 @@ function xp2RenderCheckoutModal() {
   if (!body || !store) return;
 
   const { cutleryFee, takeoutFee, comboDiscount, finalTotal } = calcCurrentPosTotals(store);
+  const friedCount = typeof cartCountFriedItems === 'function' ? cartCountFriedItems(state.posCart, store) : 0;
+  if (friedCount <= 1 && state.posFriedBagPref) state.posFriedBagPref = '';
   const nextPreviewSeq = generatePreviewNextSeq(store.id, getTodayDateStr());
   const isLinePay = state.posPayment === 'LINE Pay';
   const cashRecNum = state.posCashReceived !== '' ? (parseInt(state.posCashReceived, 10) || 0) : finalTotal;
@@ -1814,6 +1871,16 @@ function xp2RenderCheckoutModal() {
       </div>
       <div class="xp2-co-summary-total">NT$ ${finalTotal}</div>
     </div>
+
+    ${friedCount > 1 ? `
+      <div class="xp2-fried-bag-box">
+        <div class="xp2-fried-bag-title">🍟 炸物共 ${friedCount} 份：確認是否裝一袋？</div>
+        <div class="xp2-fried-bag-row">
+          <button type="button" class="xp2-fried-bag-btn ${state.posFriedBagPref === '炸物裝一袋' ? 'active' : ''}" onclick="xp2ToggleFriedBagPref('炸物裝一袋')">${state.posFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 炸物裝一袋</button>
+          <button type="button" class="xp2-fried-bag-btn ${state.posFriedBagPref === '炸物分開裝' ? 'active' : ''}" onclick="xp2ToggleFriedBagPref('炸物分開裝')">${state.posFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 分開裝</button>
+        </div>
+      </div>
+    ` : ''}
 
     <div class="xp2-co-pay-tabs">
       <button type="button" class="xp2-co-pay-tab ${!isLinePay ? 'active-cash' : ''}" onclick="xp2CheckoutSetPay('現場現金')">💵 現金收款</button>
@@ -2110,161 +2177,241 @@ function renderXp2ClassicPosPanel(store) {
     modRowsHtml.push(`<div class="xp2-matrix-row">${rowCells.join('')}</div>`);
   }
 
-  panel.innerHTML = `
-    <div class="xp2-shell">
-      <!-- ==================== 左欄（28% 寬度） ==================== -->
-      <div class="xp2-left-col">
-        <!-- 頂部資訊塊 -->
-        <div class="xp2-info-box">
-          <div class="xp2-info-line xp2-info-store">${escapeHtml(store.name)} <span class="xp2-info-seq">#${escapeHtml(nextPreviewSeq)}</span></div>
-          <div class="xp2-info-line">收銀員：${escapeHtml(cashierLabel)}　份數：${totalQty} 份</div>
-          <div class="xp2-info-line" id="xp2ClockText">${escapeHtml(formatXp2NowText())}</div>
-        </div>
-
-        <!-- 內用／外帶狀態與總金額條 -->
-        <div class="xp2-status-bar">
-          <div class="xp2-status-tags">
-            <span class="xp2-status-pill ${state.posDineType === '外帶自取' ? 'takeout' : 'dinein'}">${state.posDineType === '外帶自取' ? '外帶+$1' : '內用'}</span>
-            ${state.posNeedCutlery ? `<span class="xp2-status-pill extra">餐具+$${storeCutleryPrice}</span>` : ''}
-            ${state.posTaxId ? `<span class="xp2-status-pill extra">統編:${escapeHtml(state.posTaxId)}</span>` : ''}
-            ${comboDiscount > 0 ? `<span class="xp2-status-pill discount">折-$${comboDiscount}</span>` : ''}
-            ${keypadBuf ? `<span class="xp2-status-pill input">鍵入:${escapeHtml(keypadBuf)}</span>` : ''}
-            ${state.posQtyMultiplier > 1 ? `<span class="xp2-status-pill input">下筆×${state.posQtyMultiplier}</span>` : ''}
+  // ==================== XP=2 防閃退局部更新引擎：固定外框與數字鍵盤僅初始化一次 ====================
+  let shellEl = panel.querySelector('.xp2-shell[data-xp2-mounted="1"]');
+  if (!shellEl) {
+    window._xp2RenderCache = {};
+    panel.innerHTML = `
+      <div class="xp2-shell" data-xp2-mounted="1">
+        <!-- 左欄（28% 寬度） -->
+        <div class="xp2-left-col">
+          <div class="xp2-info-box">
+            <div class="xp2-info-line xp2-info-store" id="xp2InfoStore"></div>
+            <div class="xp2-info-line" id="xp2InfoCashier"></div>
+            <div class="xp2-info-line" id="xp2ClockText"></div>
           </div>
-          <div class="xp2-total-amount">$${finalTotal}</div>
-        </div>
-
-        ${changeBanner ? `
-          <div class="xp2-change-strip">
-            <div class="xp2-change-strip-txt">✅ #${escapeHtml(changeBanner.pickupNumber)} 收$${changeBanner.cashReceived} <strong>找$${changeBanner.changeAmount}</strong></div>
-            <div class="xp2-change-strip-acts">
-              <button type="button" class="xp2-mini-strip-btn" onclick="requeueOrderPrintJob(${escapeJsAttr(changeBanner.orderId)})">重印</button>
-              <button type="button" class="xp2-mini-strip-btn" onclick="dismissPosChangeBanner()">✕</button>
+          <div class="xp2-status-bar" id="xp2StatusBar"></div>
+          <div id="xp2ChangeStripWrap"></div>
+          <div class="xp2-cart-list" id="xp2CartList"></div>
+          <div class="xp2-left-bottom">
+            <div class="xp2-left-btn-row">
+              <button type="button" class="xp2-btn xp2-ctrl-btn" onclick="xp2MoveSelection(-1)">↑</button>
+              <button type="button" class="xp2-btn xp2-ctrl-btn" onclick="xp2MoveSelection(1)">↓</button>
+              <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-del" onclick="xp2DeleteSelectedItem()">- 刪除</button>
+            </div>
+            <div class="xp2-left-btn-row">
+              <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-clear" onclick="xp2ClearCart()">清空</button>
+              <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-exit" onclick="exitXpMode()">切換一般版</button>
             </div>
           </div>
-        ` : ''}
+        </div>
 
-        <!-- 中間點單清單 -->
-        <div class="xp2-cart-list">
-          ${state.posCart.length === 0 ? `
-            <div class="xp2-cart-empty">
-              <div style="font-size:18px; font-weight:900; margin-bottom:4px;">尚無點餐品項</div>
-              <div style="font-size:13px;">請點右側藍格品項或紫格飲料加入</div>
-            </div>
-          ` : state.posCart.map((it, idx) => {
-            const isSelected = idx === selectedCartIdx;
-            const selTags = it.selections && Object.keys(it.selections).length > 0
-              ? Object.values(it.selections).filter(Boolean).join('、')
-              : '';
-            const lineSubtotal = (Number(it.price) || 0) * (it.qty || 1);
-            return `
-              <div class="xp2-cart-row ${isSelected ? 'selected' : ''}" onclick="xp2SelectCartItem(${idx})">
-                <div class="xp2-cart-row-top">
-                  <span class="xp2-cart-name">${idx + 1}. ${escapeHtml(it.baseName || it.name)}</span>
-                  <span class="xp2-cart-qty">×${it.qty || 1}</span>
-                  <span class="xp2-cart-sub">$${lineSubtotal}</span>
-                </div>
-                ${selTags ? `<div class="xp2-cart-mods">${escapeHtml(selTags)}</div>` : ''}
+        <!-- 右欄（72% 寬度） -->
+        <div class="xp2-right-col">
+          <div class="xp2-top-area">
+            <div class="xp2-shortcuts-col" id="xp2ShortcutsCol"></div>
+            <div class="xp2-numpad-col">
+              <div class="xp2-top-row">
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('7')">7</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('8')">8</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('9')">9</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-unit" onclick="xp2TapKeypad('1000')">千</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-clear" onclick="xp2TapKeypad('CLEAR')">清除</button></div>
               </div>
-            `;
-          }).join('')}
-        </div>
-
-        <!-- 底部大按鈕 -->
-        <div class="xp2-left-bottom">
-          <div class="xp2-left-btn-row">
-            <button type="button" class="xp2-btn xp2-ctrl-btn" onclick="xp2MoveSelection(-1)">↑</button>
-            <button type="button" class="xp2-btn xp2-ctrl-btn" onclick="xp2MoveSelection(1)">↓</button>
-            <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-del" onclick="xp2DeleteSelectedItem()">- 刪除</button>
+              <div class="xp2-top-row">
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('4')">4</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('5')">5</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('6')">6</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-unit" onclick="xp2TapKeypad('100')">百</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-op" onclick="xp2TapKeypad('QTY')">×<span class="xp2-num-sub">數量</span></button></div>
+              </div>
+              <div class="xp2-top-row">
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('1')">1</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('2')">2</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('3')">3</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('0')">0</button></div>
+                <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-cash" onclick="xp2TapKeypad('CASH')">實收</button></div>
+              </div>
+            </div>
+            <div class="xp2-checkout-col" id="xp2CheckoutCol"></div>
           </div>
-          <div class="xp2-left-btn-row">
-            <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-clear" onclick="xp2ClearCart()">清空</button>
-            <button type="button" class="xp2-btn xp2-ctrl-btn xp2-ctrl-exit" onclick="exitXpMode()">切換一般版</button>
+
+          <div class="xp2-cat-row" id="xp2CatRow"></div>
+
+          <div class="xp2-matrix-body">
+            <div class="xp2-dish-rows-wrap" id="xp2DishRowsWrap"></div>
+            <div class="xp2-mod-rows-wrap" id="xp2ModRowsWrap"></div>
           </div>
         </div>
       </div>
+    `;
+    shellEl = panel.querySelector('.xp2-shell[data-xp2-mounted="1"]');
+  }
 
-      <!-- ==================== 右欄（72% 寬度） ==================== -->
-      <div class="xp2-right-col">
-        <!-- 右欄頂部（25% 高度）：快捷鍵 + 數字鍵盤 + 跨三列超大結帳鈕 -->
-        <div class="xp2-top-area">
-          <!-- 左側快捷鍵 -->
-          <div class="xp2-shortcuts-col">
-            <div class="xp2-top-row">
-              <div class="xp2-top-cell xp2-w50">
-                <button type="button" class="xp2-btn xp2-func-btn ${state.posDineType === '內用自取' ? 'active-dine' : ''}" onclick="xp2SetDineType('內用自取')">內用</button>
-              </div>
-              <div class="xp2-top-cell xp2-w50">
-                <button type="button" class="xp2-btn xp2-func-btn ${state.posDineType === '外帶自取' ? 'active-takeout' : ''}" onclick="xp2SetDineType('外帶自取')">外帶 +$1</button>
-              </div>
-            </div>
-            <div class="xp2-top-row">
-              <div class="xp2-top-cell xp2-w100">
-                <button type="button" class="xp2-btn xp2-func-btn ${state.posNeedCutlery ? 'active-opt' : ''}" onclick="xp2ToggleCutlery()">
-                  ${state.posNeedCutlery ? '✓ ' : ''}需免洗餐具${storeCutleryPrice > 0 ? ` (+$${storeCutleryPrice})` : ''}
-                </button>
-              </div>
-            </div>
-            <div class="xp2-top-row">
-              <div class="xp2-top-cell xp2-w100">
-                <button type="button" class="xp2-btn xp2-func-btn ${state.posTaxId ? 'active-opt' : ''}" onclick="xp2OpenTaxIdModal()">
-                  ${state.posTaxId ? `統編 ${escapeHtml(state.posTaxId)}` : '統一編號'}
-                </button>
-              </div>
-            </div>
+  const cache = window._xp2RenderCache || (window._xp2RenderCache = {});
+
+  // 1. 資訊塊（純文字局部更新）
+  const infoStoreSig = `${store.id}|${store.name}|${nextPreviewSeq}`;
+  if (cache.infoStoreSig !== infoStoreSig) {
+    cache.infoStoreSig = infoStoreSig;
+    const el = document.getElementById('xp2InfoStore');
+    if (el) el.innerHTML = `${escapeHtml(store.name)} <span class="xp2-info-seq">#${escapeHtml(nextPreviewSeq)}</span>`;
+  }
+  const infoCashierTxt = `收銀員：${cashierLabel}　份數：${totalQty} 份`;
+  if (cache.infoCashierTxt !== infoCashierTxt) {
+    cache.infoCashierTxt = infoCashierTxt;
+    const el = document.getElementById('xp2InfoCashier');
+    if (el) el.textContent = infoCashierTxt;
+  }
+  const clockEl = document.getElementById('xp2ClockText');
+  if (clockEl && !clockEl.textContent) {
+    clockEl.textContent = formatXp2NowText();
+  }
+
+  // 2. 狀態列與總金額
+  const statusSig = `${state.posDineType}|${state.posNeedCutlery ? 1 : 0}|${storeCutleryPrice}|${state.posTaxId || ''}|${comboDiscount}|${keypadBuf}|${state.posQtyMultiplier}|${finalTotal}`;
+  if (cache.statusSig !== statusSig) {
+    cache.statusSig = statusSig;
+    const statusEl = document.getElementById('xp2StatusBar');
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <div class="xp2-status-tags">
+          <span class="xp2-status-pill ${state.posDineType === '外帶自取' ? 'takeout' : 'dinein'}">${state.posDineType === '外帶自取' ? '外帶+$1' : '內用'}</span>
+          ${state.posNeedCutlery ? `<span class="xp2-status-pill extra">餐具+$${storeCutleryPrice}</span>` : ''}
+          ${state.posTaxId ? `<span class="xp2-status-pill extra">統編:${escapeHtml(state.posTaxId)}</span>` : ''}
+          ${comboDiscount > 0 ? `<span class="xp2-status-pill discount">折-$${comboDiscount}</span>` : ''}
+          ${keypadBuf ? `<span class="xp2-status-pill input">鍵入:${escapeHtml(keypadBuf)}</span>` : ''}
+          ${state.posQtyMultiplier > 1 ? `<span class="xp2-status-pill input">下筆×${state.posQtyMultiplier}</span>` : ''}
+        </div>
+        <div class="xp2-total-amount">$${finalTotal}</div>
+      `;
+    }
+  }
+
+  // 3. 找零快報條
+  const bannerSig = changeBanner ? `${changeBanner.orderId}|${changeBanner.pickupNumber}|${changeBanner.cashReceived}|${changeBanner.changeAmount}` : '';
+  if (cache.bannerSig !== bannerSig) {
+    cache.bannerSig = bannerSig;
+    const bannerEl = document.getElementById('xp2ChangeStripWrap');
+    if (bannerEl) {
+      bannerEl.innerHTML = changeBanner ? `
+        <div class="xp2-change-strip">
+          <div class="xp2-change-strip-txt">✅ #${escapeHtml(changeBanner.pickupNumber)} 收$${changeBanner.cashReceived} <strong>找$${changeBanner.changeAmount}</strong></div>
+          <div class="xp2-change-strip-acts">
+            <button type="button" class="xp2-mini-strip-btn" onclick="requeueOrderPrintJob(${escapeJsAttr(changeBanner.orderId)})">重印</button>
+            <button type="button" class="xp2-mini-strip-btn" onclick="dismissPosChangeBanner()">✕</button>
           </div>
+        </div>
+      ` : '';
+    }
+  }
 
-          <!-- 中間數字鍵盤（3 列 × 5 欄） -->
-          <div class="xp2-numpad-col">
-            <div class="xp2-top-row">
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('7')">7</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('8')">8</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('9')">9</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-unit" onclick="xp2TapKeypad('1000')">千</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-clear" onclick="xp2TapKeypad('CLEAR')">清除</button></div>
+  // 4. 左側點單清單（僅在點單內容或選取列改變時局部更新）
+  const cartSig = `${selectedCartIdx}|` + state.posCart.map(it => `${it.id}:${it.qty}:${it.price}:${JSON.stringify(it.selections || {})}`).join('|');
+  if (cache.cartSig !== cartSig) {
+    cache.cartSig = cartSig;
+    const cartEl = document.getElementById('xp2CartList');
+    if (cartEl) {
+      cartEl.innerHTML = state.posCart.length === 0 ? `
+        <div class="xp2-cart-empty">
+          <div style="font-size:18px; font-weight:900; margin-bottom:4px;">尚無點餐品項</div>
+          <div style="font-size:13px;">請點右側黃格品項或紫格飲料加入</div>
+        </div>
+      ` : state.posCart.map((it, idx) => {
+        const isSelected = idx === selectedCartIdx;
+        const selTags = it.selections && Object.keys(it.selections).length > 0
+          ? Object.values(it.selections).filter(Boolean).join('、')
+          : '';
+        const lineSubtotal = (Number(it.price) || 0) * (it.qty || 1);
+        return `
+          <div class="xp2-cart-row ${isSelected ? 'selected' : ''}" onclick="xp2SelectCartItem(${idx})">
+            <div class="xp2-cart-row-top">
+              <span class="xp2-cart-name">${idx + 1}. ${escapeHtml(it.baseName || it.name)}</span>
+              <span class="xp2-cart-qty">×${it.qty || 1}</span>
+              <span class="xp2-cart-sub">$${lineSubtotal}</span>
             </div>
-            <div class="xp2-top-row">
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('4')">4</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('5')">5</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('6')">6</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-unit" onclick="xp2TapKeypad('100')">百</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-op" onclick="xp2TapKeypad('QTY')">×<span class="xp2-num-sub">數量</span></button></div>
-            </div>
-            <div class="xp2-top-row">
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('1')">1</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('2')">2</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('3')">3</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn" onclick="xp2TapKeypad('0')">0</button></div>
-              <div class="xp2-top-cell xp2-w20"><button type="button" class="xp2-btn xp2-num-btn xp2-num-cash" onclick="xp2TapKeypad('CASH')">實收</button></div>
-            </div>
+            ${selTags ? `<div class="xp2-cart-mods">${escapeHtml(selTags)}</div>` : ''}
           </div>
+        `;
+      }).join('');
+      if (prevCartScroll > 0) cartEl.scrollTop = prevCartScroll;
+    }
+  }
 
-          <!-- 最右側：跨三列超大 + 結帳 按鈕 -->
-          <div class="xp2-checkout-col">
-            <button type="button" class="xp2-btn xp2-checkout-big-btn" ${(state.posCart.length === 0 || isLockedShift || state.isPosSubmitting) ? 'disabled' : ''} onclick="xp2OpenCheckoutModal('現場現金')">
-              <span class="xp2-checkout-big-title">${isLockedShift ? '🔒 已日結' : '+ 結帳'}</span>
-              ${finalTotal > 0 ? `<span class="xp2-checkout-big-amt">$${finalTotal}</span>` : ''}
-              ${previewChange >= 0 ? `<span class="xp2-checkout-big-chg">收$${keypadNum} 找$${previewChange}</span>` : ''}
+  // 5. 右上左側快捷鍵
+  const shortcutSig = `${state.posDineType}|${state.posNeedCutlery ? 1 : 0}|${storeCutleryPrice}|${state.posTaxId || ''}`;
+  if (cache.shortcutSig !== shortcutSig) {
+    cache.shortcutSig = shortcutSig;
+    const scEl = document.getElementById('xp2ShortcutsCol');
+    if (scEl) {
+      scEl.innerHTML = `
+        <div class="xp2-top-row">
+          <div class="xp2-top-cell xp2-w50">
+            <button type="button" class="xp2-btn xp2-func-btn ${state.posDineType === '內用自取' ? 'active-dine' : ''}" onclick="xp2SetDineType('內用自取')">內用</button>
+          </div>
+          <div class="xp2-top-cell xp2-w50">
+            <button type="button" class="xp2-btn xp2-func-btn ${state.posDineType === '外帶自取' ? 'active-takeout' : ''}" onclick="xp2SetDineType('外帶自取')">外帶 +$1</button>
+          </div>
+        </div>
+        <div class="xp2-top-row">
+          <div class="xp2-top-cell xp2-w100">
+            <button type="button" class="xp2-btn xp2-func-btn ${state.posNeedCutlery ? 'active-opt' : ''}" onclick="xp2ToggleCutlery()">
+              ${state.posNeedCutlery ? '✓ ' : ''}需免洗餐具${storeCutleryPrice > 0 ? ` (+$${storeCutleryPrice})` : ''}
             </button>
           </div>
         </div>
-
-        <!-- 右欄中間（亮綠色 8 欄分類列） -->
-        <div class="xp2-cat-row">
-          ${catCellsHtml.join('')}
+        <div class="xp2-top-row">
+          <div class="xp2-top-cell xp2-w100">
+            <button type="button" class="xp2-btn xp2-func-btn ${state.posTaxId ? 'active-opt' : ''}" onclick="xp2OpenTaxIdModal()">
+              ${state.posTaxId ? `統編 ${escapeHtml(state.posTaxId)}` : '統一編號'}
+            </button>
+          </div>
         </div>
+      `;
+    }
+  }
 
-        <!-- 右欄主體（8 欄 × 6 列傳統觸控方格陣列：前 4 列品項+常駐飲料，底 2 列一鍵客製） -->
-        <div class="xp2-matrix-body">
-          ${topRowsHtml.join('')}
-          ${modRowsHtml.join('')}
-        </div>
-      </div>
-    </div>
-  `;
+  // 6. 最右上跨三列超大結帳鈕
+  const checkoutSig = `${state.posCart.length > 0 ? 1 : 0}|${isLockedShift ? 1 : 0}|${state.isPosSubmitting ? 1 : 0}|${finalTotal}|${keypadNum}|${previewChange}`;
+  if (cache.checkoutSig !== checkoutSig) {
+    cache.checkoutSig = checkoutSig;
+    const coEl = document.getElementById('xp2CheckoutCol');
+    if (coEl) {
+      coEl.innerHTML = `
+        <button type="button" class="xp2-btn xp2-checkout-big-btn" ${(state.posCart.length === 0 || isLockedShift || state.isPosSubmitting) ? 'disabled' : ''} onclick="xp2OpenCheckoutModal('現場現金')">
+          <span class="xp2-checkout-big-title">${isLockedShift ? '🔒 已日結' : '+ 結帳'}</span>
+          ${finalTotal > 0 ? `<span class="xp2-checkout-big-amt">$${finalTotal}</span>` : ''}
+          ${previewChange >= 0 ? `<span class="xp2-checkout-big-chg">收$${keypadNum} 找$${previewChange}</span>` : ''}
+        </button>
+      `;
+    }
+  }
 
-  const newCartList = document.querySelector('#storePanel-pos .xp2-cart-list');
-  if (newCartList && prevCartScroll > 0) newCartList.scrollTop = prevCartScroll;
+  // 7. 亮綠色分類列（僅分類或選中分類改變時更新）
+  const catSig = `${store.id}|${activeCat}|${catPage}|${rawCategories.join(',')}`;
+  if (cache.catSig !== catSig) {
+    cache.catSig = catSig;
+    const catEl = document.getElementById('xp2CatRow');
+    if (catEl) catEl.innerHTML = catCellsHtml.join('');
+  }
+
+  // 8. 前 4 列品項＋常駐飲料（點客製／改數量／敲鍵盤時完全不重繪！）
+  const dishSig = `${store.id}|${activeCat}|${dishPage}|${hasDrinkRail ? 1 : 0}|`
+    + pageDishes.map(m => `${m.id}:${m.name}:${m.soldOut ? 1 : 0}`).join(',') + '|'
+    + drinkMenus.slice(0, 4).map(d => `${d.id}:${d.name}:${d.soldOut ? 1 : 0}`).join(',');
+  if (cache.dishSig !== dishSig) {
+    cache.dishSig = dishSig;
+    const dishEl = document.getElementById('xp2DishRowsWrap');
+    if (dishEl) dishEl.innerHTML = topRowsHtml.join('');
+  }
+
+  // 9. 最底 2 列客製化區（僅選中餐點或其選項變更時更新）
+  const modSig = `${selectedCartIdx}|${selectedCartItem ? selectedCartItem.id : ''}|${modPage}|${selectedCartItem ? JSON.stringify(selectedCartItem.selections || {}) : ''}|${allMods.map(m => `${m.groupName}:${m.label}:${m.extra}:${m.soldOut ? 1 : 0}`).join(',')}`;
+  if (cache.modSig !== modSig) {
+    cache.modSig = modSig;
+    const modEl = document.getElementById('xp2ModRowsWrap');
+    if (modEl) modEl.innerHTML = modRowsHtml.join('');
+  }
 }
 
 // 一-4：POS 單品行內備註與單品招待 / 折扣
@@ -2845,6 +2992,8 @@ function renderPosTwoStepCheckoutModal() {
   if (!box || !store) return;
 
   const { subtotal, cutleryFee, discount, percentDiscount, manualDiscount, serviceFee, finalTotal } = calcCurrentPosTotals(store);
+  const friedCount = typeof cartCountFriedItems === 'function' ? cartCountFriedItems(state.posCart, store) : 0;
+  if (friedCount <= 1 && state.posFriedBagPref) state.posFriedBagPref = '';
   const totalDisc = discount + percentDiscount + manualDiscount;
   const isReserve = state.posTimeMode === 'RESERVE';
   const nextPreviewSeq = generatePreviewNextSeq(store.id, isReserve ? state.posReserveDate : getTodayDateStr());
@@ -2883,6 +3032,16 @@ function renderPosTwoStepCheckoutModal() {
         <span style="font-size:1.55rem; font-weight:950; color:var(--red);">NT$ ${finalTotal}</span>
       </div>
     </div>
+
+    ${friedCount > 1 ? `
+      <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:10px; padding:9px 12px; margin-bottom:12px;">
+        <div style="font-size:0.82rem; font-weight:950; color:#92400E; margin-bottom:6px;">🍟 炸物共 ${friedCount} 份：確認裝袋方式（選填，將印於廚房單）</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <button type="button" class="pos-chip-btn ${state.posFriedBagPref === '炸物裝一袋' ? 'active' : ''}" style="padding:8px 6px; font-size:0.86rem;" onclick="state.posFriedBagPref=(state.posFriedBagPref==='炸物裝一袋'?'':'炸物裝一袋'); renderPosTwoStepCheckoutModal();">${state.posFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 炸物裝一袋</button>
+          <button type="button" class="pos-chip-btn ${state.posFriedBagPref === '炸物分開裝' ? 'active' : ''}" style="padding:8px 6px; font-size:0.86rem;" onclick="state.posFriedBagPref=(state.posFriedBagPref==='炸物分開裝'?'':'炸物分開裝'); renderPosTwoStepCheckoutModal();">${state.posFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 分開裝</button>
+        </div>
+      </div>
+    ` : ''}
 
     <label class="field-label">💳 ${t('選擇收款方式（支援現金、LINE Pay 掃碼扣款與複合付款）', 'Payment Method (Cash, LINE Pay Scan & Split Pay)', 'お支払い方法（現金・LINE Pay・併用）', '결제 수단 (현금・LINE Pay・복합결제)')}</label>
     <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:12px;">
@@ -3799,6 +3958,11 @@ async function submitMerchantPosOrder(opts = {}) {
       ? `📅 預訂 ${pickupDateVal} ${state.posReserveTime}`
       : `⚡ 現場立即製作`;
 
+    const posFriedCount = typeof cartCountFriedItems === 'function' ? cartCountFriedItems(state.posCart, store) : 0;
+    const finalPosCustomerNote = typeof mergeFriedBagPrefIntoNote === 'function'
+      ? mergeFriedBagPrefIntoNote(state.posCustomerNote || '', posFriedCount > 1 ? state.posFriedBagPref : '')
+      : (state.posCustomerNote || '');
+
     const draftOrder = sanitizeIncomingOrder({
       orderId: generateOrderToken(),
       pickupNumber: generateMerchantPosOfflinePickupNumber(store.id, pickupDateVal),
@@ -3806,7 +3970,7 @@ async function submitMerchantPosOrder(opts = {}) {
       storeName: store.name,
       studentId: isReserve ? '📅 櫃檯預訂' : '🖥️ 現場POS',
       dineType: state.posDineType,
-      customerNote: state.posCustomerNote || '',
+      customerNote: finalPosCustomerNote,
       taxId: cleanTaxId,
       cashReceived: cashReceivedNum,
       changeGiven: changeAmount,
@@ -3865,6 +4029,9 @@ async function submitMerchantPosOrder(opts = {}) {
     };
 
     state.posCart = [];
+    state.posDineType = '內用自取';
+    state.posNeedCutlery = false;
+    state.posFriedBagPref = '';
     state.xpInlineModTargetCartIdx = -1;
     state.xpInlineModPreselect = {};
     state.xp2SelectedCartIdx = -1;
@@ -8086,10 +8253,18 @@ function renderMerchantSettingsPanel(store) {
 
         <div class="chart-card">
           <h3 style="font-size:0.98rem; font-weight:900; margin-bottom:10px;">➕ ${t(`手動新增單一品項至「${store.name}」`, `Add Menu Item to ${trTerm(store.name)}`, `${trTerm(store.name)}にメニューを追加`, `${trTerm(store.name)}에 메뉴 추가`)}</h3>
-          <div style="display:grid; grid-template-columns:0.9fr 1.3fr 0.65fr 0.65fr 0.9fr 1.2fr auto; gap:8px; align-items:end;">
+          ${(function () {
+            const existingCats = getStoreExistingMenuCategories(store);
+            const hasExisting = existingCats.length > 0;
+            return `
+          <div style="display:grid; grid-template-columns:1.05fr 1.25fr 0.65fr 0.65fr 0.9fr 1.15fr auto; gap:8px; align-items:end;">
             <div>
               <label class="field-label">${t('分類', 'Category', 'カテゴリ', '카테고리')}</label>
-              <input type="text" id="newMenuCat" class="select-input" placeholder="${t('如：主廚推薦', 'e.g. Mains', '例：メイン', '예: 메인')}" value="${escapeHtml(t('主廚推薦', 'Mains', 'おすすめ', '추천 메뉴'))}">
+              <select id="newMenuCatSelect" class="select-input" onchange="onMenuCategorySelectChange('newMenuCatSelect', 'newMenuCatCustom')">
+                ${existingCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+                <option value="__NEW__" ${!hasExisting ? 'selected' : ''}>➕ 新增其他分類...</option>
+              </select>
+              <input type="text" id="newMenuCatCustom" class="select-input" style="display:${!hasExisting ? 'block' : 'none'}; margin-top:5px;" placeholder="${t('輸入新分類名稱，如：主廚推薦', 'Enter new category name')}">
             </div>
             <div>
               <label class="field-label">${t('餐點名稱 *', 'Dish Name *', '商品名 *', '메뉴명 *')}</label>
@@ -8113,6 +8288,8 @@ function renderMerchantSettingsPanel(store) {
             </div>
             <button type="button" class="btn-tip-action" style="height:40px;" onclick="addManualMenuItem()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
           </div>
+            `;
+          })()}
         </div>
 
         <div class="chart-card">
@@ -8157,6 +8334,7 @@ function renderMerchantSettingsPanel(store) {
                   <div style="min-width:0; flex:1;">
                     <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
                       <span style="font-size:0.7rem; font-weight:800; color:var(--brand-dark); background:var(--brand-light); padding:2px 6px; border-radius:4px;">${escapeHtml(trTerm(m.category || '主餐'))}</span>
+                      ${m.soldOutGroup ? `<span style="font-size:0.68rem; font-weight:900; color:#6D28D9; background:#F3E8FF; border:1px solid #D8B4FE; padding:1px 6px; border-radius:4px;" title="連動售完群組">🔗 ${escapeHtml(m.soldOutGroup)}</span>` : ''}
                       ${isSoldOut ? `<span class="sold-out-ribbon" style="${m.soldOutType === 'PERMANENT' ? 'background:#DC2626;' : 'background:#D97706;'}">${m.soldOutType === 'PERMANENT' ? t('長期缺貨', 'Out of Stock', '長期品切', '장기 품절') : t('本日售完', 'Sold Out Today', '本日完売', '오늘 품절')}</span>` : (m.tag ? `<span data-dish-name="1" style="font-size:0.68rem; font-weight:800; color:#4338CA; background:#EEF2FF; padding:2px 6px; border-radius:4px;">${escapeHtml(trTerm(m.tag))}</span>` : '')}
                       ${dLimit > 0 ? `<span style="font-size:0.68rem; font-weight:900; color:#DC2626; background:#FEE2E2; padding:2px 6px; border-radius:4px;">📦 ${t(`限量 ${dLimit} 份`, `Limit ${dLimit}`, `限定${dLimit}`, `한정 ${dLimit}`)}${m.remainingToday !== null && m.remainingToday !== undefined ? ` (${t('剩', 'Left', '残', '잔여')}:${m.remainingToday})` : ''}</span>` : ''}
                       <span style="font-size:0.68rem; color:var(--text-secondary); font-weight:700;">⚙️ ${optCount} ${t('組選項', 'opts', 'オプション', '옵션')} (ID:${escapeHtml(m.id)})</span>
@@ -9183,6 +9361,48 @@ async function saveNewMerchantPin() {
 }
 
 // ==================== 6.5 菜單辨識、穩定品項 ID 保護與進階餐點編輯器 ====================
+function getStoreExistingMenuCategories(store) {
+  const list = [];
+  ((store && store.menus) || []).forEach(m => {
+    const c = String((m && m.category) || '').trim();
+    if (c && list.indexOf(c) === -1) list.push(c);
+  });
+  return list;
+}
+
+function getStoreExistingSoldOutGroups(store) {
+  const list = [];
+  ((store && store.menus) || []).forEach(m => {
+    const g = String((m && m.soldOutGroup) || '').trim();
+    if (g && list.indexOf(g) === -1) list.push(g);
+  });
+  return list;
+}
+
+function onMenuCategorySelectChange(selectId, customInputId) {
+  const sel = document.getElementById(selectId);
+  const inp = document.getElementById(customInputId);
+  if (!sel || !inp) return;
+  if (sel.value === '__NEW__') {
+    inp.style.display = 'block';
+    setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30);
+  } else {
+    inp.style.display = 'none';
+  }
+}
+
+function resolveCategorySelectValue(selectId, customInputId, fallback = '主廚推薦') {
+  const sel = document.getElementById(selectId);
+  if (sel) {
+    if (sel.value === '__NEW__') {
+      const customVal = (document.getElementById(customInputId)?.value || '').trim();
+      return customVal || '';
+    }
+    return String(sel.value || '').trim() || fallback;
+  }
+  return fallback;
+}
+
 async function addManualMenuItem() {
   if (!isMerchantSessionValidNow()) {
     checkMerchantSecurityGate();
@@ -9191,7 +9411,14 @@ async function addManualMenuItem() {
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
 
-  const cat = document.getElementById('newMenuCat')?.value.trim() || '主廚推薦';
+  const catSelEl = document.getElementById('newMenuCatSelect');
+  const cat = resolveCategorySelectValue('newMenuCatSelect', 'newMenuCatCustom', '主廚推薦');
+  if (catSelEl && catSelEl.value === '__NEW__' && !cat) {
+    showToast('⚠️ 請輸入新的分類名稱！');
+    document.getElementById('newMenuCatCustom')?.focus();
+    return;
+  }
+  const finalCat = cat || '主廚推薦';
   const name = document.getElementById('newMenuName')?.value.trim();
   const price = parseInt(document.getElementById('newMenuPrice')?.value, 10);
   const dailyLimit = Math.max(0, parseInt(document.getElementById('newMenuDailyLimit')?.value || '0', 10) || 0);
@@ -9209,18 +9436,18 @@ async function addManualMenuItem() {
 
     // B1 關鍵修正：同店不同分類允許同名品項（例如酥炸類・雞米花 vs 飯捲類・雞米花），僅比對 (category + name)
     const existingIdx = store.menus.findIndex(m =>
-      String(m.category || '主廚推薦').trim() === cat &&
+      String(m.category || '主廚推薦').trim() === finalCat &&
       String(m.name || '').trim() === name
     );
     const stableId = existingIdx > -1 && store.menus[existingIdx].id
       ? store.menus[existingIdx].id
-      : generateStableMenuItemId(store.id, name, store.menus, cat);
+      : generateStableMenuItemId(store.id, name, store.menus, finalCat);
 
     if (existingIdx > -1) {
       store.menus[existingIdx] = {
         ...store.menus[existingIdx],
         id: stableId,
-        category: cat,
+        category: finalCat,
         name,
         price,
         dailyLimit,
@@ -9231,12 +9458,13 @@ async function addManualMenuItem() {
       store.menus.push({
         id: stableId,
         storeId: store.id,
-        category: cat,
+        category: finalCat,
         name,
         price,
         dailyLimit,
         remainingToday: dailyLimit > 0 ? dailyLimit : null,
         tag,
+        soldOutGroup: '',
         soldOut: false,
         soldOutType: 'NONE',
         soldOutDate: '',
@@ -9249,9 +9477,9 @@ async function addManualMenuItem() {
     const targetSavedItem = existingIdx > -1 ? store.menus[existingIdx] : store.menus[store.menus.length - 1];
     // #34 改用單一品項原子更新 (upsertSingleMenuItem)，避免兩台裝置同時改菜單時整份陣列互相覆蓋
     await syncSingleMenuItemToCloud(store, targetSavedItem);
-    recordMerchantAuditLog(existingIdx > -1 ? '更新菜單品項' : '新增菜單品項', `[${cat}] ${name} (NT$${price} / ID:${stableId})`);
+    recordMerchantAuditLog(existingIdx > -1 ? '更新菜單品項' : '新增菜單品項', `[${finalCat}] ${name} (NT$${price} / ID:${stableId})`);
     renderMerchantSettingsPanel(store);
-    showToast(`✅ 已儲存餐點：[${cat}] ${name} (NT$${price} / ID:${stableId})`);
+    showToast(`✅ 已儲存餐點：[${finalCat}] ${name} (NT$${price} / ID:${stableId})`);
   }, t('⏳ 儲存中...', '⏳ Saving...'));
 }
 
@@ -9609,6 +9837,11 @@ function clearEditMenuPhoto() {
 function renderMenuEditModalBody(item) {
   const body = document.getElementById('menuEditModalBody');
   if (!body) return;
+  const store = state.stores.find(s => s.id === state.merchantStoreId);
+  const existingCats = getStoreExistingMenuCategories(store);
+  const itemCat = String(item.category || '主廚推薦').trim() || '主廚推薦';
+  const isCustomCat = item.__isCustomCat === true || (existingCats.length > 0 && existingCats.indexOf(itemCat) === -1);
+  const existingGroups = getStoreExistingSoldOutGroups(store);
   const imgUrl = String(item.image || '').trim();
   const hasImg = /^(https?:\/\/|data:image\/)/i.test(imgUrl);
 
@@ -9616,12 +9849,24 @@ function renderMenuEditModalBody(item) {
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
       <div>
         <label class="field-label">🏷️ 餐點分類 *</label>
-        <input type="text" id="editMenuCat" class="select-input" value="${escapeHtml(item.category || '主廚推薦')}">
+        <select id="editMenuCatSelect" class="select-input" onchange="onMenuCategorySelectChange('editMenuCatSelect', 'editMenuCatCustom')">
+          ${existingCats.map(c => `<option value="${escapeHtml(c)}" ${(!isCustomCat && c === itemCat) ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          <option value="__NEW__" ${isCustomCat || existingCats.length === 0 ? 'selected' : ''}>➕ 新增其他分類...</option>
+        </select>
+        <input type="text" id="editMenuCatCustom" class="select-input" style="display:${(isCustomCat || existingCats.length === 0) ? 'block' : 'none'}; margin-top:5px;" placeholder="輸入新分類名稱..." value="${escapeHtml(isCustomCat || existingCats.length === 0 ? itemCat : '')}">
       </div>
       <div>
         <label class="field-label">✨ 人氣/推薦標籤 (選填)</label>
         <input type="text" id="editMenuTag" class="select-input" placeholder="如：🔥 招牌必點" value="${escapeHtml(item.tag || '')}">
       </div>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <label class="field-label">🔗 連動售完群組（選填，如「雞米花」：同群組任一品項售完或上架時將自動同步）</label>
+      <input type="text" id="editMenuSoldOutGroup" list="editMenuSoldOutGroupList" maxlength="40" class="select-input" placeholder="例：雞米花（留空則獨立控制售完）" value="${escapeHtml(item.soldOutGroup || '')}">
+      <datalist id="editMenuSoldOutGroupList">
+        ${existingGroups.map(g => `<option value="${escapeHtml(g)}"></option>`).join('')}
+      </datalist>
     </div>
 
     <div style="display:grid; grid-template-columns:1.4fr 0.8fr 0.8fr; gap:10px; margin-bottom:10px;">
@@ -9771,10 +10016,14 @@ function renderMenuEditModalBody(item) {
 function syncTempModalInputsBeforeRerender() {
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   const orig = (store && store.menus && store.menus[state.editingMenuStoreIndex]) || {};
+  const selEl = document.getElementById('editMenuCatSelect');
+  const isCustomCat = Boolean(selEl && selEl.value === '__NEW__');
   return {
     id: orig.id || '',
-    category: document.getElementById('editMenuCat')?.value || '主廚推薦',
+    category: resolveCategorySelectValue('editMenuCatSelect', 'editMenuCatCustom', orig.category || '主廚推薦'),
+    __isCustomCat: isCustomCat,
     tag: document.getElementById('editMenuTag')?.value || '',
+    soldOutGroup: (document.getElementById('editMenuSoldOutGroup')?.value || '').trim().slice(0, 40),
     name: document.getElementById('editMenuName')?.value || '',
     nameEn: document.getElementById('editMenuNameEn')?.value || '',
     description: document.getElementById('editMenuDescription')?.value || '',
@@ -9876,8 +10125,16 @@ async function saveEditedMenuItem() {
     state.tempManagerOverridePin = mgrAuth.managerOverridePin;
   }
 
-  const cat = document.getElementById('editMenuCat')?.value.trim() || '主廚推薦';
+  const editCatSel = document.getElementById('editMenuCatSelect');
+  const cat = resolveCategorySelectValue('editMenuCatSelect', 'editMenuCatCustom', '主廚推薦');
+  if (editCatSel && editCatSel.value === '__NEW__' && !cat) {
+    showToast('⚠️ 請輸入新的分類名稱！');
+    document.getElementById('editMenuCatCustom')?.focus();
+    return;
+  }
+  const finalCat = cat || '主廚推薦';
   const tag = document.getElementById('editMenuTag')?.value.trim() || '';
+  const soldOutGroup = (document.getElementById('editMenuSoldOutGroup')?.value || '').trim().slice(0, 40);
   const name = document.getElementById('editMenuName')?.value.trim();
   const nameEn = (document.getElementById('editMenuNameEn')?.value || '').trim().slice(0, 80);
   const description = (document.getElementById('editMenuDescription')?.value || '').trim().slice(0, 160);
@@ -9900,9 +10157,10 @@ async function saveEditedMenuItem() {
 
   store.menus[idx] = {
     ...store.menus[idx],
-    id: store.menus[idx].id || generateStableMenuItemId(store.id, name, store.menus, cat),
-    category: cat,
+    id: store.menus[idx].id || generateStableMenuItemId(store.id, name, store.menus, finalCat),
+    category: finalCat,
     tag,
+    soldOutGroup,
     name,
     nameEn,
     description,
@@ -9921,10 +10179,10 @@ async function saveEditedMenuItem() {
     state.lastLocalStoreConfigUpdateTs = Date.now();
     saveLocalStores(state.stores);
     await syncSingleMenuItemToCloud(store, store.menus[idx]);
-    recordMerchantAuditLog('編輯菜單與客製選項', `[${cat}] ${name} (NT$${price}・站點:${station}${dailyLimit > 0 ? `・限量${dailyLimit}份` : ''})`);
+    recordMerchantAuditLog('編輯菜單與客製選項', `[${finalCat}] ${name} (NT$${price}・站點:${station}${soldOutGroup ? `・連動群組:${soldOutGroup}` : ''}${dailyLimit > 0 ? `・限量${dailyLimit}份` : ''})`);
     closeMenuEditModal();
     renderMerchantSettingsPanel(store);
-    showToast(`✅ 已更新「[${cat}] ${name}」之餐點設定、站點與客製選項！`);
+    showToast(`✅ 已更新「[${finalCat}] ${name}」之餐點設定、站點與客製選項！`);
   }, t('⏳ 儲存品項中...', '⏳ Saving Item...'));
 }
 
@@ -9936,7 +10194,7 @@ function openBatchApplyOptionsFromEditModal() {
   if (!store || idx < 0 || !store.menus[idx]) return;
 
   const origItem = store.menus[idx];
-  const currentCat = (document.getElementById('editMenuCat')?.value || origItem.category || '主廚推薦').trim() || '主廚推薦';
+  const currentCat = resolveCategorySelectValue('editMenuCatSelect', 'editMenuCatCustom', origItem.category || '主廚推薦') || origItem.category || '主廚推薦';
   const currentName = (document.getElementById('editMenuName')?.value || origItem.name || '').trim() || origItem.name;
   const optionsObj = buildOptionsObjectFromTempList(state.editingMenuTempOptions);
 

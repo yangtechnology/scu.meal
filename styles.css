@@ -4105,6 +4105,8 @@ body.xp2-mode * {
   animation: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
 }
 
 body.xp2-mode .app-header,
@@ -4214,7 +4216,7 @@ body.xp2-mode #storePanel-pos {
 .xp2-info-box {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
-  background: linear-gradient(180deg, #A4B7CF 0%, #8CA4C2 100%);
+  background-color: #9BB0CA;
   border: 2px solid #5B718E;
   border-radius: 2px;
   padding: 5px 8px;
@@ -4259,7 +4261,7 @@ body.xp2-mode #storePanel-pos {
   align-items: center;
   -webkit-justify-content: space-between;
   justify-content: space-between;
-  background: linear-gradient(180deg, #F3D4E3 0%, #E2B5CC 100%);
+  background-color: #EBC4D8;
   border: 2px solid #9D6B84;
   border-radius: 2px;
   padding: 5px 8px;
@@ -4325,6 +4327,11 @@ body.xp2-mode #storePanel-pos {
 }
 
 /* 非阻擋剛出單找零快報 */
+#xp2ChangeStripWrap {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+}
+
 .xp2-change-strip {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
@@ -4485,7 +4492,7 @@ body.xp2-mode #storePanel-pos {
   -webkit-flex: 1 1 0%;
   flex: 1 1 0%;
   margin-right: 3px;
-  background: linear-gradient(180deg, #E2E8F0 0%, #CBD5E1 100%);
+  background-color: #D8E0EB;
   color: #0F172A;
   font-size: 17px;
 }
@@ -4495,17 +4502,17 @@ body.xp2-mode #storePanel-pos {
 }
 
 .xp2-ctrl-del {
-  background: linear-gradient(180deg, #FECACA 0%, #F87171 100%);
+  background-color: #FCA5A5;
   color: #7F1D1D;
 }
 
 .xp2-ctrl-clear {
-  background: linear-gradient(180deg, #FEF3C7 0%, #FCD34D 100%);
-  color: #78350F;
+  background-color: #FCD34D;
+  color: #000000;
 }
 
 .xp2-ctrl-exit {
-  background: linear-gradient(180deg, #CBD5E1 0%, #94A3B8 100%);
+  background-color: #B4C2D4;
   color: #0F172A;
   font-size: 15px;
 }
@@ -4604,54 +4611,54 @@ body.xp2-mode #storePanel-pos {
 
 /* 左側快捷鍵 */
 .xp2-func-btn {
-  background: linear-gradient(180deg, #C7D2EC 0%, #A3B2D6 100%);
+  background-color: #B8C7E3;
   color: #0F172A;
   font-size: 16px;
 }
 
 .xp2-func-btn.active-dine {
-  background: linear-gradient(180deg, #3B82F6 0%, #1D4ED8 100%);
+  background-color: #2563EB;
   color: #FFFFFF;
   border-color: #93C5FD #1E3A8A #1E3A8A #93C5FD;
 }
 
 .xp2-func-btn.active-takeout {
-  background: linear-gradient(180deg, #F97316 0%, #DC2626 100%);
+  background-color: #EA580C;
   color: #FFFFFF;
   border-color: #FDBA74 #7F1D1D #7F1D1D #FDBA74;
 }
 
 .xp2-func-btn.active-opt {
-  background: linear-gradient(180deg, #10B981 0%, #047857 100%);
+  background-color: #059669;
   color: #FFFFFF;
   border-color: #6EE7B7 #064E3B #064E3B #6EE7B7;
 }
 
 /* 中間藍色數字鍵盤 */
 .xp2-num-btn {
-  background: linear-gradient(180deg, #8EB0EE 0%, #5F85CE 100%);
+  background-color: #7AA0E2;
   color: #071326;
   font-size: 24px;
 }
 
 .xp2-num-btn:active {
-  background: #3B63B0 !important;
+  background-color: #3B63B0 !important;
   color: #FFFFFF !important;
 }
 
 .xp2-num-unit {
-  background: linear-gradient(180deg, #A2BDF0 0%, #7093D6 100%);
+  background-color: #8CAEE8;
   font-size: 21px;
 }
 
 .xp2-num-clear {
-  background: linear-gradient(180deg, #CBD5E1 0%, #94A3B8 100%);
+  background-color: #B4C2D4;
   font-size: 17px;
   color: #7F1D1D;
 }
 
 .xp2-num-op {
-  background: linear-gradient(180deg, #93C5FD 0%, #60A5FA 100%);
+  background-color: #7CB8FB;
   font-size: 20px;
 }
 
@@ -4662,20 +4669,20 @@ body.xp2-mode #storePanel-pos {
 }
 
 .xp2-num-cash {
-  background: linear-gradient(180deg, #BBF7D0 0%, #4ADE80 100%);
+  background-color: #86EFAC;
   color: #064E3B;
   font-size: 17px;
 }
 
 /* 最右側跨三列超大 + 結帳按鈕 */
 .xp2-checkout-big-btn {
-  background: linear-gradient(180deg, #F2CBE0 0%, #DC9EC1 100%);
+  background-color: #E7B3D0;
   color: #1F1229;
   padding: 4px;
 }
 
 .xp2-checkout-big-btn:active {
-  background: #C47BA5 !important;
+  background-color: #C47BA5 !important;
   color: #FFFFFF !important;
 }
 
@@ -4725,25 +4732,26 @@ body.xp2-mode #storePanel-pos {
 }
 
 .xp2-cat-btn {
-  background: linear-gradient(180deg, #43F543 0%, #06C706 58%, #00A300 100%);
-  color: #05220B;
-  font-size: 23px;
+  background-color: #1CE01C;
+  color: #000000;
+  font-size: 24px;
   font-weight: 900;
   padding: 2px;
-  line-height: 1.08;
-  letter-spacing: 0.3px;
+  line-height: 1.06;
+  letter-spacing: 0.2px;
 }
 
 .xp2-cat-btn.active {
-  background: linear-gradient(180deg, #FEF08A 0%, #4ADE80 100%);
-  color: #052E16;
+  background-color: #FEF08A;
+  color: #000000;
   border-width: 3px;
-  border-color: #FACC15 #15803D #15803D #FACC15;
+  border-color: #CA8A04 #15803D #15803D #CA8A04;
 }
 
 .xp2-cat-pager {
-  background: linear-gradient(180deg, #A3E635 0%, #65A30D 100%);
-  font-size: 15px;
+  background-color: #84CC16;
+  color: #000000;
+  font-size: 16px;
 }
 
 /* ==================== 右欄主體（8 欄 × 6 列觸控方格陣列） ==================== */
@@ -4751,6 +4759,28 @@ body.xp2-mode #storePanel-pos {
   -webkit-flex: 1 1 0%;
   flex: 1 1 0%;
   min-height: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.xp2-dish-rows-wrap {
+  -webkit-flex: 0 0 66.6667%;
+  flex: 0 0 66.6667%;
+  height: 66.6667%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.xp2-mod-rows-wrap {
+  -webkit-flex: 0 0 33.3333%;
+  flex: 0 0 33.3333%;
+  height: 33.3333%;
   display: -webkit-flex;
   display: flex;
   -webkit-flex-direction: column;
@@ -4769,11 +4799,23 @@ body.xp2-mode #storePanel-pos {
   overflow: hidden;
 }
 
-/* 空格（經典深藍灰立體空方格） */
+.xp2-dish-rows-wrap > .xp2-matrix-row {
+  -webkit-flex: 1 1 25%;
+  flex: 1 1 25%;
+  height: 25%;
+}
+
+.xp2-mod-rows-wrap > .xp2-matrix-row {
+  -webkit-flex: 1 1 50%;
+  flex: 1 1 50%;
+  height: 50%;
+}
+
+/* 空格（經典深藍灰純色空方格） */
 .xp2-cell-empty {
   width: 100%;
   height: 100%;
-  background: linear-gradient(180deg, #839AB5 0%, #526882 100%);
+  background-color: #6B829E;
   border: 2px solid;
   border-top-color: #B4C4D8;
   border-left-color: #B4C4D8;
@@ -4782,82 +4824,77 @@ body.xp2-mode #storePanel-pos {
   border-radius: 3px;
 }
 
-/* 前 4 列：亮藍／青色品項格 */
+/* 前 4 列：亮黃色純色品項格（純黑高對比） */
 .xp2-dish-btn {
-  background: linear-gradient(180deg, #43D7F5 0%, #15AEDD 62%, #0B93C4 100%);
-  color: #051829;
+  background-color: #FCD34D;
+  color: #000000;
   padding: 2px;
-  line-height: 1.08;
+  line-height: 1.06;
 }
 
 .xp2-dish-btn:active {
-  background: #0284C7 !important;
-  color: #FFFFFF !important;
+  background-color: #F59E0B !important;
+  color: #000000 !important;
 }
 
-/* 右側第 8 欄：紫色常駐飲料格 */
+/* 右側第 8 欄：亮紫純色常駐飲料格（純黑高對比） */
 .xp2-drink-btn {
-  background: linear-gradient(180deg, #C782FF 0%, #9E47F5 62%, #8228DE 100%);
-  color: #140526;
+  background-color: #D8B4FE;
+  color: #000000;
   padding: 2px;
-  line-height: 1.08;
+  line-height: 1.06;
 }
 
 .xp2-drink-btn:active {
-  background: #6D28D9 !important;
-  color: #FFFFFF !important;
+  background-color: #C084FC !important;
+  color: #000000 !important;
 }
 
-/* 最底 2 列：一鍵客製化紫／藍格 */
+/* 最底 2 列：一鍵客製化亮紫／亮藍純色格（純黑字） */
 .xp2-mod-btn {
   padding: 2px;
-  line-height: 1.08;
+  line-height: 1.06;
 }
 
 .xp2-mod-purple {
-  background: linear-gradient(180deg, #BD6DFF 0%, #9333EA 60%, #771FC9 100%);
-  color: #FFFFFF;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  background-color: #D8B4FE;
+  color: #000000;
 }
 
 .xp2-mod-blue {
-  background: linear-gradient(180deg, #38BDF8 0%, #0284C7 62%, #0369A1 100%);
-  color: #FFFFFF;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  background-color: #7DD3FC;
+  color: #000000;
 }
 
 .xp2-mod-active {
-  background: linear-gradient(180deg, #FEF08A 0%, #FACC15 100%) !important;
-  color: #7C2D12 !important;
-  text-shadow: none !important;
+  background-color: #FB923C !important;
+  color: #000000 !important;
   border-width: 3px !important;
-  border-color: #EA580C #9A3412 #9A3412 #EA580C !important;
+  border-color: #DC2626 #7C2D12 #7C2D12 #DC2626 !important;
 }
 
 .xp2-pager-btn {
-  background: linear-gradient(180deg, #FDE68A 0%, #F59E0B 100%) !important;
-  color: #451A03 !important;
-  text-shadow: none !important;
+  background-color: #FDBA74 !important;
+  color: #000000 !important;
 }
 
 .xp2-cell-soldout {
-  background: #94A3B8 !important;
-  color: #475569 !important;
-  text-shadow: none !important;
-  opacity: 0.65 !important;
+  background-color: #94A3B8 !important;
+  color: #334155 !important;
+  opacity: 0.72 !important;
 }
 
 .xp2-tile-title {
   display: block;
   width: 100%;
-  font-size: 22px;
+  font-size: 23px;
   font-weight: 900;
-  line-height: 1.08;
+  line-height: 1.06;
   white-space: normal;
   word-break: break-all;
   overflow-wrap: break-word;
   overflow: hidden;
-  max-height: 3.32em;
+  max-height: 3.24em;
 }
 
 .xp2-drink-btn .xp2-tile-title {
@@ -4865,7 +4902,7 @@ body.xp2-mode #storePanel-pos {
 }
 
 .xp2-mod-btn .xp2-tile-title {
-  font-size: 20px;
+  font-size: 21px;
 }
 
 .xp2-tile-price {
@@ -4874,16 +4911,16 @@ body.xp2-mode #storePanel-pos {
   font-size: 13px;
   font-weight: 900;
   line-height: 1;
-  color: #082F49;
+  color: #991B1B;
 }
 
 .xp2-mod-purple .xp2-tile-price,
 .xp2-mod-blue .xp2-tile-price {
-  color: #FEF08A;
+  color: #991B1B;
 }
 
 .xp2-mod-active .xp2-tile-price {
-  color: #9A3412;
+  color: #7F1D1D;
 }
 
 .xp2-tile-sub {
@@ -4902,7 +4939,7 @@ body.xp2-mode #storePanel-pos {
   bottom: 0;
   left: 0;
   z-index: 600;
-  background-color: rgba(15, 23, 42, 0.72);
+  background-color: transparent;
   -webkit-align-items: center;
   align-items: center;
   -webkit-justify-content: center;
@@ -4915,13 +4952,21 @@ body.xp2-mode #storePanel-pos {
   display: flex;
 }
 
+#xp2CheckoutModal {
+  -webkit-justify-content: flex-end;
+  justify-content: flex-end;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
+  padding: 8px 8px 0 0;
+}
+
 .xp2-modal-box {
   width: 540px;
   max-width: 96%;
-  max-height: 94%;
+  max-height: 96%;
   overflow-y: auto;
   background-color: #F8FAFC;
-  border: 3px solid #1E293B;
+  border: 4px solid #0F172A;
   border-radius: 6px;
   padding: 12px;
 }
@@ -4964,25 +5009,71 @@ body.xp2-mode #storePanel-pos {
 .xp2-modal-fast-exact-btn {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
-  height: 46px;
-  padding: 0 14px;
-  border: 2px solid #047857;
+  height: 54px;
+  padding: 0 18px;
+  border: 3px solid #14532D;
   border-radius: 5px;
-  background: linear-gradient(180deg, #22C55E 0%, #16A34A 58%, #15803D 100%);
+  background-color: #16A34A;
   color: #FFFFFF;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 900;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .xp2-modal-fast-exact-btn:active {
-  background: #166534 !important;
+  background-color: #15803D !important;
 }
 
 .xp2-modal-fast-exact-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.xp2-fried-bag-box {
+  background-color: #FEF3C7;
+  border: 2px solid #D97706;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.xp2-fried-bag-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: #92400E;
+  margin-bottom: 6px;
+}
+
+.xp2-fried-bag-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+}
+
+.xp2-fried-bag-btn {
+  -webkit-flex: 1 1 50%;
+  flex: 1 1 50%;
+  height: 44px;
+  margin-right: 6px;
+  border: 2px solid #D97706;
+  border-radius: 4px;
+  background-color: #FFFFFF;
+  color: #78350F;
+  font-size: 17px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.xp2-fried-bag-btn:last-child {
+  margin-right: 0;
+}
+
+.xp2-fried-bag-btn.active {
+  background-color: #D97706;
+  border-color: #92400E;
+  color: #FFFFFF;
 }
 
 .xp2-co-summary {
@@ -5288,13 +5379,13 @@ body.xp2-mode .modal-overlay {
     font-size: 17px;
   }
   .xp2-cat-btn {
-    font-size: 20px;
+    font-size: 21px;
   }
   .xp2-tile-title {
-    font-size: 19px;
+    font-size: 20px;
   }
   .xp2-drink-btn .xp2-tile-title {
-    font-size: 20px;
+    font-size: 21px;
   }
   .xp2-mod-btn .xp2-tile-title {
     font-size: 18px;
@@ -5318,14 +5409,14 @@ body.xp2-mode .modal-overlay {
     min-height: 38px;
   }
   .xp2-cat-btn {
-    font-size: 17px;
+    font-size: 18px;
   }
   .xp2-tile-title,
   .xp2-drink-btn .xp2-tile-title {
-    font-size: 16px;
+    font-size: 17px;
   }
   .xp2-mod-btn .xp2-tile-title {
-    font-size: 15px;
+    font-size: 16px;
   }
   .xp2-tile-price {
     font-size: 11px;

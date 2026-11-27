@@ -1455,6 +1455,7 @@ var state = {
   checkoutPhone: localStorage.getItem('mealflow_saved_customer_phone_v12') || '',
   checkoutPayMethod: loadStudentCartDraft()?.checkoutPayMethod || 'LINE Pay',
   checkoutNote: loadStudentCartDraft()?.checkoutNote || '',
+  checkoutFriedBagPref: '',
   checkoutTaxId: loadStudentCartDraft()?.checkoutTaxId || '',
   checkoutCouponCode: '',
   checkoutAppliedCoupon: null,
@@ -1498,6 +1499,7 @@ var state = {
   posReserveTime: '12:15',
   posCustomerPhone: '',
   posCustomerNote: '',
+  posFriedBagPref: '',
   posTaxId: '',
   posManualDiscount: 0,
   posDiscountPercent: 0,
@@ -2126,6 +2128,7 @@ function normalizeMenuItem(m, fallbackStoreId) {
     : (Array.isArray(opts.__dietaryTags) ? opts.__dietaryTags : []);
   const rawSoldOutType = String(m.soldOutType || opts.__soldOutType || (m.soldOut ? 'TODAY' : 'NONE')).trim().toUpperCase();
   const rawSoldOutDate = String(m.soldOutDate || opts.__soldOutDate || '').trim();
+  const rawSoldOutGroup = String(m.soldOutGroup || opts.__soldOutGroup || '').trim().slice(0, 40);
   delete opts.__station;
   delete opts.__tileColor;
   delete opts.__sortOrder;
@@ -2135,6 +2138,7 @@ function normalizeMenuItem(m, fallbackStoreId) {
   delete opts.__dietaryTags;
   delete opts.__soldOutType;
   delete opts.__soldOutDate;
+  delete opts.__soldOutGroup;
 
   return {
     id: itemId,
@@ -2149,6 +2153,7 @@ function normalizeMenuItem(m, fallbackStoreId) {
     station: rawStation || 'AUTO',
     tileColor: rawTileColor,
     sortOrder: Number.isFinite(rawSortOrder) ? rawSortOrder : 999,
+    soldOutGroup: rawSoldOutGroup,
     soldOut: Boolean(m.soldOut),
     manualSoldOut: m.manualSoldOut !== undefined ? Boolean(m.manualSoldOut) : Boolean(m.soldOut && !m.dailyLimitSoldOut),
     soldOutType: m.soldOut ? (rawSoldOutType === 'PERMANENT' ? 'PERMANENT' : 'TODAY') : 'NONE',
@@ -2200,6 +2205,49 @@ function sortMenusByCategoryPrice(menus, defaultCat = '主廚推薦') {
     }
   }
   return result;
+}
+
+// 判斷購物車內是否含麵類（分類或品名含「麵」字）
+function cartHasNoodleItems(cartItems, store) {
+  if (!Array.isArray(cartItems) || cartItems.length === 0) return false;
+  const menus = (store && Array.isArray(store.menus)) ? store.menus : [];
+  for (let i = 0; i < cartItems.length; i++) {
+    const it = cartItems[i];
+    if (!it || it.isGift) continue;
+    const matchedMenu = menus.find(m => String(m.id) === String(it.id));
+    const cat = String(it.category || (matchedMenu && matchedMenu.category) || '');
+    const nm = String(it.baseName || it.name || (matchedMenu && matchedMenu.name) || '');
+    if (cat.includes('麵') || nm.includes('麵')) return true;
+  }
+  return false;
+}
+
+// 統計購物車內酥炸／炸物類總份數
+function cartCountFriedItems(cartItems, store) {
+  if (!Array.isArray(cartItems) || cartItems.length === 0) return 0;
+  const menus = (store && Array.isArray(store.menus)) ? store.menus : [];
+  let count = 0;
+  for (let i = 0; i < cartItems.length; i++) {
+    const it = cartItems[i];
+    if (!it || it.isGift) continue;
+    const matchedMenu = menus.find(m => String(m.id) === String(it.id));
+    const cat = String(it.category || (matchedMenu && matchedMenu.category) || '');
+    if (cat.includes('酥炸') || cat.includes('炸')) {
+      count += Math.max(1, Number(it.qty) || 1);
+    }
+  }
+  return count;
+}
+
+// 合併炸物分裝備註至訂單備註（不重複疊加）
+function mergeFriedBagPrefIntoNote(rawNote, pref) {
+  const cleanPref = String(pref || '').trim();
+  const base = String(rawNote || '')
+    .replace(/(?:^|[、，,／\/\s]+)炸物(?:裝一袋|分開裝)/g, '')
+    .replace(/^炸物(?:裝一袋|分開裝)(?:[、，,／\/\s]+|$)/g, '')
+    .trim();
+  if (!cleanPref) return base;
+  return base ? `${cleanPref}、${base}` : cleanPref;
 }
 
 function getStoreIconDisplay(store) {
@@ -3898,6 +3946,7 @@ function exitXpMode() {
     try { clearInterval(window._xp2ClockTimer); } catch (e) {}
     window._xp2ClockTimer = null;
   }
+  window._xp2RenderCache = null;
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.remove('xp-mode');
     document.body.classList.remove('xp2-mode');
@@ -7499,7 +7548,15 @@ function updateCartUI() {
   const totalCount = state.cartItems.reduce((sum, i) => sum + (i.qty || 1), 0);
   const subtotal = state.cartItems.reduce((sum, i) => sum + i.price * (i.qty || 1), 0);
   const cutleryFee = (subtotal > 0 && state.checkoutNeedCutlery) ? storeCutleryPrice : 0;
-  const takeoutFee = (subtotal > 0 && state.checkoutDineType === '外帶自取') ? 1 : 0;
+  const hasNoodleInCart = cartHasNoodleItems(state.cartItems, store);
+  const friedCountInCart = cartCountFriedItems(state.cartItems, store);
+  if (!hasNoodleInCart && state.checkoutDineType === '外帶自取') {
+    state.checkoutDineType = '內用自取';
+  }
+  if (friedCountInCart <= 1 && state.checkoutFriedBagPref) {
+    state.checkoutFriedBagPref = '';
+  }
+  const takeoutFee = (subtotal > 0 && hasNoodleInCart && state.checkoutDineType === '外帶自取') ? 1 : 0;
 
   const isStorePausedCart = Boolean(store && (store.isOpen === false || store.canPreOrder === false));
   if (store && !isStorePausedCart && store.canOrderNow === false && state.checkoutTimeMode === 'NOW') {
@@ -7708,10 +7765,32 @@ function updateCartUI() {
       <h4 style="font-size:0.95rem; font-weight:900; margin-bottom:12px;">📋 ${t('取餐與結帳設定', 'Pickup & Checkout Options', '受取・会計設定', '픽업 및 결제 설정')}</h4>
 
       <label class="field-label">🍽️ ${t('用餐方式（學餐自取）', 'Dining Mode (Food Court Self-Pickup)', '受取方法', '식사 방식 (자율 픽업)')}</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-        <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="state.currentCartRequestId=null; setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取 (+$1)', 'Takeout (+$1)', 'テイクアウト (+$1)', '포장 (+$1)')}</button>
-        <button type="button" class="filter-chip ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in Pickup', '店内飲食', '매장 식사')}</button>
-      </div>
+      ${hasNoodleInCart ? `
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+          <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="state.currentCartRequestId=null; setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取 (+$1)', 'Takeout (+$1)', 'テイクアウト (+$1)', '포장 (+$1)')}</button>
+          <button type="button" class="filter-chip ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in Pickup', '店内飲食', '매장 식사')}</button>
+        </div>
+      ` : `
+        <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; padding:8px 12px; margin-bottom:12px; font-size:0.78rem; color:#475569; font-weight:800;">
+          🍽️ ${t('一般自取（非麵類無需加購外帶盒）', 'Standard Pickup (No takeout container fee for non-noodle items)')}
+        </div>
+      `}
+
+      ${friedCountInCart > 1 ? `
+        <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:12px; padding:10px 12px; margin-bottom:12px;">
+          <div style="font-size:0.82rem; font-weight:900; color:#92400E; margin-bottom:8px;">
+            🍟 ${t(`炸物超過 1 份（共 ${friedCountInCart} 份）：要裝同一袋嗎？`, `Multiple fried items (${friedCountInCart}): Pack in one bag?`)}
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <button type="button" class="filter-chip ${state.checkoutFriedBagPref === '炸物裝一袋' ? 'active' : ''}" onclick="state.checkoutFriedBagPref = (state.checkoutFriedBagPref === '炸物裝一袋' ? '' : '炸物裝一袋'); updateCartUI();">
+              🍟 ${t('裝同一袋', 'One Bag')}
+            </button>
+            <button type="button" class="filter-chip ${state.checkoutFriedBagPref === '炸物分開裝' ? 'active' : ''}" onclick="state.checkoutFriedBagPref = (state.checkoutFriedBagPref === '炸物分開裝' ? '' : '炸物分開裝'); updateCartUI();">
+              🍟 ${t('分開裝', 'Separate Bags')}
+            </button>
+          </div>
+        </div>
+      ` : ''}
 
       <div style="background:#F8FAFC; border:1px dashed #CBD5E1; border-radius:12px; padding:10px 12px; margin-bottom:12px;">
         <label class="field-label">🎟️ ${t('優惠券 / 折扣碼（選填）', 'Promo / Coupon Code (Optional)', 'クーポン・割引コード（任意）', '쿠폰 / 할인 코드 (선택)')}</label>
@@ -7939,7 +8018,11 @@ async function submitStudentCartOrder() {
     const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
     const subtotal = state.cartItems.reduce((sum, i) => sum + i.price * (i.qty || 1), 0);
     const cutleryFee = (subtotal > 0 && state.checkoutNeedCutlery) ? storeCutleryPrice : 0;
-    const takeoutFee = (subtotal > 0 && state.checkoutDineType === '外帶自取') ? 1 : 0;
+    const hasNoodleInCart = cartHasNoodleItems(state.cartItems, store);
+    const friedCountInCart = cartCountFriedItems(state.cartItems, store);
+    const effectiveDineType = hasNoodleInCart ? (state.checkoutDineType || '內用自取') : '內用自取';
+    const takeoutFee = (subtotal > 0 && hasNoodleInCart && effectiveDineType === '外帶自取') ? 1 : 0;
+    const finalCustomerNote = mergeFriedBagPrefIntoNote(state.checkoutNote, friedCountInCart > 1 ? state.checkoutFriedBagPref : '');
     const evalPromo = evaluateStudentPromoAndCoupon(store, state.cartItems, subtotal, isReserve, state.checkoutReserveTime);
     const discount = Math.min(subtotal, evalPromo.promoDiscount + (evalPromo.comboDiscount || 0) + evalPromo.couponDiscount);
     const finalTotal = Math.max(0, subtotal + cutleryFee + takeoutFee - discount);
@@ -7964,7 +8047,7 @@ async function submitStudentCartOrder() {
       storeName: store.name,
       campus: store.campus,
       studentId: isReserve ? '📅 線上預訂' : '📱 掃碼點餐',
-      dineType: state.checkoutDineType || '外帶自取',
+      dineType: effectiveDineType,
       needCutlery: Boolean(state.checkoutNeedCutlery),
       cutleryFee: cutleryFee,
       takeoutFee: takeoutFee,
@@ -7979,7 +8062,7 @@ async function submitStudentCartOrder() {
       pickupTimeSlot: isReserve ? `📅 預訂 ${pickupDateVal} ${state.checkoutReserveTime}` : '⚡ 立即製作',
       paymentMethod: state.checkoutPayMethod,
       customerPhone: cleanPhone,
-      customerNote: (state.checkoutNote || '').trim(),
+      customerNote: finalCustomerNote,
       taxId: cleanTaxId,
       lineUserId: (state.lineProfile && state.lineProfile.lineUserId) || '',
       customerEmail: (state.lineProfile && state.lineProfile.email) || '',
@@ -8024,6 +8107,7 @@ async function submitStudentCartOrder() {
     // 成功：先清空購物車與請求碼並跳轉取餐單（跳轉完成前絕不恢復按鈕）
     state.currentCartRequestId = null;
     state.cartItems = [];
+    state.checkoutFriedBagPref = '';
     if (state.cartByStoreMap && store.id) delete state.cartByStoreMap[store.id];
     saveStudentCartDraft();
     closeCartModal();

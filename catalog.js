@@ -68,6 +68,10 @@ function packMenuOptionsMeta(m, todayStr) {
   if (tagsVal.length > 0) cleanOpts.__dietaryTags = tagsVal;
   else delete cleanOpts.__dietaryTags;
 
+  const soldOutGroupVal = String(m.soldOutGroup || cleanOpts.__soldOutGroup || '').trim().slice(0, 40);
+  if (soldOutGroupVal) cleanOpts.__soldOutGroup = soldOutGroupVal;
+  else delete cleanOpts.__soldOutGroup;
+
   return { cleanOpts, isSoldOutBool, finalSortOrder };
 }
 

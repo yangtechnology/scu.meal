@@ -356,11 +356,33 @@ export async function handleInitBundle(env, params = {}, ctx = null) {
     : '';
 
   let clientOrders = [];
+  const wantIncludeHistory = Boolean(
+    session &&
+    effectiveMerchantStoreId &&
+    (params.includeHistory === true || params.includeHistory === 1 || String(params.includeHistory || '').trim() === '1')
+  );
+
   if (session) {
-    clientOrders = activeNonPendingOrders
-      .filter(ord => String(ord.storeId) === effectiveMerchantStoreId)
-      .slice(0, 1200)
-      .map(ord => sanitizeOrderForClientOutput(ord, true, true));
+    if (wantIncludeHistory) {
+      // 僅在店家主動帶 includeHistory=1 時透過 idx_orders_store_date 撈該店完整歷史單；一般輪詢維持輕量化 80 筆
+      const histRes = await db.prepare(`
+        SELECT * FROM orders
+        WHERE store_id = ?
+          AND pickup_date BETWEEN '2020-01-01' AND '2099-12-31'
+        ORDER BY pickup_date DESC
+        LIMIT 3000
+      `).bind(effectiveMerchantStoreId).all();
+      clientOrders = (histRes.results || [])
+        .map(dbRowToOrderObject)
+        .filter(ord => ord && !isCorruptedOrMockOrder(ord) && String(ord.status || '') !== '待付款 (LINE Pay 授權中)')
+        .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0))
+        .map(ord => sanitizeOrderForClientOutput(ord, true, true));
+    } else {
+      clientOrders = activeNonPendingOrders
+        .filter(ord => String(ord.storeId) === effectiveMerchantStoreId)
+        .slice(0, 1200)
+        .map(ord => sanitizeOrderForClientOutput(ord, true, true));
+    }
   } else {
     const rawIds = Array.isArray(params.myOrderIds)
       ? params.myOrderIds
@@ -433,6 +455,7 @@ export async function handleInitBundle(env, params = {}, ctx = null) {
           station: parsedRowMeta.station || 'AUTO',
           tileColor: parsedRowMeta.tileColor || '',
           sortOrder: parsedRowMeta.sortOrder,
+          soldOutGroup: parsedRowMeta.soldOutGroup || '',
           soldOut: effectiveSoldOut,
           manualSoldOut: Boolean(soldOutEval.effectiveManualSoldOut),
           soldOutType: soldOutEval.soldOutType,
@@ -447,6 +470,34 @@ export async function handleInitBundle(env, params = {}, ctx = null) {
         };
       })
       .sort((a, b) => (Number(a.sortOrder) || 999) - (Number(b.sortOrder) || 999));
+
+    // 全系統各分類內統一依價格由低到高排序（同價再依 sortOrder 與名稱），同時保留原本分類順序
+    const catOrder = [];
+    const menusByCat = new Map();
+    for (const item of storeMenus) {
+      const catKey = item.category || '招牌主餐';
+      if (!menusByCat.has(catKey)) {
+        menusByCat.set(catKey, []);
+        catOrder.push(catKey);
+      }
+      menusByCat.get(catKey).push(item);
+    }
+    const sortedStoreMenus = [];
+    for (const catKey of catOrder) {
+      const group = menusByCat.get(catKey);
+      group.sort((a, b) => {
+        const pa = Number(a.price) || 0;
+        const pb = Number(b.price) || 0;
+        if (pa !== pb) return pa - pb;
+        const sa = Number.isFinite(Number(a.sortOrder)) ? Number(a.sortOrder) : 999;
+        const sb = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 999;
+        if (sa !== sb) return sa - sb;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant');
+      });
+      for (const item of group) sortedStoreMenus.push(item);
+    }
+    storeMenus.length = 0;
+    for (const item of sortedStoreMenus) storeMenus.push(item);
 
     const isOpen = s.is_open !== undefined && s.is_open !== null ? Boolean(s.is_open) : true;
     const visibleToStudents = customMeta.visibleToStudents !== undefined
@@ -716,8 +767,13 @@ export async function handleGetOrder(env, params = {}, ctx = null) {
 }
 
 export async function handleLookupOrders(env, params = {}) {
-  const hasMerchantAuth = await isMerchantRequestValid(env, params, '');
-  let rawQ = String(params.query || '').trim().toUpperCase().replace(/^#/, '');
+  const session = await parseVerifiedMerchantSession(env, params);
+  const hasMerchantAuth = Boolean(session);
+  const merchantStoreScope = session
+    ? (session.role === 'DEVELOPER' ? String(params.storeId || '').trim() : session.storeScope)
+    : '';
+  const rawInput = String(params.query || '').trim();
+  let rawQ = rawInput.toUpperCase().replace(/^#/, '');
   let rawPhoneLast3 = extractPhoneLast3(params.phoneLast3 || '');
   const clientDeviceId = String(params.clientDeviceId || 'ANON_DEV').trim().slice(0, 36);
 
@@ -739,8 +795,12 @@ export async function handleLookupOrders(env, params = {}) {
   }
 
   const isFullOrderId = rawQ.startsWith('ORD-') && rawQ.length >= 10;
+  const isPartialOrderId = rawQ.startsWith('ORD-') && rawQ.length >= 6;
   const isSixCharHmacCode = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/.test(rawQ);
   const isFourDigitPickup = /^([AB]\d{3,4}|\d{3,5})$/.test(rawQ);
+  const digitsOnly = rawQ.replace(/\D/g, '');
+  const isShortPickup = /^\d{1,3}$/.test(rawQ);
+  const isPhoneLike = digitsOnly.length >= 6 && digitsOnly.length <= 12;
 
   if (!hasMerchantAuth && !isSixCharHmacCode) {
     if ((!isFourDigitPickup && !isFullOrderId) || rawPhoneLast3.length !== 3) {
@@ -749,29 +809,167 @@ export async function handleLookupOrders(env, params = {}) {
   }
 
   let rows = [];
+  const rowMap = new Map();
+  const collectRows = (list) => {
+    for (const r of (list || [])) {
+      if (r && r.order_id && !rowMap.has(r.order_id)) {
+        rowMap.set(r.order_id, r);
+      }
+    }
+  };
+
   if (isFullOrderId) {
     const res = await env.DB.prepare('SELECT * FROM orders WHERE UPPER(order_id) = ? LIMIT 5').bind(rawQ).all();
-    rows = res.results || [];
+    collectRows(res.results);
+  } else if (hasMerchantAuth && isPartialOrderId) {
+    const res = merchantStoreScope
+      ? await env.DB.prepare('SELECT * FROM orders WHERE store_id = ? AND UPPER(order_id) LIKE ? ORDER BY created_at_ts DESC LIMIT 30').bind(merchantStoreScope, rawQ + '%').all()
+      : await env.DB.prepare('SELECT * FROM orders WHERE UPPER(order_id) LIKE ? ORDER BY created_at_ts DESC LIMIT 30').bind(rawQ + '%').all();
+    collectRows(res.results);
   } else if (isSixCharHmacCode) {
-    const res = await env.DB.prepare('SELECT * FROM orders WHERE UPPER(verification_code) = ? ORDER BY created_at_ts DESC LIMIT 5').bind(rawQ).all();
-    rows = res.results || [];
-  } else if (isFourDigitPickup) {
-    const res = await env.DB.prepare('SELECT * FROM orders WHERE UPPER(pickup_number) = ? ORDER BY created_at_ts DESC LIMIT 20').bind(rawQ).all();
-    rows = res.results || [];
+    const res = await env.DB.prepare('SELECT * FROM orders WHERE UPPER(verification_code) = ? ORDER BY created_at_ts DESC LIMIT 10').bind(rawQ).all();
+    collectRows(res.results);
   }
+
+  if (hasMerchantAuth && isPhoneLike) {
+    // 優先走 idx_orders_phone 索引精準比對手機號碼
+    const exactPhoneRes = await env.DB.prepare(
+      'SELECT * FROM orders WHERE customer_phone = ? ORDER BY created_at_ts DESC LIMIT 50'
+    ).bind(digitsOnly).all();
+    collectRows(exactPhoneRes.results);
+    if (rowMap.size === 0 && rawInput !== digitsOnly) {
+      const rawPhoneRes = await env.DB.prepare(
+        'SELECT * FROM orders WHERE customer_phone = ? ORDER BY created_at_ts DESC LIMIT 50'
+      ).bind(rawInput).all();
+      collectRows(rawPhoneRes.results);
+    }
+    if (rowMap.size === 0 && merchantStoreScope) {
+      const likePhoneRes = await env.DB.prepare(
+        'SELECT * FROM orders WHERE store_id = ? AND customer_phone LIKE ? ORDER BY created_at_ts DESC LIMIT 50'
+      ).bind(merchantStoreScope, `%${digitsOnly}%`).all();
+      collectRows(likePhoneRes.results);
+    }
+  }
+
+  if (isFourDigitPickup || (hasMerchantAuth && isShortPickup)) {
+    const padded3 = /^\d{1,3}$/.test(rawQ) ? rawQ.padStart(3, '0') : rawQ;
+    if (hasMerchantAuth && merchantStoreScope) {
+      const res = padded3 !== rawQ
+        ? await env.DB.prepare('SELECT * FROM orders WHERE store_id = ? AND UPPER(pickup_number) IN (?, ?) ORDER BY created_at_ts DESC LIMIT 50').bind(merchantStoreScope, rawQ, padded3).all()
+        : await env.DB.prepare('SELECT * FROM orders WHERE store_id = ? AND UPPER(pickup_number) = ? ORDER BY created_at_ts DESC LIMIT 50').bind(merchantStoreScope, rawQ).all();
+      collectRows(res.results);
+    } else {
+      const res = await env.DB.prepare('SELECT * FROM orders WHERE UPPER(pickup_number) = ? ORDER BY created_at_ts DESC LIMIT 20').bind(rawQ).all();
+      collectRows(res.results);
+    }
+    // 商家輸入 3~5 位數字時，同步嘗試比對該店手機末碼（不漏掉以手機末 3~4 碼查單情境）
+    if (hasMerchantAuth && merchantStoreScope && /^\d{3,5}$/.test(digitsOnly)) {
+      const phSuffixRes = await env.DB.prepare(
+        'SELECT * FROM orders WHERE store_id = ? AND customer_phone LIKE ? ORDER BY created_at_ts DESC LIMIT 30'
+      ).bind(merchantStoreScope, `%${digitsOnly}`).all();
+      collectRows(phSuffixRes.results);
+    }
+  } else if (hasMerchantAuth && rowMap.size === 0 && merchantStoreScope && rawQ.length >= 2) {
+    // 商家模糊搜尋核銷碼 / 訂單編號 / 手機 / 備註
+    const likePattern = `%${rawInput}%`;
+    const fallbackRes = await env.DB.prepare(`
+      SELECT * FROM orders
+      WHERE store_id = ?
+        AND (
+          UPPER(pickup_number) LIKE ?
+          OR UPPER(verification_code) LIKE ?
+          OR customer_phone LIKE ?
+          OR UPPER(order_id) LIKE ?
+        )
+      ORDER BY created_at_ts DESC
+      LIMIT 40
+    `).bind(merchantStoreScope, `%${rawQ}%`, `%${rawQ}%`, likePattern, `%${rawQ}%`).all();
+    collectRows(fallbackRes.results);
+  }
+
+  rows = Array.from(rowMap.values());
 
   const matched = rows
     .map(dbRowToOrderObject)
     .filter(o => {
-      if (!o) return false;
+      if (!o || isCorruptedOrMockOrder(o)) return false;
+      if (String(o.status || '') === '待付款 (LINE Pay 授權中)') return false;
+      if (hasMerchantAuth && merchantStoreScope && String(o.storeId || '') !== merchantStoreScope) return false;
       const ordLast3 = extractPhoneLast3(o.customerPhone);
       if (isSixCharHmacCode && String(o.verificationCode).toUpperCase() === rawQ) return true;
       if (hasMerchantAuth) return true;
       return rawPhoneLast3.length === 3 && ordLast3 === rawPhoneLast3;
-    });
+    })
+    .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
+
+  const maxResults = hasMerchantAuth ? 50 : 5;
+  return {
+    authoritative: true,
+    totalMatched: matched.length,
+    orders: matched.slice(0, maxResults).map(o => sanitizeOrderForClientOutput(o, hasMerchantAuth, true))
+  };
+}
+
+/**
+ * 按需日期區間歷史訂單查詢 (getOrdersByDateRange)
+ * 嚴格使用 idx_orders_store_date (store_id, pickup_date) 索引精準區間掃描，
+ * 讓一般 initBundle 輪詢保持輕量、對帳／分析／KDS 查詢歷史日仍看得到全部訂單。
+ */
+export async function handleGetOrdersByDateRange(env, params = {}) {
+  const db = env.DB;
+  const session = await assertMerchantAuthorized(env, params, params.storeId || '');
+  const storeId = session.role === 'DEVELOPER'
+    ? String(params.storeId || 'S01').trim()
+    : String(params.storeId || session.storeScope || '').trim();
+  if (!storeId) throw new Error('缺少店家編號 (storeId)');
+
+  const todayStr = getTodayTaipeiStr();
+  const isAllHistory = Boolean(
+    params.includeAllHistory ||
+    params.includeHistory === true ||
+    params.includeHistory === 1 ||
+    String(params.includeHistory || '').trim() === '1' ||
+    String(params.range || '').trim().toUpperCase() === 'ALL'
+  );
+
+  let startDate = (isAllHistory && !params.startDate)
+    ? '2020-01-01'
+    : (normalizeDateStr(params.startDate || todayStr) || todayStr);
+  let endDate = (isAllHistory && !params.endDate)
+    ? '2099-12-31'
+    : (normalizeDateStr(params.endDate || startDate) || startDate);
+  if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
+
+  const safeLimit = Math.max(1, Math.min(5000, Number(params.limit) || 2000));
+  const includePendingPayment = Boolean(params.includePendingPayment);
+
+  const res = await db.prepare(`
+    SELECT * FROM orders
+    WHERE store_id = ?
+      AND pickup_date BETWEEN ? AND ?
+    ORDER BY pickup_date DESC
+    LIMIT ?
+  `).bind(storeId, startDate, endDate, safeLimit).all();
+
+  const rawRows = res.results || [];
+  const orders = rawRows
+    .map(dbRowToOrderObject)
+    .filter(o => {
+      if (!o || isCorruptedOrMockOrder(o)) return false;
+      if (!includePendingPayment && String(o.status || '') === '待付款 (LINE Pay 授權中)') return false;
+      return true;
+    })
+    .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0))
+    .map(o => sanitizeOrderForClientOutput(o, true, true));
 
   return {
-    orders: matched.slice(0, 5).map(o => sanitizeOrderForClientOutput(o, hasMerchantAuth, true))
+    authoritative: true,
+    storeId,
+    startDate,
+    endDate,
+    count: orders.length,
+    truncated: rawRows.length >= safeLimit,
+    orders
   };
 }
 
@@ -1258,9 +1456,13 @@ export async function handleSubmitOrder(env, ctx, params = {}) {
     ? Math.min(20, Math.max(0, Number(params.serviceFeeRate) || 0))
     : 0;
 
-  // 外帶加收 NT$1
+  // 外帶加收 NT$1：POS 現場維持原規則；學生線上點餐僅在含麵類品項且選外帶時才計入
   const dineType = String(params.dineType || '外帶自取').trim();
-  const takeoutFee = (authoritativeSubtotal > 0 && dineType.includes('外帶')) ? 1 : 0;
+  const hasNoodleItem = verifiedItems.some(it => {
+    if (!it || it.isGift) return false;
+    return String(it.category || '').includes('麵') || String(it.baseName || it.name || '').includes('麵');
+  });
+  const takeoutFee = (authoritativeSubtotal > 0 && dineType.includes('外帶') && (isMerchantPosRequest || hasNoodleItem)) ? 1 : 0;
 
   const netBeforeService = Math.max(0, authoritativeSubtotal + cutleryFee + takeoutFee - authoritativeDiscount - manualDiscount);
   const serviceFee = serviceFeeRate > 0 ? Math.round(netBeforeService * (serviceFeeRate / 100)) : 0;
@@ -2360,17 +2562,43 @@ export async function handleToggleMenuSoldOut(env, params = {}) {
   const soldOutDate = soldOut ? normalizeDateStr(params.soldOutDate || getTodayTaipeiStr()) : '';
 
   const rawOpts = safeJsonParse(row.options_json, {});
-  rawOpts.__soldOut = soldOut;
-  rawOpts.__soldOutType = soldOutType;
-  rawOpts.__soldOutDate = soldOutDate;
+  const soldOutGroup = String(rawOpts.__soldOutGroup || '').trim();
+  const affectedMenuIds = [];
 
-  await db.prepare(`
-    UPDATE menus SET sold_out = ?, options_json = ?
-    WHERE id = ? AND store_id = ?
-  `).bind(soldOut ? 1 : 0, JSON.stringify(rawOpts), menuId, storeId).run();
+  if (soldOutGroup) {
+    const storeMenusRes = await db.prepare('SELECT id, options_json FROM menus WHERE store_id = ?').bind(storeId).all();
+    const batchStmts = [];
+    for (const mRow of (storeMenusRes.results || [])) {
+      const mOpts = safeJsonParse(mRow.options_json, {});
+      const mGroup = String(mOpts.__soldOutGroup || '').trim();
+      if (String(mRow.id) === menuId || (mGroup && mGroup === soldOutGroup)) {
+        mOpts.__soldOut = soldOut;
+        mOpts.__soldOutType = soldOutType;
+        mOpts.__soldOutDate = soldOutDate;
+        batchStmts.push(
+          db.prepare('UPDATE menus SET sold_out = ?, options_json = ? WHERE id = ? AND store_id = ?')
+            .bind(soldOut ? 1 : 0, JSON.stringify(mOpts), String(mRow.id), storeId)
+        );
+        affectedMenuIds.push(String(mRow.id));
+      }
+    }
+    if (batchStmts.length > 0) {
+      await db.batch(batchStmts);
+    }
+  } else {
+    rawOpts.__soldOut = soldOut;
+    rawOpts.__soldOutType = soldOutType;
+    rawOpts.__soldOutDate = soldOutDate;
+
+    await db.prepare(`
+      UPDATE menus SET sold_out = ?, options_json = ?
+      WHERE id = ? AND store_id = ?
+    `).bind(soldOut ? 1 : 0, JSON.stringify(rawOpts), menuId, storeId).run();
+    affectedMenuIds.push(menuId);
+  }
   invalidateCatalogCache();
 
-  return { updated: true, storeId, menuId, soldOut, soldOutType, soldOutDate };
+  return { updated: true, storeId, menuId, soldOut, soldOutType, soldOutDate, soldOutGroup, affectedMenuIds };
 }
 
 export async function handleRestoreSoldOutMenusBatch(env, params = {}) {

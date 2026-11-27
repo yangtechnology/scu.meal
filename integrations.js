@@ -540,7 +540,11 @@ async function prepareVerifiedOrderDraft(env, params, isMerchantPosRequest) {
   const needCutlery = Boolean(params.needCutlery);
   const cutleryFee = needCutlery ? Math.max(0, Number(storeRow.cutlery_price ?? 1)) : 0;
   const dineType = String(params.dineType || '外帶自取').trim();
-  const takeoutFee = (authoritativeSubtotal > 0 && dineType.includes('外帶')) ? 1 : 0;
+  const hasNoodleItem = verifiedItems.some(it => {
+    if (!it || it.isGift) return false;
+    return String(it.category || '').includes('麵') || String(it.baseName || it.name || '').includes('麵');
+  });
+  const takeoutFee = (authoritativeSubtotal > 0 && dineType.includes('外帶') && hasNoodleItem) ? 1 : 0;
   const authoritativeFinalTotal = Math.max(0, authoritativeSubtotal + cutleryFee + takeoutFee - authoritativeDiscount);
 
   const customerNote = String(params.customerNote || '').trim();
