@@ -1771,9 +1771,22 @@ function xp2CloseCheckoutModal(skipRender = false) {
   }
 }
 
-function xp2ToggleFriedBagPref(pref) {
+function togglePosFriedBagPref(pref) {
   state.posFriedBagPref = state.posFriedBagPref === pref ? '' : pref;
-  xp2RenderCheckoutModal();
+  const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
+  if (state.xp2Mode) {
+    if (store) renderXp2ClassicPosPanel(store);
+    const xp2Modal = document.getElementById('xp2CheckoutModal');
+    if (xp2Modal && xp2Modal.classList.contains('open')) xp2RenderCheckoutModal();
+  } else {
+    if (store) renderPosCashierPanel(store);
+    const twoStepModal = document.getElementById('posTwoStepCheckoutModal');
+    if (twoStepModal && twoStepModal.classList.contains('open')) renderPosTwoStepCheckoutModal();
+  }
+}
+
+function xp2ToggleFriedBagPref(pref) {
+  togglePosFriedBagPref(pref);
 }
 
 function xp2CheckoutSetPay(method) {
@@ -2192,6 +2205,7 @@ function renderXp2ClassicPosPanel(store) {
           </div>
           <div class="xp2-status-bar" id="xp2StatusBar"></div>
           <div id="xp2ChangeStripWrap"></div>
+          <div id="xp2FriedBagStripWrap"></div>
           <div class="xp2-cart-list" id="xp2CartList"></div>
           <div class="xp2-left-bottom">
             <div class="xp2-left-btn-row">
@@ -2301,6 +2315,23 @@ function renderXp2ClassicPosPanel(store) {
             <button type="button" class="xp2-mini-strip-btn" onclick="requeueOrderPrintJob(${escapeJsAttr(changeBanner.orderId)})">重印</button>
             <button type="button" class="xp2-mini-strip-btn" onclick="dismissPosChangeBanner()">✕</button>
           </div>
+        </div>
+      ` : '';
+    }
+  }
+
+  // 3.5 炸物超過 1 份主畫面快速切換條（與結帳彈窗同步綁定 state.posFriedBagPref）
+  const xp2FriedCount = typeof cartCountFriedItems === 'function' ? cartCountFriedItems(state.posCart, store) : 0;
+  if (xp2FriedCount <= 1 && state.posFriedBagPref) state.posFriedBagPref = '';
+  const friedStripSig = `${xp2FriedCount > 1 ? xp2FriedCount : 0}|${state.posFriedBagPref || ''}`;
+  if (cache.friedStripSig !== friedStripSig) {
+    cache.friedStripSig = friedStripSig;
+    const friedWrapEl = document.getElementById('xp2FriedBagStripWrap');
+    if (friedWrapEl) {
+      friedWrapEl.innerHTML = xp2FriedCount > 1 ? `
+        <div class="xp2-fried-strip">
+          <button type="button" class="xp2-fried-strip-btn ${state.posFriedBagPref === '炸物裝一袋' ? 'active' : ''}" onclick="xp2ToggleFriedBagPref('炸物裝一袋')">${state.posFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 炸物裝一袋</button>
+          <button type="button" class="xp2-fried-strip-btn ${state.posFriedBagPref === '炸物分開裝' ? 'active' : ''}" onclick="xp2ToggleFriedBagPref('炸物分開裝')">${state.posFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 分開裝</button>
         </div>
       ` : '';
     }
@@ -3037,8 +3068,8 @@ function renderPosTwoStepCheckoutModal() {
       <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:10px; padding:9px 12px; margin-bottom:12px;">
         <div style="font-size:0.82rem; font-weight:950; color:#92400E; margin-bottom:6px;">🍟 炸物共 ${friedCount} 份：確認裝袋方式（選填，將印於廚房單）</div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-          <button type="button" class="pos-chip-btn ${state.posFriedBagPref === '炸物裝一袋' ? 'active' : ''}" style="padding:8px 6px; font-size:0.86rem;" onclick="state.posFriedBagPref=(state.posFriedBagPref==='炸物裝一袋'?'':'炸物裝一袋'); renderPosTwoStepCheckoutModal();">${state.posFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 炸物裝一袋</button>
-          <button type="button" class="pos-chip-btn ${state.posFriedBagPref === '炸物分開裝' ? 'active' : ''}" style="padding:8px 6px; font-size:0.86rem;" onclick="state.posFriedBagPref=(state.posFriedBagPref==='炸物分開裝'?'':'炸物分開裝'); renderPosTwoStepCheckoutModal();">${state.posFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 分開裝</button>
+          <button type="button" class="pos-chip-btn ${state.posFriedBagPref === '炸物裝一袋' ? 'active' : ''}" style="padding:8px 6px; font-size:0.86rem;" onclick="togglePosFriedBagPref('炸物裝一袋')">${state.posFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 炸物裝一袋</button>
+          <button type="button" class="pos-chip-btn ${state.posFriedBagPref === '炸物分開裝' ? 'active' : ''}" style="padding:8px 6px; font-size:0.86rem;" onclick="togglePosFriedBagPref('炸物分開裝')">${state.posFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 分開裝</button>
         </div>
       </div>
     ` : ''}
@@ -3496,6 +3527,8 @@ function renderPosCashierPanel(store) {
   const isBlockedByShiftLock = Boolean(lockedShiftInfo && !isReserve);
   const heldCount = (state.posHeldOrders || []).filter(h => h.storeId === store.id).length;
   const totalCartItems = state.posCart.reduce((s, i) => s + (i.qty || 1), 0);
+  const posFriedCount = typeof cartCountFriedItems === 'function' ? cartCountFriedItems(state.posCart, store) : 0;
+  if (posFriedCount <= 1 && state.posFriedBagPref) state.posFriedBagPref = '';
   const canFastPay = state.posCart.length > 0 && !state.isPosSubmitting && !isBlockedByShiftLock;
 
   const changeBanner = state.posLastChangeBanner;
@@ -3762,6 +3795,12 @@ function renderPosCashierPanel(store) {
             <div style="background:#ECFDF5; border:1px solid #6EE7B7; color:#065F46; border-radius:8px; padding:4px 8px; margin-bottom:6px; font-size:0.74rem; font-weight:900; display:flex; justify-content:space-between; align-items:center;">
               <span>🎁 ${t('組合優惠', 'Combo Deal')}: ${escapeHtml(comboAppliedRules.map(r => `${r.name}${r.pairs > 1 ? `×${r.pairs}` : ''}`).join('、'))}</span>
               <span>-NT$ ${comboDiscount}</span>
+            </div>
+          ` : ''}
+          ${posFriedCount > 1 ? `
+            <div class="pos-fried-bag-bar">
+              <button type="button" class="pos-fried-bag-bar-btn ${state.posFriedBagPref === '炸物裝一袋' ? 'active' : ''}" onclick="togglePosFriedBagPref('炸物裝一袋')">${state.posFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 炸物裝一袋</button>
+              <button type="button" class="pos-fried-bag-bar-btn ${state.posFriedBagPref === '炸物分開裝' ? 'active' : ''}" onclick="togglePosFriedBagPref('炸物分開裝')">${state.posFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 分開裝</button>
             </div>
           ` : ''}
           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">

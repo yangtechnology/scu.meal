@@ -4327,9 +4327,89 @@ body.xp2-mode #storePanel-pos {
 }
 
 /* 非阻擋剛出單找零快報 */
-#xp2ChangeStripWrap {
+#xp2ChangeStripWrap,
+#xp2FriedBagStripWrap {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
+}
+
+/* ?xp=2 左欄主畫面：炸物超過 1 份快速裝袋切換條 */
+.xp2-fried-strip {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  background-color: #FEF3C7;
+  border: 2px solid #D97706;
+  border-radius: 3px;
+  padding: 3px;
+  margin-bottom: 3px;
+}
+
+.xp2-fried-strip-btn {
+  -webkit-flex: 1 1 50%;
+  flex: 1 1 50%;
+  height: 34px;
+  margin-right: 4px;
+  padding: 0 4px;
+  border: 2px solid #D97706;
+  border-radius: 3px;
+  background-color: #FFFFFF;
+  color: #000000;
+  font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.xp2-fried-strip-btn:last-child {
+  margin-right: 0;
+}
+
+.xp2-fried-strip-btn.active {
+  background-color: #D97706;
+  border-color: #92400E;
+  color: #FFFFFF;
+}
+
+/* ?xp=1 與一般 POS 主畫面：應收總計上方炸物裝袋切換列 */
+.pos-fried-bag-bar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  background-color: #FFFBEB;
+  border: 1.5px solid #F59E0B;
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 6px;
+}
+
+.pos-fried-bag-bar-btn {
+  -webkit-flex: 1 1 50%;
+  flex: 1 1 50%;
+  margin-right: 5px;
+  padding: 6px 6px;
+  border: 1.5px solid #D97706;
+  border-radius: 6px;
+  background-color: #FFFFFF;
+  color: #78350F;
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-fried-bag-bar-btn:last-child {
+  margin-right: 0;
+}
+
+.pos-fried-bag-bar-btn.active {
+  background-color: #D97706;
+  border-color: #92400E;
+  color: #FFFFFF;
 }
 
 .xp2-change-strip {
@@ -4824,45 +4904,50 @@ body.xp2-mode #storePanel-pos {
   border-radius: 3px;
 }
 
-/* 前 4 列：亮黃色純色品項格（純黑高對比） */
+/* 前 4 列：亮青藍色純色品項格（純黑高對比，無漸層） */
 .xp2-dish-btn {
-  background-color: #FCD34D;
+  background-color: #29C5EC;
   color: #000000;
   padding: 2px;
   line-height: 1.06;
 }
 
 .xp2-dish-btn:active {
-  background-color: #F59E0B !important;
+  background-color: #0EA5E9 !important;
   color: #000000 !important;
 }
 
-/* 右側第 8 欄：亮紫純色常駐飲料格（純黑高對比） */
+/* 右側第 8 欄：亮紫純色常駐飲料格（純黑高對比，無漸層） */
 .xp2-drink-btn {
-  background-color: #D8B4FE;
+  background-color: #C084FC;
   color: #000000;
   padding: 2px;
   line-height: 1.06;
 }
 
 .xp2-drink-btn:active {
-  background-color: #C084FC !important;
+  background-color: #A855F7 !important;
   color: #000000 !important;
 }
 
-/* 最底 2 列：一鍵客製化亮紫／亮藍純色格（純黑字） */
+/* 最底 2 列：一鍵客製化亮紫／亮藍純色格（純黑字，無漸層） */
 .xp2-mod-btn {
   padding: 2px;
   line-height: 1.06;
 }
 
 .xp2-mod-purple {
-  background-color: #D8B4FE;
+  background-color: #C084FC;
   color: #000000;
 }
 
+.xp2-mod-purple:active {
+  background-color: #A855F7 !important;
+  color: #000000 !important;
+}
+
 .xp2-mod-blue {
-  background-color: #7DD3FC;
+  background-color: #38BDF8;
   color: #000000;
 }
 
