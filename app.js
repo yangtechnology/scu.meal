@@ -2868,7 +2868,7 @@ function triggerStudentPickupAlert(order) {
       : (alertMode === 'VOICE' ? `語音播報與震動呼叫中（第 ${notifyCnt} 次呼叫）` : `提示音與震動提醒中（第 ${notifyCnt} 次呼叫）`);
     content.innerHTML = `
       <div style="text-align:center; padding:12px 6px;">
-        <div class="ring-bell-anim" style="font-size:3.6rem; margin-bottom:6px;"></div>
+        <div class="ring-bell-anim" style="font-size:2.4rem; color:var(--green); margin-bottom:6px; display:inline-flex;">${typeof mfIcon === 'function' ? mfIcon('bell', 'mf-icon-xl') : ''}</div>
         <div style="display:inline-block; background:var(--green-bg); color:var(--green); font-weight:900; font-size:0.82rem; padding:4px 12px; border-radius:999px; margin-bottom:8px;">
           ${modeBadgeText}
         </div>
@@ -5424,7 +5424,7 @@ function openMyOrdersDrawer() {
   if (list.length === 0) {
     body.innerHTML = searchBarHtml + `
       <div style="text-align:center; padding:36px 16px;">
-        <div style="font-size:2.8rem; margin-bottom:8px;"></div>
+        <div style="font-size:2rem; color:#94A3B8; margin-bottom:8px;">${typeof mfIcon === 'function' ? mfIcon('receipt', 'mf-icon-xl') : ''}</div>
         <h4 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">${t('目前本機尚無進行中或歷史點餐紀錄', 'No orders on this device yet', 'この端末にはまだ注文履歴がありません', '이 기기에 아직 주문 내역이 없습니다')}</h4>
         <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">${t('若您剛才使用其他裝置或無痕視窗點餐，請在上方輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」安全找回！', 'Ordered on another device? Enter your 6-char verification code above to recover your ticket.', '別端末で注文した場合は上の検索欄から6桁認証コードで照会できます。', '다른 기기에서 주문한 경우 위에서 6자리 인증코드로 조회하세요.')}</p>
         <button type="button" class="btn-tip-action" onclick="closeMyOrdersDrawer()">${t('前往挑選餐點', 'Browse Menu', 'メニューを見る', '메뉴 보러 가기')}</button>
@@ -8321,7 +8321,7 @@ async function askAiConcierge(presetQuery) {
   if (/(預訂|預約|現金|付錢|付款|餐具|找回|查單|無痕|pre-?order|reserve|cash|pay|lookup|find order|cancel|cutlery|予約|現金|照会|예약|현금|조회)/.test(q)) {
     appendAiAssistantReply({
       reasoning: t(
-        `點餐與查單說明：1⃣ 跨裝置找回訂單請輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」。2⃣ 每張電子取餐憑證皆附有可掃描 ISO QR Code 供櫃檯秒速核銷。3⃣ 預設為立即製作，也可於購物車切換預訂取餐！`,
+        `點餐與查單說明：1. 跨裝置找回訂單請輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」。2. 每張電子取餐憑證皆附有可掃描 ISO QR Code 供櫃檯秒速核銷。3. 預設為立即製作，也可於購物車切換預訂取餐！`,
         `Ordering & Lookup Guide: 1) Find orders across devices using your 6-char verification code or Pickup # + last 3 phone digits. 2) Every digital ticket includes a scannable QR code for fast counter pickup. 3) Default mode is Make Now, and you can switch to Pre-order in Cart.`,
         `注文・照会ガイド：1) 他端末からの照会は6桁認証コードまたは受取番号＋携帯下3桁をご利用ください。2) 電子チケットのQRコードを店頭で提示して素早く受取できます。3) 標準は即時調理で、カート内で時間指定予約も選択できます。`,
         `주문 및 조회 안내: 1) 다른 기기에서 주문 조회 시 6자리 인증코드 또는 픽업번호+전화 뒤 3자리를 입력하세요. 2) 전자 티켓의 QR 코드를 카운터에 보여주면 빠르게 픽업할 수 있습니다. 3) 기본은 바로 조리이며 장바구니에서 예약 픽업으로 변경할 수 있습니다.`
@@ -8766,7 +8766,7 @@ function renderSingleTicketView() {
     if (isFetchingNow) {
       box.innerHTML = `
         <div class="ticket-hero-card">
-          <div style="font-size:2.8rem; margin-bottom:10px;"></div>
+          <div style="font-size:2rem; color:#94A3B8; margin-bottom:10px;">${typeof mfIcon === 'function' ? mfIcon('refresh', 'mf-icon-xl') : ''}</div>
           <h2 style="font-size:1.25rem; font-weight:900; margin-bottom:6px;">正在從雲端載入您的電子取餐憑證...</h2>
           <p style="font-size:0.86rem; color:var(--text-secondary);">憑證編號：<code>${escapeHtml(orderId || '')}</code>，請稍候片刻</p>
         </div>
@@ -8775,7 +8775,7 @@ function renderSingleTicketView() {
     }
     box.innerHTML = `
       <div class="ticket-hero-card">
-        <div style="font-size:3rem; margin-bottom:10px;"></div>
+        <div style="font-size:2rem; color:#94A3B8; margin-bottom:10px;">${typeof mfIcon === 'function' ? mfIcon('search', 'mf-icon-xl') : ''}</div>
         <h2 style="font-size:1.3rem; font-weight:900; margin-bottom:6px;">尚未同步到此訂單 (${escapeHtml(orderId || '未知')})</h2>
         <p style="font-size:0.86rem; color:var(--text-secondary); margin-bottom:14px;">您可以點擊「重試雲端同步」，或直接輸入「6 碼防偽核銷碼」/「取餐號 + 手機末 3 碼」找回：</p>
         <div style="display:flex; gap:8px; max-width:420px; margin:0 auto 14px; flex-wrap:wrap;">

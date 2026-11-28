@@ -821,7 +821,7 @@ function renderMerchantView() {
       if (panel) {
         panel.innerHTML = m === state.storeTabMode ? `
           <div class="auth-locked-stage">
-            <div style="font-size:3rem; margin-bottom:10px;"></div>
+            <div style="font-size:2.2rem; color:#64748B; margin-bottom:10px;">${typeof mfIcon === 'function' ? mfIcon('lock', 'mf-icon-xl') : ''}</div>
             <h3 style="font-size:1.25rem; font-weight:900; color:var(--text-primary); margin-bottom:6px;">店務營運後台受雲端時效憑證保護中</h3>
             <p style="font-size:0.86rem; margin-bottom:16px;">未持有該店有效 HMAC Session Token 前，系統禁止渲染收銀、退單與營業報表節點。</p>
             <button type="button" class="btn-tip-action" onclick="checkMerchantSecurityGate()">輸入店務授權碼驗證</button>
@@ -3567,7 +3567,6 @@ function renderPosCashierPanel(store) {
               `).join('')}
             </div>
             <div class="pos-font-bar" title="${t('調整 POS 點餐畫面字體大小（會記住此平板設定）', 'Adjust POS text size (saved on this device)')}">
-              <span class="pos-font-label"></span>
               ${[
                 ['normal', t('標準', 'Std', '標準', '기본')],
                 ['large', t('大字', 'Large', '大', '크게')],
@@ -3682,7 +3681,7 @@ function renderPosCashierPanel(store) {
           <div class="pos-receipt-list" style="min-height:175px;">
             ${state.posCart.length === 0 ? `
               <div style="text-align:center; color:var(--text-muted); padding:28px 12px; font-size:0.84rem;">
-                <div style="font-size:2rem; margin-bottom:6px;"></div>
+                <div style="font-size:1.8rem; color:#94A3B8; margin-bottom:6px;">${typeof mfIcon === 'function' ? mfIcon('cart', 'mf-icon-xl') : ''}</div>
                 <div>${t('請點擊左側餐點卡片加入點餐單', 'Tap a dish on the left to add it to the ticket', '左のメニューをタップして注文票に追加', '왼쪽 메뉴를 탭하여 주문서에 추가하세요')}</div>
                 <small style="font-size:0.74rem;">${t('支援一鍵快餐現金結帳、拆單 AA 與單品備註', '1-tap fast cash checkout, bill splitting & item notes', 'ワンタップ会計・割り勘・単品メモ対応', '원클릭 빠른 현금 결제・분할 결제・단품 메모 지원')}</small>
               </div>
@@ -5208,8 +5207,8 @@ function renderCustomerPickupBoardContent(playChimeOnNew = false) {
           <div style="flex:1; min-width:240px;">
             <div style="font-size:0.95rem; font-weight:900; color:#38BDF8; margin-bottom:4px;">${t('免登入麥當勞風格電視投屏方案（永不過期・每 5 秒同步・防休眠）', 'Zero-Login McDonald-Style TV Casting (5s Live Sync & WakeLock)')}</div>
             <div style="font-size:0.8rem; color:#CBD5E1; line-height:1.55;">
-              1⃣ <strong>Chrome 投放 (Chromecast / Google TV)</strong>：點上方「開啟全螢幕電視大看板」→ Chrome 右上角 ⋮ → 投放分頁至電視。<br>
-              2⃣ <strong>智慧電視 / 電視盒 / HDMI</strong>：掃左側 QR Code 或貼上網址於電視瀏覽器開啟並按全螢幕，POS 出餐立即放大顯示並語音叫號！
+              1. <strong>Chrome 投放 (Chromecast / Google TV)</strong>：點上方「開啟全螢幕電視大看板」→ Chrome 右上角 ⋮ → 投放分頁至電視。<br>
+              2. <strong>智慧電視 / 電視盒 / HDMI</strong>：掃左側 QR Code 或貼上網址於電視瀏覽器開啟並按全螢幕，POS 出餐立即放大顯示並語音叫號！
             </div>
             <div style="margin-top:6px; font-family:monospace; font-size:0.75rem; color:#6EE7B7; word-break:break-all;">${escapeHtml(tvShareUrl)}</div>
           </div>
@@ -6242,7 +6241,7 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
 
   const kdsOrdersCardsHtml = (isKdsRangeLoading || isCloudSearchLoading) ? `
     <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-secondary);">
-      <div style="font-size:2.2rem; margin-bottom:8px;"></div>
+      <div style="font-size:2rem; color:#94A3B8; margin-bottom:8px;">${typeof mfIcon === 'function' ? mfIcon('clipboard', 'mf-icon-xl') : ''}</div>
       <div style="font-size:1rem; font-weight:800;">
         ${isCloudSearchLoading
           ? t(`正在從雲端資料庫搜尋「${trimmedQ}」...`, `Searching cloud database for "${trimmedQ}"...`)
@@ -6251,7 +6250,7 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
     </div>
   ` : filtered.length === 0 ? `
     <div style="grid-column:1 / -1; text-align:center; padding:60px 20px; background:#FFFFFF; border-radius:16px; border:1px dashed var(--border); color:var(--text-muted);">
-      <div style="font-size:2.4rem; margin-bottom:8px;"></div>
+      <div style="font-size:2rem; color:#94A3B8; margin-bottom:8px;">${typeof mfIcon === 'function' ? mfIcon('clipboard', 'mf-icon-xl') : ''}</div>
       <div style="font-size:1rem; font-weight:800;">${t('此日期 / 分站 / 篩選條件下目前沒有訂單', 'No orders matching this date / station / filter', 'この条件に一致する注文はありません', '해당 조건에 맞는 주문이 없습니다')}</div>
       ${q ? `<div style="margin-top:10px;"><button type="button" class="btn-tip-action" style="padding:6px 14px; font-size:0.8rem; background:#4F46E5;" onclick="runKdsCloudOrderSearch()">${t(`在雲端全部歷史訂單中搜尋「${trimmedQ}」`, `Search all cloud history for "${trimmedQ}"`)}</button></div>` : ''}
     </div>
@@ -6283,7 +6282,7 @@ function renderMerchantOrdersOnly(storeObj, onlyUpdateGrid = false) {
       const comboSubBadge = i.isVirtualSubItem ? `<span style="background:#DBEAFE; color:#1D4ED8; font-size:0.66rem; font-weight:900; padding:1px 5px; border-radius:4px; margin-left:4px;">${t('套餐附餐', 'Combo Sub')}</span>` : '';
       return `
         <div class="kds-check-item-row ${isChecked ? 'checked' : ''}" onclick="toggleKdsOrderItemChecked(${escapeJsAttr(o.orderId)}, ${escapeJsAttr(itemKey)})">
-          <span class="kds-check-box">${isChecked ? '' : ''}</span>
+          <span class="kds-check-box">${isChecked ? (typeof mfIcon === 'function' ? mfIcon('check') : '✓') : ''}</span>
           <span style="flex:1;"><strong data-dish-name="1">${escapeHtml(trDishName(i))}</strong> ×${i.qty || 1}${addOnBadge}${comboSubBadge}${sel}${noteTag}</span>
         </div>
       `;
