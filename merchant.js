@@ -8361,33 +8361,35 @@ function renderMerchantSettingsPanel(store) {
               </div>
             `;
           })()}
-          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(310px, 1fr)); gap:10px;">
+          <div class="mgr-menu-grid">
             ${menusWithOrigIdx.map((m) => {
               const idx = m.__origIdx;
               const optCount = m.options ? Object.keys(m.options).length : 0;
               const isSoldOut = Boolean(m.soldOut);
               const dLimit = Number(m.dailyLimit) || 0;
               return `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1.5px solid ${isSoldOut ? '#FCA5A5' : 'var(--border)'}; border-radius:12px; background:${isSoldOut ? '#FEF2F2' : '#F8FAFC'}; gap:8px;">
-                  <div style="min-width:0; flex:1;">
-                    <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                      <span style="font-size:0.7rem; font-weight:800; color:var(--brand-dark); background:var(--brand-light); padding:2px 6px; border-radius:4px;">${escapeHtml(trTerm(m.category || '主餐'))}</span>
-                      ${m.soldOutGroup ? `<span style="font-size:0.68rem; font-weight:900; color:#6D28D9; background:#F3E8FF; border:1px solid #D8B4FE; padding:1px 6px; border-radius:4px;" title="連動售完群組">${escapeHtml(m.soldOutGroup)}</span>` : ''}
-                      ${isSoldOut ? `<span class="sold-out-ribbon" style="${m.soldOutType === 'PERMANENT' ? 'background:#DC2626;' : 'background:#D97706;'}">${m.soldOutType === 'PERMANENT' ? t('長期缺貨', 'Out of Stock', '長期品切', '장기 품절') : t('本日售完', 'Sold Out Today', '本日完売', '오늘 품절')}</span>` : (m.tag ? `<span data-dish-name="1" style="font-size:0.68rem; font-weight:800; color:#4338CA; background:#EEF2FF; padding:2px 6px; border-radius:4px;">${escapeHtml(trTerm(typeof stripEmoji === 'function' ? stripEmoji(m.tag) : m.tag))}</span>` : '')}
-                      ${dLimit > 0 ? `<span style="font-size:0.68rem; font-weight:900; color:#DC2626; background:#FEE2E2; padding:2px 6px; border-radius:4px;">${t(`限量 ${dLimit} 份`, `Limit ${dLimit}`, `限定${dLimit}`, `한정 ${dLimit}`)}${m.remainingToday !== null && m.remainingToday !== undefined ? ` (${t('剩', 'Left', '残', '잔여')}:${m.remainingToday})` : ''}</span>` : ''}
-                      <span style="font-size:0.68rem; color:var(--text-secondary); font-weight:700;">${optCount} ${t('組選項', 'opts', 'オプション', '옵션')} (ID:${escapeHtml(m.id)})</span>
+                <div class="mgr-menu-card ${isSoldOut ? 'is-sold-out' : ''}">
+                  <div class="mgr-menu-top">
+                    <div class="mgr-menu-badges">
+                      <span class="mgr-menu-cat">${escapeHtml(trTerm(m.category || '主餐'))}</span>
+                      ${optCount > 0 ? `<span class="mgr-menu-opt-badge">${optCount} ${t('組客製', 'opts', 'オプション', '옵션')}</span>` : ''}
+                      ${m.soldOutGroup ? `<span class="mgr-menu-group-badge" title="連動售完群組">${escapeHtml(m.soldOutGroup)}</span>` : ''}
+                      ${isSoldOut ? `<span class="sold-out-ribbon" style="${m.soldOutType === 'PERMANENT' ? 'background:#DC2626;' : 'background:#D97706;'}">${m.soldOutType === 'PERMANENT' ? t('長期缺貨', 'Out of Stock', '長期品切', '장기 품절') : t('本日售完', 'Sold Out Today', '本日完売', '오늘 품절')}</span>` : (m.tag ? `<span data-dish-name="1" class="mgr-menu-tag-badge">${escapeHtml(trTerm(typeof stripEmoji === 'function' ? stripEmoji(m.tag) : m.tag))}</span>` : '')}
+                      ${dLimit > 0 ? `<span class="mgr-menu-limit-badge">${t(`限量 ${dLimit} 份`, `Limit ${dLimit}`, `限定${dLimit}`, `한정 ${dLimit}`)}${m.remainingToday !== null && m.remainingToday !== undefined ? ` (${t('剩', 'Left', '残', '잔여')}:${m.remainingToday})` : ''}</span>` : ''}
                     </div>
-                    <div data-dish-name="1" style="font-weight:900; font-size:0.92rem; margin-top:4px; color:var(--text-primary);">${escapeHtml(trDishName(m))}</div>
+                    <div data-dish-name="1" class="mgr-menu-name">${escapeHtml(trDishName(m))}</div>
                   </div>
-                  <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
-                    <span style="font-size:0.8rem; font-weight:800;">$</span>
-                    <input type="number" value="${m.price}" onchange="updateMenuItemPrice(${idx}, this.value)" style="width:58px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-weight:900;">
-                    <button type="button" onclick="toggleMenuItemSoldOut(${idx})" style="border:1px solid ${isSoldOut ? '#10B981' : '#CBD5E1'}; background:${isSoldOut ? '#DCFCE7' : '#FFFFFF'}; color:${isSoldOut ? '#065F46' : '#475569'}; padding:5px 7px; border-radius:6px; font-weight:800; font-size:0.74rem;">
-                      ${isSoldOut ? t('上架', 'Restock', '販売再開', '재입고') : t('售罄', 'Sold Out', '売切', '품절')}
-                    </button>
-                    ${optCount > 0 ? `<button type="button" onclick="openBatchApplyOptionsModal(${idx})" title="${escapeHtml(t('將此品項的客製化選項批次套用到同分類其他餐點', 'Batch apply this item\'s customization options to other dishes'))}" style="border:1px solid #A5B4FC; background:#E0E7FF; color:#3730A3; padding:5px 8px; border-radius:6px; font-weight:800; font-size:0.74rem;">${t('套用客製', 'Apply Opts', '一括適用', '옵션 일괄적용')}</button>` : ''}
-                    <button type="button" onclick="openMenuEditModal(${idx})" style="border:1px solid #C7D2FE; background:#EEF2FF; color:#312E81; padding:5px 8px; border-radius:6px; font-weight:800; font-size:0.76rem;">${t('編輯', 'Edit', '編集', '수정')}</button>
-                    <button type="button" onclick="deleteMenuItem(${idx})" style="border:none; background:#FEE2E2; color:#DC2626; padding:5px 8px; border-radius:6px; font-weight:800; font-size:0.76rem;">${t('刪', 'Del', '削除', '삭제')}</button>
+                  <div class="mgr-menu-bottom">
+                    <div class="mgr-menu-price-wrap">
+                      <span class="mgr-menu-currency">$</span>
+                      <input type="number" value="${m.price}" onchange="updateMenuItemPrice(${idx}, this.value)" class="mgr-menu-price-input">
+                    </div>
+                    <div class="mgr-menu-actions">
+                      <button type="button" onclick="toggleMenuItemSoldOut(${idx})" class="mgr-menu-btn ${isSoldOut ? 'btn-restock' : 'btn-soldout'}">${isSoldOut ? t('上架', 'Restock', '販売再開', '재입고') : t('售罄', 'Sold Out', '売切', '품절')}</button>
+                      ${optCount > 0 ? `<button type="button" onclick="openBatchApplyOptionsModal(${idx})" title="${escapeHtml(t('將此品項的客製化選項批次套用到同分類其他餐點', 'Batch apply this item\'s customization options to other dishes'))}" class="mgr-menu-btn btn-apply-opts">${t('套用客製', 'Apply Opts', '一括適用', '옵션 적용')}</button>` : ''}
+                      <button type="button" onclick="openMenuEditModal(${idx})" class="mgr-menu-btn btn-edit">${t('編輯', 'Edit', '編集', '수정')}</button>
+                      <button type="button" onclick="deleteMenuItem(${idx})" class="mgr-menu-btn btn-del">${t('刪', 'Del', '削除', '삭제')}</button>
+                    </div>
                   </div>
                 </div>
               `;

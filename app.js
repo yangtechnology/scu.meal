@@ -1336,7 +1336,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.15`;
+    script.src = `${base}merchant.js?v=26.16`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -5410,14 +5410,16 @@ function openMyOrdersDrawer() {
 
   const list = getMyTrackedOrdersList();
   const searchBarHtml = `
-    <div style="background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:14px; padding:12px; margin-bottom:14px; box-shadow:var(--shadow-sm);">
-      <div style="font-size:0.8rem; font-weight:900; color:var(--text-primary); margin-bottom:6px;">
- ${t('跨裝置安全找回訂單（輸入「6 碼防偽核銷碼」，或「4 碼取餐號 + 手機末 3 碼」）', 'Find order across devices (6-char code OR Pickup # + last 3 phone digits)', '他端末から注文照会（6桁認証コードまたは受取番号＋携帯下3桁）', '다른 기기 주문 찾기 (6자리 인증코드 또는 픽업번호+전화 뒤 3자리)')}
+    <div class="drawer-lookup-card">
+      <div class="drawer-lookup-title">
+        ${t('跨裝置找回訂單（防偽核銷碼 或 取餐號 + 手機末 3 碼）', 'Find order across devices (Code or Pickup # + last 3 phone digits)', '他端末から注文照会（認証コードまたは受取番号＋携帯下3桁）', '다른 기기 주문 찾기 (인증코드 또는 픽업번호+전화 뒤 3자리)')}
       </div>
-      <div style="display:grid; grid-template-columns:1.3fr 0.9fr auto; gap:6px;">
-        <input type="search" id="drawerOrderSearchInput" class="select-input" placeholder="${t('6碼防偽碼 或 4碼取餐號', '6-char Code or Pickup #', '6桁コードまたは受取番号', '6자리 코드 또는 픽업번호')}" value="${escapeHtml(state.studentLookupQuery)}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
-        <input type="tel" id="drawerOrderPhoneInput" maxlength="10" class="select-input" placeholder="${t('手機末3碼 (若用取餐號)', 'Last 3 phone digits', '携帯下3桁', '전화 뒤 3자리')}" value="${escapeHtml(state.studentLookupPhoneLast3 || extractPhoneLast3(state.savedCustomerPhone))}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
-        <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px;" onclick="searchOrderAcrossDevices()">${t('驗證找回', 'Find', '照会', '조회')}</button>
+      <div class="drawer-lookup-fields">
+        <input type="search" id="drawerOrderSearchInput" class="select-input drawer-lookup-main" placeholder="${t('輸入 6 碼防偽碼或取餐號', '6-char Code or Pickup #', '6桁コードまたは受取番号', '6자리 코드 또는 픽업번호')}" value="${escapeHtml(state.studentLookupQuery)}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
+        <div class="drawer-lookup-subrow">
+          <input type="tel" id="drawerOrderPhoneInput" maxlength="10" inputmode="numeric" class="select-input" placeholder="${t('手機末 3 碼', 'Last 3 phone digits', '携帯下3桁', '전화 뒤 3자리')}" value="${escapeHtml(state.studentLookupPhoneLast3 || extractPhoneLast3(state.savedCustomerPhone))}" onkeydown="if(event.key==='Enter') searchOrderAcrossDevices()">
+          <button type="button" class="btn-tip-action drawer-lookup-btn" onclick="searchOrderAcrossDevices()">${t('驗證找回', 'Find', '照会', '조회')}</button>
+        </div>
       </div>
     </div>
   `;
@@ -5427,7 +5429,7 @@ function openMyOrdersDrawer() {
       <div style="text-align:center; padding:36px 16px;">
         <div style="font-size:2rem; color:#94A3B8; margin-bottom:8px;">${typeof mfIcon === 'function' ? mfIcon('receipt', 'mf-icon-xl') : ''}</div>
         <h4 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">${t('目前本機尚無進行中或歷史點餐紀錄', 'No orders on this device yet', 'この端末にはまだ注文履歴がありません', '이 기기에 아직 주문 내역이 없습니다')}</h4>
-        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">${t('若您剛才使用其他裝置或無痕視窗點餐，請在上方輸入「6 碼防偽核銷碼」或「取餐號 + 手機末 3 碼」安全找回！', 'Ordered on another device? Enter your 6-char verification code above to recover your ticket.', '別端末で注文した場合は上の検索欄から6桁認証コードで照会できます。', '다른 기기에서 주문한 경우 위에서 6자리 인증코드로 조회하세요.')}</p>
+        <p style="font-size:0.84rem; color:var(--text-secondary); margin-bottom:16px;">${t('若使用其他裝置點餐，可於上方輸入防偽核銷碼或取餐號找回。', 'Ordered on another device? Enter your code or pickup number above.', '別端末で注文した場合は上の検索欄から照会できます。', '다른 기기에서 주문한 경우 위에서 코드나 픽업번호로 조회하세요.')}</p>
         <button type="button" class="btn-tip-action" onclick="closeMyOrdersDrawer()">${t('前往挑選餐點', 'Browse Menu', 'メニューを見る', '메뉴 보러 가기')}</button>
       </div>
     `;
@@ -5438,25 +5440,26 @@ function openMyOrdersDrawer() {
       const isReady = o.status === '可取餐';
       const isCooking = o.status === '製作中';
       const isScheduled = o.status === '已接單待排程' || o.status === '待付款確認';
-      const isCancelled = String(o.status).includes('已取消');
-      const verDisplay = formatVerificationCodeDisplay(o);
+      const isCancelled = String(o.status || '').includes('已取消');
+      const statusBadgeText = isCancelled
+        ? t('已取消', 'Cancelled', 'キャンセル', '취소됨')
+        : (isReady ? t('可取餐', 'Ready', '受取可', '픽업 가능') : trTerm(o.status));
+      const statusCls = isCancelled ? 'cancelled' : isReady ? 'ready' : isCooking ? 'cooking' : isScheduled ? 'scheduled' : 'done';
+      const timeLabel = o.isReservation ? `${o.pickupDate} ${o.pickupTime}` : t('立即製作', 'Make Now', '今すぐ調理', '바로 조리');
 
       return `
-        <div style="background:#FFFFFF; border:2px solid ${isReady ? 'var(--green)' : isCooking ? '#FDBA74' : isScheduled ? '#93C5FD' : 'var(--border)'}; border-radius:14px; padding:14px; margin-bottom:10px; box-shadow:var(--shadow-sm); cursor:pointer;" onclick="closeMyOrdersDrawer(); navigateToOrderTicket(${escapeJsAttr(o.orderId)})">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:1.35rem; font-weight:950; color:${isReady ? 'var(--green)' : 'var(--brand-dark)'};">#${escapeHtml(o.pickupNumber)}</span>
-              <span style="font-weight:900; font-size:0.95rem;">${escapeHtml(trTerm(o.storeName))}</span>
-              <span style="font-family:monospace; font-size:0.72rem; font-weight:900; background:#EEF2FF; color:#312E81; padding:2px 6px; border-radius:6px;">${t('核銷碼', 'Code', '認証', '코드')}:${escapeHtml(verDisplay)}</span>
+        <div class="my-order-card status-${statusCls}" onclick="closeMyOrdersDrawer(); navigateToOrderTicket(${escapeJsAttr(o.orderId)})">
+          <div class="my-order-row1">
+            <div class="my-order-title-group">
+              <span class="my-order-num">#${escapeHtml(o.pickupNumber)}</span>
+              <span class="my-order-store">${escapeHtml(trTerm(o.storeName))}</span>
             </div>
-            <span style="font-size:0.74rem; font-weight:900; padding:3px 10px; border-radius:999px; background:${isCancelled ? '#FEE2E2' : isReady ? '#DCFCE7' : isCooking ? '#FEF3C7' : isScheduled ? '#DBEAFE' : '#E2E8F0'}; color:${isCancelled ? '#DC2626' : isReady ? '#047857' : isCooking ? '#B45309' : isScheduled ? '#1E40AF' : '#475569'};">
-              ${isReady ? `${t('可取餐！', 'Ready!', '受取可!', '픽업 가능!')}` : escapeHtml(trTerm(o.status))}
-            </span>
+            <span class="my-order-status-pill ${statusCls}">${escapeHtml(statusBadgeText)}</span>
           </div>
-          <div data-dish-name="1" style="font-size:0.84rem; color:var(--text-primary); font-weight:700; margin-bottom:6px;">${escapeHtml(itemStr)}</div>
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.76rem; color:var(--text-secondary);">
-            <span>${escapeHtml(o.isReservation ? `${o.pickupDate} ${o.pickupTime}` : t('立即製作', 'Make Now', '今すぐ調理', '바로 조리'))} (${escapeHtml(trTerm(o.paymentMethod))})</span>
-            <strong style="font-size:0.95rem; color:var(--red);">NT$ ${o.finalTotal} ・ ${t('查看憑證 ➔', 'View Ticket ➔', 'チケット ➔', '티켓 보기 ➔')}</strong>
+          <div data-dish-name="1" class="my-order-items">${escapeHtml(itemStr)}</div>
+          <div class="my-order-row3">
+            <span class="my-order-meta">${escapeHtml(timeLabel)}・${escapeHtml(trTerm(o.paymentMethod))}</span>
+            <span class="my-order-cta"><strong>NT$ ${o.finalTotal}</strong> <span class="my-order-link">${t('查看憑證 →', 'Ticket →', '詳細 →', '보기 →')}</span></span>
           </div>
         </div>
       `;

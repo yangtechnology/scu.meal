@@ -3589,6 +3589,366 @@ select.select-input {
   border-radius: 12px;
 }
 
+/* ==================== 學生端「我的點餐紀錄」三列精簡卡片 (v26.16) ==================== */
+.drawer-lookup-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.drawer-lookup-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.drawer-lookup-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-lookup-subrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.drawer-lookup-btn {
+  white-space: nowrap !important;
+  flex-shrink: 0;
+  padding: 9px 16px;
+}
+
+@media (min-width: 600px) {
+  .drawer-lookup-fields {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .drawer-lookup-main {
+    flex: 1.25;
+  }
+  .drawer-lookup-subrow {
+    flex: 1;
+  }
+}
+
+.my-order-card {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 13px 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  transition: border-color 0.15s ease;
+}
+
+.my-order-card.status-ready {
+  border-color: var(--green);
+}
+
+.my-order-card.status-cooking {
+  border-color: #FDBA74;
+}
+
+.my-order-card.status-scheduled {
+  border-color: #93C5FD;
+}
+
+.my-order-row1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.my-order-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.my-order-num {
+  font-size: 1.18rem;
+  font-weight: 900;
+  color: var(--brand-dark);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.my-order-card.status-ready .my-order-num {
+  color: var(--green);
+}
+
+.my-order-store {
+  font-size: 0.94rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-order-status-pill {
+  font-size: 0.74rem;
+  font-weight: 900;
+  padding: 3px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: #E2E8F0;
+  color: #475569;
+}
+
+.my-order-status-pill.ready {
+  background: #DCFCE7;
+  color: #047857;
+}
+
+.my-order-status-pill.cooking {
+  background: #FEF3C7;
+  color: #B45309;
+}
+
+.my-order-status-pill.scheduled {
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+
+.my-order-status-pill.cancelled {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.my-order-items {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.my-order-row3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #F1F5F9;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.my-order-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-order-cta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.my-order-cta strong {
+  font-size: 0.94rem;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.my-order-link {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--brand-dark);
+  white-space: nowrap;
+}
+
+/* ==================== 店家端「設定 → 菜單管理」上下分層精簡卡片 (v26.16) ==================== */
+.mgr-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 10px;
+}
+
+.mgr-menu-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.mgr-menu-card.is-sold-out {
+  border-color: #FCA5A5;
+  background: #FEF2F2;
+}
+
+.mgr-menu-top {
+  min-width: 0;
+}
+
+.mgr-menu-badges {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.mgr-menu-cat {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--brand-dark);
+  background: var(--brand-light);
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.mgr-menu-opt-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #3730A3;
+  background: #EEF2FF;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.mgr-menu-group-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #6D28D9;
+  background: #F3E8FF;
+  border: 1px solid #D8B4FE;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+.mgr-menu-tag-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #475569;
+  background: #F1F5F9;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.mgr-menu-limit-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #DC2626;
+  background: #FEE2E2;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.mgr-menu-name {
+  font-weight: 900;
+  font-size: 0.98rem;
+  color: var(--text-primary);
+  margin-top: 6px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.mgr-menu-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid #F1F5F9;
+  padding-top: 8px;
+}
+
+.mgr-menu-price-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mgr-menu-currency {
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.mgr-menu-price-input {
+  width: 64px;
+  padding: 5px 7px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  font-weight: 900;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  background: #FFFFFF;
+}
+
+.mgr-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mgr-menu-btn {
+  padding: 5px 9px;
+  border-radius: 7px;
+  font-weight: 800;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.mgr-menu-btn.btn-soldout {
+  border: 1px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #475569;
+}
+
+.mgr-menu-btn.btn-restock {
+  border: 1px solid #10B981;
+  background: #DCFCE7;
+  color: #065F46;
+}
+
+.mgr-menu-btn.btn-apply-opts {
+  border: 1px solid #A5B4FC;
+  background: #E0E7FF;
+  color: #3730A3;
+}
+
+.mgr-menu-btn.btn-edit {
+  border: 1px solid #C7D2FE;
+  background: #EEF2FF;
+  color: #312E81;
+}
+
+.mgr-menu-btn.btn-del {
+  border: none;
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
 .alert-mode-bar {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
