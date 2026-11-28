@@ -26,6 +26,11 @@
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    .mf-icon { width: 1.05em; height: 1.05em; display: inline-block; vertical-align: -0.18em; flex-shrink: 0; }
+    .mf-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 6px; background: #94A3B8; }
+    .mf-status-dot.green { background: #10B981; }
+    .mf-status-dot.red { background: #EF4444; }
+    .mf-status-dot.amber { background: #F59E0B; }
     html, body {
       width: 100%;
       height: 100%;
@@ -488,16 +493,16 @@
         <div class="tv-controls-hideable" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
           <select id="tvStoreSelect" class="tv-ctrl-select" onchange="switchTvStore(this.value)" title="切換店鋪"></select>
           <select id="tvLangSelect" class="tv-ctrl-select" onchange="setTvLang(this.value)" title="顯示語言">
-            <option value="bilingual">🌐 中英雙語</option>
-            <option value="zh-TW">🌐 繁體中文</option>
-            <option value="en">🌐 English</option>
-            <option value="ja">🌐 日本語</option>
-            <option value="ko">🌐 한국어</option>
+            <option value="bilingual">中英雙語</option>
+            <option value="zh-TW">繁體中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
           </select>
-          <button type="button" id="tvSoundBtn" class="tv-ctrl-btn active" onclick="toggleTvSound()">🔊 語音叫號：開</button>
-          <button type="button" class="tv-ctrl-btn" onclick="unlockTvAudio(false); announceNumbersByVoice(['A001'], (tvState.store && tvState.store.name) || 'MealFlow');" title="測試叫號叮咚與語音播報">🔔 試播音效</button>
-          <button type="button" class="tv-ctrl-btn" onclick="openCastGuideModal()">📺 投上電視</button>
-          <button type="button" id="tvFullscreenBtn" class="tv-ctrl-btn primary" onclick="toggleTvFullscreen()">⛶ 全螢幕</button>
+          <button type="button" id="tvSoundBtn" class="tv-ctrl-btn active" onclick="toggleTvSound()">語音叫號：開</button>
+          <button type="button" class="tv-ctrl-btn" onclick="unlockTvAudio(false); announceNumbersByVoice(['A001'], (tvState.store && tvState.store.name) || 'MealFlow');" title="測試叫號叮咚與語音播報"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> 試播音效</button>
+          <button type="button" class="tv-ctrl-btn" onclick="openCastGuideModal()"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg> 投上電視</button>
+          <button type="button" id="tvFullscreenBtn" class="tv-ctrl-btn primary" onclick="toggleTvFullscreen()">全螢幕</button>
         </div>
       </div>
     </header>
@@ -508,14 +513,14 @@
       <section class="tv-col tv-col-prep">
         <div class="tv-col-head">
           <div class="tv-col-title">
-            <span id="tvPrepTitle">🍳 製作中</span>
+            <span id="tvPrepTitle">製作中</span>
             <span class="tv-col-title-en" id="tvPrepSub">PREPARING</span>
           </div>
           <span class="tv-count-badge" id="tvPrepCount">0</span>
         </div>
         <div class="tv-col-body" id="tvPrepBody">
           <div class="tv-empty-state">
-            <div class="tv-empty-icon">🍳</div>
+            <div class="tv-empty-icon"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
             <div class="tv-empty-text">正在同步廚房備餐進度...</div>
           </div>
         </div>
@@ -525,14 +530,14 @@
       <section class="tv-col tv-col-ready">
         <div class="tv-col-head">
           <div class="tv-col-title">
-            <span id="tvReadyTitle">🔔 請至櫃檯取餐</span>
+            <span id="tvReadyTitle">請至櫃檯取餐</span>
             <span class="tv-col-title-en" id="tvReadySub">NOW SERVING</span>
           </div>
           <span class="tv-count-badge" id="tvReadyCount">0</span>
         </div>
         <div class="tv-col-body" id="tvReadyBody">
           <div class="tv-empty-state">
-            <div class="tv-empty-icon">🔔</div>
+            <div class="tv-empty-icon"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
             <div class="tv-empty-text">餐點完成後將立即放大顯示並語音叫號</div>
           </div>
         </div>
@@ -548,7 +553,7 @@
       <div class="tv-qr-dock">
         <div class="tv-qr-box" id="tvOrderQrBox"></div>
         <div>
-          <div style="font-size:1rem; font-weight:900; color:#FFFFFF;" id="tvQrTitle">📱 手機掃碼免排隊</div>
+          <div style="font-size:1rem; font-weight:900; color:#FFFFFF;" id="tvQrTitle">手機掃碼免排隊</div>
           <div style="font-size:0.82rem; color:#94A3B8; font-weight:700; margin-top:2px;" id="tvQrSub">Scan to Order Online</div>
         </div>
       </div>
@@ -557,14 +562,14 @@
 
   <!-- 音訊自動解鎖提示 -->
   <button type="button" id="tvAudioUnlockBar" class="tv-audio-unlock-bar" onclick="unlockTvAudioAndFullscreen()">
-    🔊 點擊畫面啟用電視叫號叮咚與語音播報
+    點擊畫面啟用電視叫號叮咚與語音播報
   </button>
 
   <!-- 投屏至電視指南彈窗 -->
   <div id="tvCastModal" class="tv-modal-overlay" onclick="if(event.target===this) closeCastGuideModal()">
     <div class="tv-modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-        <h3 style="font-size:1.3rem; font-weight:900;">📺 將叫號看板投上電視（麥當勞大螢幕模式）</h3>
+        <h3 style="font-size:1.3rem; font-weight:900;">將叫號看板投上電視（大螢幕模式）</h3>
         <button type="button" class="tv-ctrl-btn" onclick="closeCastGuideModal()">✕ 關閉</button>
       </div>
       <p style="font-size:0.9rem; color:#CBD5E1; line-height:1.6; margin-bottom:14px;">
@@ -573,7 +578,7 @@
       <div style="display:grid; gap:10px; margin-bottom:16px; font-size:0.88rem; line-height:1.55;">
         <div style="background:#1E293B; padding:12px 14px; border-radius:12px; border:1px solid #334155;">
           <strong style="color:#34D399;">方式 1：Chrome 瀏覽器一鍵投放 (Chromecast / Google TV)</strong><br>
-          在電腦或 Android 平板用 Chrome 開啟此網址 → 點右上角 ⋮ → 選擇「投放 (Cast)」→ 選店內電視，再按右上角「⛶ 全螢幕」。
+          在電腦或 Android 平板用 Chrome 開啟此網址 → 點右上角 ⋮ → 選擇「投放 (Cast)」→ 選店內電視，再按右上角「全螢幕」。
         </div>
         <div style="background:#1E293B; padding:12px 14px; border-radius:12px; border:1px solid #334155;">
           <strong style="color:#60A5FA;">方式 2：Apple AirPlay / HDMI 直連電視</strong><br>
@@ -589,7 +594,7 @@
         <div style="flex:1; min-width:0;">
           <div style="font-size:0.78rem; color:#94A3B8; font-weight:800; margin-bottom:4px;">本店專屬電視看板網址：</div>
           <input type="text" id="tvBoardUrlInput" readonly style="width:100%; background:#1E293B; color:#34D399; border:1px solid #475569; border-radius:8px; padding:8px 10px; font-family:monospace; font-size:0.82rem; font-weight:700; margin-bottom:8px;">
-          <button type="button" id="tvCopyUrlBtn" class="tv-ctrl-btn primary" style="width:100%;" onclick="copyTvBoardUrl()">📋 複製電視看板網址</button>
+          <button type="button" id="tvCopyUrlBtn" class="tv-ctrl-btn primary" style="width:100%;" onclick="copyTvBoardUrl()">複製電視看板網址</button>
         </div>
       </div>
     </div>
@@ -598,7 +603,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="../realtime-config.js?v=26.1"></script>
-  <script src="../i18n.js?v=26.0"></script>
+  <script src="../icons.js?v=26.14"></script>
+  <script src="../i18n.js?v=26.14"></script>
   <script src="./qr.js?v=26.0"></script>
   <script>
     const GAS_URL = (window.MEALFLOW_REALTIME_CONFIG && typeof window.MEALFLOW_REALTIME_CONFIG.resolveApiUrl === 'function')
@@ -630,74 +636,74 @@
 
     const TV_I18N = {
       bilingual: {
-        prepTitle: '🍳 製作中', prepSub: 'PREPARING',
-        readyTitle: '🔔 請至櫃檯取餐', readySub: 'NOW SERVING',
-        spotlightLabel: '⭐ 最新叫號・請取餐 / NOW CALLING',
+        prepTitle: '製作中', prepSub: 'PREPARING',
+        readyTitle: '請至櫃檯取餐', readySub: 'NOW SERVING',
+        spotlightLabel: '最新叫號・請取餐 / NOW CALLING',
         spotlightSub: '請攜帶憑證至櫃檯領取餐點・Please collect at counter',
         emptyPrep: '目前無製作中訂單 / No orders preparing',
         emptyReady: '餐點完成後將立即放大顯示並語音叫號 / Ready numbers appear here',
         footerMain: '請留意您的取餐號碼，顯示於右側綠區請攜帶手機憑證或收據至櫃檯取餐 | Watch for your number on the right',
-        qrTitle: '📱 手機掃碼點餐', qrSub: 'Scan to Order Online',
+        qrTitle: '手機掃碼點餐', qrSub: 'Scan to Order Online',
         synced: 'LIVE 即時同步', syncing: '同步中...', offline: '連線重試中...',
-        paused: '⛔ 暫停營業中', closed: '🌙 已打烊（開放預訂）', open: '🟢 營業中',
-        soundOn: '🔊 語音叫號：開', soundOff: '🔇 語音叫號：關',
-        fullscreen: '⛶ 全螢幕', exitFullscreen: '↙ 退出全螢幕'
+        paused: '暫停營業中', closed: '已打烊（開放預訂）', open: '營業中',
+        soundOn: '語音叫號：開', soundOff: '語音叫號：關',
+        fullscreen: '全螢幕', exitFullscreen: '退出全螢幕'
       },
       'zh-TW': {
-        prepTitle: '🍳 製作中', prepSub: '請稍候',
-        readyTitle: '🔔 請至櫃檯取餐', readySub: '餐點已備妥',
-        spotlightLabel: '⭐ 最新叫號・請取餐',
+        prepTitle: '製作中', prepSub: '請稍候',
+        readyTitle: '請至櫃檯取餐', readySub: '餐點已備妥',
+        spotlightLabel: '最新叫號・請取餐',
         spotlightSub: '請攜帶手機取餐憑證或紙本收據至櫃檯領取',
         emptyPrep: '目前無製作中訂單',
         emptyReady: '請稍候，餐點完成後將立即顯示並語音叫號',
         footerMain: '請留意您的取餐號碼，顯示於右側綠區即可至櫃檯取餐',
-        qrTitle: '📱 手機掃碼免排隊', qrSub: '掃描立即線上點餐',
+        qrTitle: '手機掃碼免排隊', qrSub: '掃描立即線上點餐',
         synced: 'LIVE 即時同步', syncing: '同步中...', offline: '連線重試中...',
-        paused: '⛔ 暫停營業中', closed: '🌙 已打烊（開放預訂）', open: '🟢 營業中',
-        soundOn: '🔊 語音叫號：開', soundOff: '🔇 語音叫號：關',
-        fullscreen: '⛶ 全螢幕', exitFullscreen: '↙ 退出全螢幕'
+        paused: '暫停營業中', closed: '已打烊（開放預訂）', open: '營業中',
+        soundOn: '語音叫號：開', soundOff: '語音叫號：關',
+        fullscreen: '全螢幕', exitFullscreen: '退出全螢幕'
       },
       en: {
-        prepTitle: '🍳 PREPARING', prepSub: 'IN KITCHEN',
-        readyTitle: '🔔 NOW SERVING', readySub: 'READY FOR PICKUP',
-        spotlightLabel: '⭐ NOW CALLING — PLEASE COLLECT',
+        prepTitle: 'PREPARING', prepSub: 'IN KITCHEN',
+        readyTitle: 'NOW SERVING', readySub: 'READY FOR PICKUP',
+        spotlightLabel: 'NOW CALLING — PLEASE COLLECT',
         spotlightSub: 'Please show your pickup ticket at the counter',
         emptyPrep: 'No orders currently preparing',
         emptyReady: 'Ready order numbers will appear here',
         footerMain: 'Please watch for your order number on the right and collect at the counter',
-        qrTitle: '📱 Scan to Order', qrSub: 'Skip the line on your phone',
+        qrTitle: 'Scan to Order', qrSub: 'Skip the line on your phone',
         synced: 'LIVE SYNCED', syncing: 'Syncing...', offline: 'Reconnecting...',
-        paused: '⛔ PAUSED', closed: '🌙 CLOSED (Pre-order open)', open: '🟢 OPEN',
-        soundOn: '🔊 Voice: ON', soundOff: '🔇 Voice: OFF',
-        fullscreen: '⛶ Fullscreen', exitFullscreen: '↙ Exit Fullscreen'
+        paused: 'PAUSED', closed: 'CLOSED (Pre-order open)', open: 'OPEN',
+        soundOn: 'Voice: ON', soundOff: 'Voice: OFF',
+        fullscreen: 'Fullscreen', exitFullscreen: 'Exit Fullscreen'
       },
       ja: {
-        prepTitle: '🍳 調理中', prepSub: 'PREPARING',
-        readyTitle: '🔔 お呼び出し中', readySub: 'NOW SERVING',
-        spotlightLabel: '⭐ ただいまのお呼び出し番号',
+        prepTitle: '調理中', prepSub: 'PREPARING',
+        readyTitle: 'お呼び出し中', readySub: 'NOW SERVING',
+        spotlightLabel: 'ただいまのお呼び出し番号',
         spotlightSub: 'カウンターまでお越しください',
         emptyPrep: '現在調理中のご注文はありません',
         emptyReady: '出来上がり次第こちらに表示されます',
         footerMain: '右側の緑枠に番号が表示されましたら、カウンターへお越しください',
-        qrTitle: '📱 スマホ注文', qrSub: '並ばずオンライン注文',
+        qrTitle: 'スマホ注文', qrSub: '並ばずオンライン注文',
         synced: 'LIVE 同期中', syncing: '同期中...', offline: '再接続中...',
-        paused: '⛔ 営業休止中', closed: '🌙 営業終了（予約可）', open: '🟢 営業中',
-        soundOn: '🔊 音声呼出：ON', soundOff: '🔇 音声呼出：OFF',
-        fullscreen: '⛶ 全画面', exitFullscreen: '↙ 全画面終了'
+        paused: '営業休止中', closed: '営業終了（予約可）', open: '営業中',
+        soundOn: '音声呼出：ON', soundOff: '音声呼出：OFF',
+        fullscreen: '全画面', exitFullscreen: '全画面終了'
       },
       ko: {
-        prepTitle: '🍳 준비 중', prepSub: 'PREPARING',
-        readyTitle: '🔔 픽업해 주세요', readySub: 'NOW SERVING',
-        spotlightLabel: '⭐ 현재 호출 번호',
+        prepTitle: '준비 중', prepSub: 'PREPARING',
+        readyTitle: '픽업해 주세요', readySub: 'NOW SERVING',
+        spotlightLabel: '현재 호출 번호',
         spotlightSub: '카운터에서 음식을 픽업해 주세요',
         emptyPrep: '현재 준비 중인 주문이 없습니다',
         emptyReady: '준비가 완료되면 여기에 표시됩니다',
         footerMain: '오른쪽 초록 영역에 번호가 표시되면 카운터에서 픽업해 주세요',
-        qrTitle: '📱 QR 모바일 주문', qrSub: '줄 서지 않고 바로 주문',
+        qrTitle: 'QR 모바일 주문', qrSub: '줄 서지 않고 바로 주문',
         synced: 'LIVE 동기화됨', syncing: '동기화 중...', offline: '재연결 중...',
-        paused: '⛔ 영업 중지', closed: '🌙 영업 종료 (예약 가능)', open: '🟢 영업 중',
-        soundOn: '🔊 음성 호출: 켜짐', soundOff: '🔇 음성 호출: 꺼짐',
-        fullscreen: '⛶ 전체화면', exitFullscreen: '↙ 전체화면 종료'
+        paused: '영업 중지', closed: '영업 종료 (예약 가능)', open: '영업 중',
+        soundOn: '음성 호출: 켜짐', soundOff: '음성 호출: 꺼짐',
+        fullscreen: '전체화면', exitFullscreen: '전체화면 종료'
       }
     };
 
@@ -848,8 +854,9 @@
       if (iconEl) {
         if (store.icon && /^https?:\/\/|^data:image\//i.test(store.icon)) {
           iconEl.innerHTML = `<img src="${escapeHtmlTv(store.icon)}" alt="Store">`;
-        } else if (store.icon) {
-          iconEl.textContent = store.icon;
+        } else if (typeof window.mfIcon === 'function') {
+          iconEl.innerHTML = window.mfIcon('store');
+          iconEl.style.color = '#0F172A';
         }
       }
 
@@ -857,15 +864,15 @@
       if (statusBadge) {
         statusBadge.style.display = 'inline-block';
         if (store.isOpen === false || store.canPreOrder === false) {
-          statusBadge.textContent = tvText('paused');
+          statusBadge.innerHTML = `<span class="mf-status-dot red"></span>${escapeHtmlTv(tvText('paused'))}`;
           statusBadge.style.background = 'rgba(239,68,68,0.22)';
           statusBadge.style.color = '#FCA5A5';
         } else if (store.canOrderNow === false) {
-          statusBadge.textContent = tvText('closed');
+          statusBadge.innerHTML = `<span class="mf-status-dot amber"></span>${escapeHtmlTv(tvText('closed'))}`;
           statusBadge.style.background = 'rgba(99,102,241,0.24)';
           statusBadge.style.color = '#C7D2FE';
         } else {
-          statusBadge.textContent = tvText('open');
+          statusBadge.innerHTML = `<span class="mf-status-dot green"></span>${escapeHtmlTv(tvText('open'))}`;
           statusBadge.style.background = 'rgba(16,185,129,0.2)';
           statusBadge.style.color = '#6EE7B7';
         }
@@ -903,7 +910,7 @@
       if (prepArr.length === 0) {
         prepBody.innerHTML = `
           <div class="tv-empty-state">
-            <div class="tv-empty-icon">🍳</div>
+            <div class="tv-empty-icon">${typeof window.mfIcon === 'function' ? window.mfIcon('clock') : ''}</div>
             <div class="tv-empty-text">${escapeHtmlTv(tvText('emptyPrep'))}</div>
           </div>
         `;
@@ -918,7 +925,7 @@
       if (readyList.length === 0) {
         readyBody.innerHTML = `
           <div class="tv-empty-state">
-            <div class="tv-empty-icon">🔔</div>
+            <div class="tv-empty-icon">${typeof window.mfIcon === 'function' ? window.mfIcon('bell') : ''}</div>
             <div class="tv-empty-text">${escapeHtmlTv(tvText('emptyReady'))}</div>
           </div>
         `;
@@ -1123,7 +1130,7 @@
             tvState.seenReadySignatureMap = nextSigMap;
             tvState.hasInitialSync = true;
 
-            setTvSyncUi('online', tvText('synced') + ' ⚡');
+            setTvSyncUi('online', tvText('synced'));
             renderTvBoard(new Set(newlyCalled));
             if (newlyCalled.length > 0) {
               announceNumbersByVoice(newlyCalled, tvState.store.name);
@@ -1198,8 +1205,8 @@
       const btn = document.getElementById('tvCopyUrlBtn');
       const done = () => {
         if (btn) {
-          btn.textContent = '✅ 已複製電視看板網址！';
-          setTimeout(() => { btn.textContent = '📋 複製電視看板網址'; }, 2200);
+          btn.textContent = '已複製電視看板網址';
+          setTimeout(() => { btn.textContent = '複製電視看板網址'; }, 2200);
         }
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {

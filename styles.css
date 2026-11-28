@@ -523,6 +523,54 @@ body.store-mode-active .page-container,
   color: #C2410C;
 }
 
+/* ==================== 全站極簡 SVG 圖示與狀態圓點 (v26.14) ==================== */
+.mf-icon {
+  width: 1.05em;
+  height: 1.05em;
+  display: inline-block;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
+}
+
+.mf-icon-lg {
+  width: 1.35em;
+  height: 1.35em;
+}
+
+.mf-icon-xl {
+  width: 1.65em;
+  height: 1.65em;
+}
+
+.store-rail-btn .rail-icon .mf-icon {
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
+
+.mf-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  flex-shrink: 0;
+  margin-right: 5px;
+  background-color: #94A3B8;
+}
+
+.mf-status-dot.green {
+  background-color: #10B981;
+}
+
+.mf-status-dot.red {
+  background-color: #EF4444;
+}
+
+.mf-status-dot.amber {
+  background-color: #F59E0B;
+}
+
 /* ==================== 通用按鈕與表單元件系統 ==================== */
 .btn-tip-action {
   background: var(--brand);
@@ -3507,7 +3555,7 @@ select.select-input {
   animation: fadeIn 0.16s ease;
 }
 
-/* ==================== 🖨️ 80mm 熱感應出單機專用列印排版 (@media print) ==================== */
+/* ==================== 80mm 熱感應出單機專用列印排版 (@media print) ==================== */
 @media print {
   @page {
     size: 80mm auto;

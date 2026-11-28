@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../styles.css?v=26.13">
+  <link rel="stylesheet" href="../styles.css?v=26.14">
   <script>
     window.MEALFLOW_FORCED_ROUTE = 'order';
   </script>
@@ -27,7 +27,7 @@
           <img src="../logo-icon.jpg" alt="MealFlow Icon" class="brand-logo-icon-img">
           <img src="../logo-text.png" alt="MealFlow" class="brand-logo-text-img">
         </a>
-        <span class="role-badge" id="headerRoleBadge">📱 線上點餐系統</span>
+        <span class="role-badge" id="headerRoleBadge">線上點餐系統</span>
         <span class="sync-status" title="點擊立即同步雲端資料" style="cursor:pointer;" onclick="syncCloud(true)">
           <span class="sync-dot" id="syncDot"></span>
           <span id="syncText">連線中</span>
@@ -36,25 +36,25 @@
 
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <div id="headerStoreControls" style="display:none; align-items:center; gap:8px; flex-wrap:wrap;">
-          <button type="button" id="headerStoreOpenToggleBtn" class="store-status-toggle" onclick="toggleCurrentStoreOpenStatus()">🟢 營業中</button>
+          <button type="button" id="headerStoreOpenToggleBtn" class="store-status-toggle" onclick="toggleCurrentStoreOpenStatus()"><span class="mf-status-dot green" aria-hidden="true"></span>營業中</button>
           <select id="storeTopSwitcher" class="select-input" style="width:auto; min-width:210px; padding:6px 12px; font-weight:800; font-size:0.84rem;" onchange="switchMerchantStore(this.value)"></select>
-          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="openShiftZReportModal()" title="開啟今日錢箱交班日結單">🧾 交班日結</button>
-          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="syncCloud(true)">🔄 同步雲端</button>
-          <button type="button" class="btn-danger-soft" style="padding:6px 10px; font-size:0.78rem;" onclick="lockMerchantSession()" title="立即銷毀時效憑證並鎖定後台">🔒 鎖定後台</button>
+          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="openShiftZReportModal()" title="開啟今日錢箱交班日結單"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg> 交班日結</button>
+          <button type="button" class="filter-chip" style="padding:6px 12px; font-size:0.78rem;" onclick="syncCloud(true)"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> 同步雲端</button>
+          <button type="button" class="btn-danger-soft" style="padding:6px 10px; font-size:0.78rem;" onclick="lockMerchantSession()" title="立即銷毀時效憑證並鎖定後台"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 鎖定後台</button>
         </div>
 
         <button type="button" id="headerMyOrdersBtn" class="btn-my-orders" style="display:none;" onclick="openMyOrdersDrawer()">
-          <span>🧾 我的訂單 / 查單</span>
+          <span><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg> 我的訂單 / 查單</span>
           <span id="headerMyOrdersCount" class="my-orders-count-badge" style="display:none;">0</span>
         </button>
         <button type="button" id="headerLineBindBtn" class="btn-line" style="padding:5px 11px; font-size:0.76rem;" onclick="openLineBindModal()">
-          <span id="headerLineBtnText">💬 綁定取餐通知</span>
+          <span id="headerLineBtnText"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> 綁定取餐通知</span>
         </button>
         <select id="headerLangSelect" class="header-lang-select" onchange="setAppLanguage(this.value)" aria-label="Language" title="切換語言 / Switch Language">
-          <option value="zh-TW">🌐 繁中</option>
-          <option value="en">🌐 EN</option>
-          <option value="ja">🌐 日本語</option>
-          <option value="ko">🌐 한국어</option>
+          <option value="zh-TW">繁中</option>
+          <option value="en">EN</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
         </select>
         <div class="campus-switcher" id="headerCampusSwitcher" style="display:none;">
           <button type="button" class="campus-btn active" id="btnCampus-雙溪校區" onclick="switchCampus('雙溪校區')">雙溪校區</button>
@@ -81,8 +81,8 @@
             <button type="button" class="filter-chip" id="filter-PROMO" onclick="setFilter('PROMO')">離峰優惠</button>
           </div>
           <div class="student-tool-pills">
-            <button type="button" id="btnOpenOrderLookup" class="student-util-pill" onclick="openCrossDeviceLookupModal()">🔍 查單</button>
-            <button type="button" id="btnOpenAiAdvisor" class="student-util-pill advisor" onclick="openAiConciergeModal()">✨ 選餐助手</button>
+            <button type="button" id="btnOpenOrderLookup" class="student-util-pill" onclick="openCrossDeviceLookupModal()"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> 查單</button>
+            <button type="button" id="btnOpenAiAdvisor" class="student-util-pill advisor" onclick="openAiConciergeModal()"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> 選餐助手</button>
           </div>
         </div>
 
@@ -100,17 +100,17 @@
       <div class="store-shell-layout">
         <aside class="store-left-rail">
           <button type="button" class="store-rail-btn active" id="railBtn-pos" onclick="switchStoreTabMode('pos')" title="櫃檯收銀點餐">
-            <span class="rail-icon">🖥️</span><span>點餐</span>
+            <span class="rail-icon"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span><span>點餐</span>
           </button>
           <button type="button" class="store-rail-btn" id="railBtn-kds" onclick="switchStoreTabMode('kds')" title="廚房控單與備料管理">
-            <span class="rail-icon">📋</span><span>訂單</span>
+            <span class="rail-icon"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg></span><span>訂單</span>
             <span id="railKdsBadge" class="tab-badge" style="display:none;">0</span>
           </button>
           <button type="button" class="store-rail-btn" id="railBtn-analytics" onclick="switchStoreTabMode('analytics')" title="財務與營運分析">
-            <span class="rail-icon">📊</span><span>分析</span>
+            <span class="rail-icon"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span><span>分析</span>
           </button>
           <button type="button" class="store-rail-btn" id="railBtn-settings" onclick="switchStoreTabMode('settings')" title="店務設定">
-            <span class="rail-icon">⚙️</span><span>設定</span>
+            <span class="rail-icon"><svg class="mf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span>設定</span>
           </button>
         </aside>
         <div class="store-stage-area">
@@ -126,7 +126,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="../realtime-config.js?v=26.1"></script>
-  <script src="../i18n.js?v=26.0"></script>
-  <script src="../app.js?v=26.13"></script>
+  <script src="../icons.js?v=26.14"></script>
+  <script src="../i18n.js?v=26.14"></script>
+  <script src="../app.js?v=26.14"></script>
 </body>
 </html>

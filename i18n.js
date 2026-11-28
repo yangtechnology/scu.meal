@@ -147,23 +147,23 @@ const I18N_DICTIONARY = {
   '其他': { en: 'Other', ja: 'その他', ko: '기타' },
 
   // 餐點標籤
-  '🔥 必點人氣': { en: '🔥 Popular', ja: '🔥 人気', ko: '🔥 인기' },
-  '⭐ 主廚推薦': { en: "⭐ Chef's Pick", ja: '⭐ おすすめ', ko: '⭐ 셰프 추천' },
-  '⚡ 快速出餐': { en: '⚡ Express', ja: '⚡ スピード', ko: '⚡ 빠른 제공' },
-  '🥣 暖胃湯品': { en: '🥣 Warm Soup', ja: '🥣 スープ', ko: '🥣 따뜻한 국' },
-  '🥤 人氣飲品': { en: '🥤 Popular Drink', ja: '🥤 人気ドリンク', ko: '🥤 인기 음료' },
-  '🔥 招牌必點': { en: '🔥 Signature', ja: '🔥 看板メニュー', ko: '🔥 시그니처' },
-  '🔥 店長推薦': { en: "🔥 Manager's Pick", ja: '🔥 店長おすすめ', ko: '🔥 점장 추천' },
-  '🔥 限定': { en: '🔥 Limited', ja: '🔥 限定', ko: '🔥 한정' },
-  '🔥 新上市': { en: '🔥 New', ja: '🔥 新発売', ko: '🔥 신메뉴' },
-  '⭐ 限量供應': { en: '⭐ Limited', ja: '⭐ 数量限定', ko: '⭐ 한정 수량' },
-  '⭐ 飽足首選': { en: '⭐ Hearty', ja: '⭐ 満腹', ko: '⭐ 든든한 메뉴' },
-  '🍗 人氣單點': { en: '🍗 Popular Side', ja: '🍗 人気サイド', ko: '🍗 인기 사이드' },
-  '🍵 解膩首選': { en: '🍵 Refreshing Tea', ja: '🍵 さっぱり茶', ko: '🍵 깔끔한 차' },
-  '✨ 招牌小菜': { en: '✨ Signature Side', ja: '✨ 看板サイド', ko: '✨ 대표 반찬' },
-  '🥛 清涼飲品': { en: '🥛 Cold Drink', ja: '🥛 冷たい飲物', ko: '🥛 시원한 음료' },
-  '🌶️ 香辣過癮': { en: '🌶️ Spicy Hit', ja: '🌶️ ピリ辛', ko: '🌶️ 매콤한 맛' },
-  '🧀 邪惡點心': { en: '🧀 Crispy Snack', ja: '🧀 スナック', ko: '🧀 바삭 간식' },
+  '必點人氣': { en: 'Popular', ja: '人気', ko: '인기' },
+  // (deduped) '主廚推薦': { en: "Chef's Pick", ja: 'おすすめ', ko: '셰프 추천' },
+  '快速出餐': { en: 'Express', ja: 'スピード', ko: '빠른 제공' },
+  '暖胃湯品': { en: 'Warm Soup', ja: 'スープ', ko: '따뜻한 국' },
+  '人氣飲品': { en: 'Popular Drink', ja: '人気ドリンク', ko: '인기 음료' },
+  '招牌必點': { en: 'Signature', ja: '看板メニュー', ko: '시그니처' },
+  '店長推薦': { en: "Manager's Pick", ja: '店長おすすめ', ko: '점장 추천' },
+  '限定': { en: 'Limited', ja: '限定', ko: '한정' },
+  '新上市': { en: 'New', ja: '新発売', ko: '신메뉴' },
+  '限量供應': { en: 'Limited', ja: '数量限定', ko: '한정 수량' },
+  '飽足首選': { en: 'Hearty', ja: '満腹', ko: '든든한 메뉴' },
+  '人氣單點': { en: 'Popular Side', ja: '人気サイド', ko: '인기 사이드' },
+  '解膩首選': { en: 'Refreshing Tea', ja: 'さっぱり茶', ko: '깔끔한 차' },
+  '招牌小菜': { en: 'Signature Side', ja: '看板サイド', ko: '대표 반찬' },
+  '清涼飲品': { en: 'Cold Drink', ja: '冷たい飲物', ko: '시원한 음료' },
+  '香辣過癮': { en: 'Spicy Hit', ja: 'ピリ辛', ko: '매콤한 맛' },
+  '邪惡點心': { en: 'Crispy Snack', ja: 'スナック', ko: '바삭 간식' },
 
   // 餐點規格
   '主食份量': { en: 'Rice Portion', ja: 'ご飯の量', ko: '밥 양' },
@@ -309,7 +309,7 @@ const I18N_DICTIONARY = {
   '經典鮪魚玉米飯捲': { en: 'Classic Tuna Corn Kimbap', ja: '定番ツナコーンキンパ', ko: '클래식 참치 옥수수 김밥' },
   '釜山魚板蘿蔔湯': { en: 'Busan Fish Cake Radish Soup', ja: '釜山おでん大根スープ', ko: '부산 어묵 무국' },
   '韓國水蜜桃果粒飲': { en: 'Korean Peach Pulp Drink', ja: '韓国白桃果肉ドリンク', ko: '한국 복숭아 알갱이 음료' },
-  '招牌主餐': { en: 'Signature Main', ja: 'おすすめメイン', ko: '대표 메뉴' },
+  // (deduped) '招牌主餐': { en: 'Signature Main', ja: 'おすすめメイン', ko: '대표 메뉴' },
   '移除': { en: 'Remove', ja: '削除', ko: '제거' },
   '清空': { en: 'Clear', ja: 'クリア', ko: '비우기' },
   '套用': { en: 'Apply', ja: '適用', ko: '적용' },
@@ -355,13 +355,13 @@ const I18N_DICTIONARY = {
 };
 
 const DIETARY_TAG_MAP = {
-  SPICY: { zh: '🌶️ 辣', en: '🌶️ Spicy', ja: '🌶️ 辛口', ko: '🌶️ 매운맛' },
-  VEG: { zh: '🥬 蔬食', en: '🥬 Veg', ja: '🥬 野菜・ベジ', ko: '🥬 채식' },
-  BEEF: { zh: '🐮 含牛', en: '🐮 Beef', ja: '🐮 牛肉含', ko: '🐮 소고기' },
-  PORK: { zh: '🐷 含豬', en: '🐷 Pork', ja: '🐷 豚肉含', ko: '🐷 돼지고기' },
-  NUTS: { zh: '🥜 堅果', en: '🥜 Nuts', ja: '🥜 ナッツ', ko: '🥜 견과류' },
-  SEAFOOD: { zh: '🦐 海鮮', en: '🦐 Seafood', ja: '🦐 海鮮', ko: '🦐 해산물' },
-  DAIRY: { zh: '🥛 蛋奶', en: '🥛 Dairy/Egg', ja: '🥛 卵・乳', ko: '🥛 유제품/계란' }
+  SPICY: { zh: '辣', en: 'Spicy', ja: '辛口', ko: '매운맛' },
+  VEG: { zh: '蔬食', en: 'Veg', ja: '野菜・ベジ', ko: '채식' },
+  BEEF: { zh: '含牛', en: 'Beef', ja: '牛肉含', ko: '소고기' },
+  PORK: { zh: '含豬', en: 'Pork', ja: '豚肉含', ko: '돼지고기' },
+  NUTS: { zh: '堅果', en: 'Nuts', ja: 'ナッツ', ko: '견과류' },
+  SEAFOOD: { zh: '海鮮', en: 'Seafood', ja: '海鮮', ko: '해산물' },
+  DAIRY: { zh: '蛋奶', en: 'Dairy/Egg', ja: '卵・乳', ko: '유제품/계란' }
 };
 
 function trDietaryTag(code) {
@@ -412,17 +412,17 @@ const UI_DYNAMIC_PATTERNS = [
   [/^(\d+)\s*筆$/, (m) => t(m[0], `${m[1]} orders`, `${m[1]}件`, `${m[1]}건`)],
   [/^今日\s*\(([^)]+)\)\s*\[(\d+)\]$/, (m) => t(m[0], `Today (${m[1]}) [${m[2]}]`, `本日 (${m[1]}) [${m[2]}]`, `오늘 (${m[1]}) [${m[2]}]`)],
   [/^明日\s*\(([^)]+)\)\s*\[(\d+)\]$/, (m) => t(m[0], `Tomorrow (${m[1]}) [${m[2]}]`, `明日 (${m[1]}) [${m[2]}]`, `내일 (${m[1]}) [${m[2]}]`)],
-  [/^📅\s*今日逐時\s*\((\d+)單\)$/, (m) => t(m[0], `📅 Today Hourly (${m[1]})`, `📅 本日時間帯別 (${m[1]}件)`, `📅 오늘 시간별 (${m[1]}건)`)],
-  [/^🗓️\s*全區間含未來預訂\s*\((\d+)單\)$/, (m) => t(m[0], `🗓️ All + Future Pre-orders (${m[1]})`, `🗓️ 全期間・未来予約含む (${m[1]}件)`, `🗓️ 전체 + 향후 예약 (${m[1]}건)`)],
+  [/^今日逐時\s*\((\d+)單\)$/, (m) => t(m[0], `Today Hourly (${m[1]})`, `本日時間帯別 (${m[1]}件)`, `오늘 시간별 (${m[1]}건)`)],
+  [/^全區間含未來預訂\s*\((\d+)單\)$/, (m) => t(m[0], `All + Future Pre-orders (${m[1]})`, `全期間・未来予約含む (${m[1]}件)`, `전체 + 향후 예약 (${m[1]}건)`)],
   [/^已收款\s*(\d+)\s*單\s*・\s*客單價\s*NT\$\s*([\d,]+)$/, (m) => t(m[0], `Paid ${m[1]} orders • Avg NT$ ${m[2]}`, `支払済 ${m[1]}件・客単価 NT$ ${m[2]}`, `결제 ${m[1]}건 • 평균 NT$ ${m[2]}`)],
   [/^區間待收\s*(\d+)\s*單\s*・\s*未來預訂\s*(\d+)\s*單$/, (m) => t(m[0], `Unpaid ${m[1]} • Future Pre-order ${m[2]}`, `未収 ${m[1]}件・未来予約 ${m[2]}件`, `미수금 ${m[1]}건 • 향후 예약 ${m[2]}건`)],
   [/^基礎\s*(\d+)分\s*・\s*佇列\s*(\d+)\/(\d+)\s*單\s*\((\d+)%\)$/, (m) => t(m[0], `Base ${m[1]}m • Queue ${m[2]}/${m[3]} (${m[4]}%)`, `基本${m[1]}分・待機 ${m[2]}/${m[3]} (${m[4]}%)`, `기본 ${m[1]}분 • 대기 ${m[2]}/${m[3]} (${m[4]}%)`)],
   [/^總折扣成本\s*-NT\$\s*([\d,]+)$/, (m) => t(m[0], `Total Discounts -NT$ ${m[1]}`, `割引コスト計 -NT$ ${m[1]}`, `총 할인 비용 -NT$ ${m[1]}`)],
-  [/^⏱️\s*已下鍋\s*(\d+)分\s*\(負荷\s*([\d.]+)\)$/, (m) => t(m[0], `⏱️ Cooking ${m[1]}m (Load ${m[2]})`, `⏱️ 調理${m[1]}分 (負荷 ${m[2]})`, `⏱️ 조리 ${m[1]}분 (부하 ${m[2]})`)],
-  [/^💵\s*點此收款結帳\s*\(NT\$\s*([\d,]+)\)$/, (m) => t(m[0], `💵 Collect Payment (NT$ ${m[1]})`, `💵 会計する (NT$ ${m[1]})`, `💵 결제 수금 (NT$ ${m[1]})`)],
-  [/^✅\s*確認收訖\s*NT\$\s*([\d,]+)$/, (m) => t(m[0], `✅ Confirm Received NT$ ${m[1]}`, `✅ 受領確定 NT$ ${m[1]}`, `✅ 수금 확인 NT$ ${m[1]}`)],
-  [/^⚙️\s*(\d+)\s*組選項\s*\(ID:([^)]+)\)$/, (m) => t(m[0], `⚙️ ${m[1]} option groups (ID:${m[2]})`, `⚙️ ${m[1]}組オプション (ID:${m[2]})`, `⚙️ 옵션 ${m[1]}개 그룹 (ID:${m[2]})`)],
-  [/^📋\s*目前架上菜單（共\s*(\d+)\s*道，支援每日限量自動扣減售罄與客製加料規則）$/, (m) => t(m[0], `📋 Active Menu (${m[1]} items • supports daily limits & custom modifiers)`, `📋 登録メニュー（全${m[1]}品・日次数量限定・オプション対応）`, `📋 등록 메뉴 (총 ${m[1]}개 • 일일 한정・커스텀 옵션 지원)`)],
+  [/^已下鍋\s*(\d+)分\s*\(負荷\s*([\d.]+)\)$/, (m) => t(m[0], `Cooking ${m[1]}m (Load ${m[2]})`, `調理${m[1]}分 (負荷 ${m[2]})`, `조리 ${m[1]}분 (부하 ${m[2]})`)],
+  [/^點此收款結帳\s*\(NT\$\s*([\d,]+)\)$/, (m) => t(m[0], `Collect Payment (NT$ ${m[1]})`, `会計する (NT$ ${m[1]})`, `결제 수금 (NT$ ${m[1]})`)],
+  [/^確認收訖\s*NT\$\s*([\d,]+)$/, (m) => t(m[0], `Confirm Received NT$ ${m[1]}`, `受領確定 NT$ ${m[1]}`, `수금 확인 NT$ ${m[1]}`)],
+  [/^(\d+)\s*組選項\s*\(ID:([^)]+)\)$/, (m) => t(m[0], `${m[1]} option groups (ID:${m[2]})`, `${m[1]}組オプション (ID:${m[2]})`, `옵션 ${m[1]}개 그룹 (ID:${m[2]})`)],
+  [/^目前架上菜單（共\s*(\d+)\s*道，支援每日限量自動扣減售罄與客製加料規則）$/, (m) => t(m[0], `Active Menu (${m[1]} items • supports daily limits & custom modifiers)`, `登録メニュー（全${m[1]}品・日次数量限定・オプション対応）`, `등록 메뉴 (총 ${m[1]}개 • 일일 한정・커스텀 옵션 지원)`)],
   [/^製作中\s*(\d+)\s*單\s*・\s*合共\s*(\d+)\s*份餐點$/, (m) => t(m[0], `Preparing ${m[1]} orders • ${m[2]} items total`, `調理中 ${m[1]}件・計 ${m[2]}点`, `조리 중 ${m[1]}건 • 총 ${m[2]}개`)],
   [/^應有\s*\$(\d+)$/, (m) => t(m[0], `Expected $${m[1]}`, `理論額 $${m[1]}`, `예상 $${m[1]}`)],
   [/^NT\$\s*([\d,\-]+)\s*\(帳實相符\)$/, (m) => t(m[0], `NT$ ${m[1]} (Balanced)`, `NT$ ${m[1]} (一致)`, `NT$ ${m[1]} (일치)`)],
@@ -436,22 +436,22 @@ const UI_DYNAMIC_PATTERNS = [
   [/^核銷碼[:：]\s*([A-Z0-9*]+)$/, (m) => t(m[0], `Code: ${m[1]}`, `認証コード: ${m[1]}`, `인증코드: ${m[1]}`)],
   [/^取餐號\s*#([A-Z0-9\-]+)\s*\(核銷碼\s*([A-Z0-9*]+)\)$/, (m) => t(m[0], `Pickup #${m[1]} (Code ${m[2]})`, `受取 #${m[1]} (認証 ${m[2]})`, `픽업 #${m[1]} (코드 ${m[2]})`)],
   [/^預覽單號\s*#([A-Z0-9\-]+)[（(]([^）)]+)[）)]$/, (m) => t(m[0], `Preview #${m[1]} (${translateSystemText(m[2])})`, `プレビュー #${m[1]} (${translateSystemText(m[2])})`, `미리보기 #${m[1]} (${translateSystemText(m[2])})`)],
-  [/^🧾\s*預覽單號\s*#([A-Z0-9\-]+)[（(]([^）)]+)[）)]$/, (m) => t(m[0], `🧾 Preview #${m[1]} (${translateSystemText(m[2])})`, `🧾 プレビュー #${m[1]} (${translateSystemText(m[2])})`, `🧾 미리보기 #${m[1]} (${translateSystemText(m[2])})`)],
-  [/^✅\s*確認收款並立即出單\s*#([A-Z0-9\-]+)$/, (m) => t(m[0], `✅ Confirm Payment & Print #${m[1]}`, `✅ 会計確定・発券 #${m[1]}`, `✅ 결제 확인 및 출식 #${m[1]}`)],
+  [/^預覽單號\s*#([A-Z0-9\-]+)[（(]([^）)]+)[）)]$/, (m) => t(m[0], `Preview #${m[1]} (${translateSystemText(m[2])})`, `プレビュー #${m[1]} (${translateSystemText(m[2])})`, `미리보기 #${m[1]} (${translateSystemText(m[2])})`)],
+  [/^確認收款並立即出單\s*#([A-Z0-9\-]+)$/, (m) => t(m[0], `Confirm Payment & Print #${m[1]}`, `会計確定・発券 #${m[1]}`, `결제 확인 및 출식 #${m[1]}`)],
   [/^櫃檯點餐單\s*\(#([A-Z0-9\-]+)\)$/, (m) => t(m[0], `Counter Ticket (#${m[1]})`, `レジ注文票 (#${m[1]})`, `카운터 주문서 (#${m[1]})`)],
   [/^前往收銀確認\s*\(NT\$\s*([\d,]+)\)\s*[→➔]?$/, (m) => t(m[0], `Checkout (NT$ ${m[1]}) →`, `会計確認へ (NT$ ${m[1]}) →`, `결제 확인 (NT$ ${m[1]}) →`)],
-  [/^💳\s*前往收銀確認\s*\(NT\$\s*([\d,]+)\)\s*[→➔]?$/, (m) => t(m[0], `💳 Checkout (NT$ ${m[1]}) →`, `💳 会計確認へ (NT$ ${m[1]}) →`, `💳 결제 확인 (NT$ ${m[1]}) →`)],
+  [/^前往收銀確認\s*\(NT\$\s*([\d,]+)\)\s*[→➔]?$/, (m) => t(m[0], `Checkout (NT$ ${m[1]}) →`, `会計確認へ (NT$ ${m[1]}) →`, `결제 확인 (NT$ ${m[1]}) →`)],
   [/^(.+?)\s*・\s*共\s*(\d+)\s*份餐點$/, (m) => t(m[0], `${trTerm(m[1])} • ${m[2]} items`, `${trTerm(m[1])}・計 ${m[2]}点`, `${trTerm(m[1])} • 총 ${m[2]}개`)],
-  [/^🛡️\s*目前\s*Session\s*憑證有效（範圍[:：]\s*(\S+)\s*・\s*剩餘約\s*(\d+)\s*分鐘）$/, (m) => t(m[0], `🛡️ Session Active (Store: ${m[1]} • ~${m[2]}m left)`, `🛡️ セッション有効 (店舗: ${m[1]}・残り約${m[2]}分)`, `🛡️ 세션 유효 (매장: ${m[1]} • 약 ${m[2]}분 남음)`)],
-  [/^🏪\s*綁定「([^」]+)」專屬官方帳號$/, (m) => t(m[0], `🏪 Link "${trTerm(m[1])}" Custom LINE OA`, `🏪 「${trTerm(m[1])}」専用LINE公式アカウント連携`, `🏪 "${trTerm(m[1])}" 전용 LINE 공식계정 연동`)],
-  [/^📌\s*將此平板綁定為「([^」]+)」專用機$/, (m) => t(m[0], `📌 Bind Tablet to "${trTerm(m[1])}"`, `📌 この端末を「${trTerm(m[1])}」専用機に設定`, `📌 이 태블릿을 "${trTerm(m[1])}" 전용기로 고정`)],
-  [/^✅\s*已綁定為「([^」]+)」專用機\s*\(點此解除\)$/, (m) => t(m[0], `✅ Bound to "${trTerm(m[1])}" (Tap to Unbind)`, `✅ 「${trTerm(m[1])}」専用機に設定済 (解除)`, `✅ "${trTerm(m[1])}" 전용기 고정됨 (해제)`)],
+  [/^目前\s*Session\s*憑證有效（範圍[:：]\s*(\S+)\s*・\s*剩餘約\s*(\d+)\s*分鐘）$/, (m) => t(m[0], `Session Active (Store: ${m[1]} • ~${m[2]}m left)`, `セッション有効 (店舗: ${m[1]}・残り約${m[2]}分)`, `세션 유효 (매장: ${m[1]} • 약 ${m[2]}분 남음)`)],
+  [/^綁定「([^」]+)」專屬官方帳號$/, (m) => t(m[0], `Link "${trTerm(m[1])}" Custom LINE OA`, `「${trTerm(m[1])}」専用LINE公式アカウント連携`, `"${trTerm(m[1])}" 전용 LINE 공식계정 연동`)],
+  [/^將此平板綁定為「([^」]+)」專用機$/, (m) => t(m[0], `Bind Tablet to "${trTerm(m[1])}"`, `この端末を「${trTerm(m[1])}」専用機に設定`, `이 태블릿을 "${trTerm(m[1])}" 전용기로 고정`)],
+  [/^已綁定為「([^」]+)」專用機\s*\(點此解除\)$/, (m) => t(m[0], `Bound to "${trTerm(m[1])}" (Tap to Unbind)`, `「${trTerm(m[1])}」専用機に設定済 (解除)`, `"${trTerm(m[1])}" 전용기 고정됨 (해제)`)],
   [/^輸入「([^」]+)」目前舊店長\s*PIN\s*\(4~8碼\)\s*\*?$/, (m) => t(m[0], `Current Manager PIN for "${trTerm(m[1])}" (4-8 digits) *`, `「${trTerm(m[1])}」現在の店長PIN (4〜8桁) *`, `"${trTerm(m[1])}" 현재 점장 PIN (4~8자리) *`)],
   [/^設定「([^」]+)」新店長\s*PIN\s*\(4~8碼\)\s*\*?$/, (m) => t(m[0], `New Manager PIN for "${trTerm(m[1])}" (4-8 digits) *`, `「${trTerm(m[1])}」新店長PIN (4〜8桁) *`, `"${trTerm(m[1])}" 새 점장 PIN (4~8자리) *`)],
   [/^平均客單價[:：]\s*NT\$\s*([\d,]+)$/, (m) => t(m[0], `Avg Order Value: NT$ ${m[1]}`, `平均客単価: NT$ ${m[1]}`, `평균 객단가: NT$ ${m[1]}`)],
   [/^總折扣成本\s*-NT\$\s*([\d,]+)$/, (m) => t(m[0], `Total Discounts -NT$ ${m[1]}`, `割引コスト計 -NT$ ${m[1]}`, `총 할인 비용 -NT$ ${m[1]}`)],
-  [/^🥢\s*餐具\(\+\$(\d+)\)$/, (m) => t(m[0], `🥢 Cutlery (+$${m[1]})`, `🥢 箸・スプーン (+$${m[1]})`, `🥢 수저 (+$${m[1]})`)],
-  [/^🥢\s*餐具\(\$0\)$/, () => t('🥢 餐具($0)', '🥢 Cutlery ($0)', '🥢 カトラリー($0)', '🥢 수저 ($0)')],
+  [/^餐具\(\+\$(\d+)\)$/, (m) => t(m[0], `Cutlery (+$${m[1]})`, `箸・スプーン (+$${m[1]})`, `수저 (+$${m[1]})`)],
+  [/^餐具\(\$0\)$/, () => t('餐具($0)', 'Cutlery ($0)', 'カトラリー($0)', '수저 ($0)')],
   [/^含免洗餐具\+\$(\d+)$/, (m) => t(m[0], `Cutlery +$${m[1]}`, `カトラリー+$${m[1]}`, `일회용품 +$${m[1]}`)],
   [/^離峰折抵-\$(\d+)$/, (m) => t(m[0], `Promo -$${m[1]}`, `割引-$${m[1]}`, `할인 -$${m[1]}`)],
   [/^已過\s*(\d+)\s*分$/, (m) => t(m[0], `${m[1]}m elapsed`, `${m[1]}分経過`, `${m[1]}분 경과`)],
@@ -760,8 +760,8 @@ const UI_PHRASE_TRANSLATIONS = [
   ['」（自動產生穩定品項 ID・支援每日限量）', '" (Auto Stable ID • Supports Daily Limits)', '」（安定ID自動生成・日次数量限定対応）', '" (안정 ID 자동 생성・일일 한정 지원)'],
   ['如：主廚推薦', "e.g. Chef's Pick", '例：おすすめ', '예: 셰프 추천'],
   ['如：香煎雞腿便當', 'e.g. Crispy Chicken Bento', '例：チキン弁当', '예: 치킨 도시락'],
-  ['如：🔥 招牌必點', 'e.g. 🔥 Popular', '例：🔥 看板メニュー', '예: 🔥 인기 메뉴'],
-  ['如：🔥 店長推薦', "e.g. 🔥 Manager's Pick", '例：🔥 店長おすすめ', '예: 🔥 점장 추천'],
+  ['如：招牌必點', 'e.g. Popular', '例：看板メニュー', '예: 인기 메뉴'],
+  ['如：店長推薦', "e.g. Manager's Pick", '例：店長おすすめ', '예: 점장 추천'],
   ['價格 *', 'Price *', '価格 *', '가격 *'],
   ['每日限量 (0=不限)', 'Daily Limit (0=Unlimited)', '1日限定数 (0=無制限)', '일일 한정 (0=무제한)'],
   ['每日限量', 'Daily Limit', '1日限定数', '일일 한정'],
@@ -785,7 +785,7 @@ const UI_PHRASE_TRANSLATIONS = [
   ['全天候營業時段皆適用', 'All Open Hours', '全営業時間で適用', '전 영업시간 적용'],
   ['優惠最低消費門檻 (NT$)', 'Promo Min Spend (NT$)', '割引最低利用額 (NT$)', '할인 최소 주문 금액 (NT$)'],
   ['優惠顯示文案', 'Promo Display Banner Text', '割引表示テキスト', '할인 안내 문구'],
-  ['例：🎁 滿百贈招牌紅茶', 'e.g. 🎁 Free Iced Tea over $100', '例：🎁 $100以上で紅茶無料', '예: 🎁 $100 이상 아이스티 증정'],
+  ['例：滿百贈招牌紅茶', 'e.g. Free Iced Tea over $100', '例：$100以上で紅茶無料', '예: $100 이상 아이스티 증정'],
   ['現金折抵 / 第二件折抵金額 (NT$)', 'Discount Amount (NT$)', '割引金額 (NT$)', '할인 금액 (NT$)'],
   ['指定贈品品項（滿額贈送專用・售罄自動停贈）', 'Designated Freebie Item (Auto-pauses if sold out)', '無料進呈品目（売切れ時は自動停止）', '지정 증정 메뉴 (품절 시 자동 중단)'],
   ['（不指定特定品項，依文案顯示）', '(No specific item — display banner text only)', '（指定なし・テキストのみ表示）', '(특정 메뉴 미지정 — 문구만 표시)'],
@@ -814,7 +814,7 @@ const UI_PHRASE_TRANSLATIONS = [
   ['餐點類型標語', 'Cuisine Category', '料理ジャンル', '음식 카테고리'],
   ['如：人氣韓式・飯捲', 'e.g. Korean Kimbap', '例：韓国キンパ', '예: 한식・김밥'],
   ['餐廳代表圖示 (Emoji 或圖片網址)', 'Store Icon (Emoji or Image URL)', '店舗アイコン（絵文字または画像URL）', '매장 아이콘 (이모지 또는 이미지 URL)'],
-  ['如：🍙、🍱 或 https://...', 'e.g. 🍙, 🍱 or https://...', '例：🍙・🍱 または https://...', '예: 🍙, 🍱 또는 https://...'],
+  ['如：、或 https://...', 'e.g. , or https://...', '例：・または https://...', '예: , 또는 https://...'],
   ['每日開始營業時間', 'Daily Opening Time', '開店時刻', '매일 영업 시작 시각'],
   ['每日結束營業時間', 'Daily Closing Time', '閉店時刻', '매일 영업 종료 시각'],
   ['午休開始時間 (選填，無午休留空)', 'Break Start (Optional)', '休憩開始（任意）', '브레이크 시작 (선택)'],
@@ -832,7 +832,7 @@ const UI_PHRASE_TRANSLATIONS = [
   ['專屬管理 PIN (4~8碼) *', 'Store Manager PIN (4-8 digits) *', '店舗専用PIN (4〜8桁) *', '매장 전용 PIN (4~8자리) *'],
   ['請設定4~8位數字', '4-8 digits', '4〜8桁の数字', '4~8자리 숫자 입력'],
   ['＋ 建立新餐廳', '+ Create Store', '＋ 店舗作成', '＋ 매장 생성'],
-  ['官方帳號 + 📧 電子信箱雙軌推播設定', 'LINE OA + Email Dual Push Settings', 'LINE公式 + メール通知設定', 'LINE 공식 + 이메일 알림 설정'],
+  ['官方帳號 + 電子信箱雙軌推播設定', 'LINE OA + Email Dual Push Settings', 'LINE公式 + メール通知設定', 'LINE 공식 + 이메일 알림 설정'],
   ['各店獨立計算每月免費推播額度', 'Separate monthly push quota per store', '店舗ごとに月間無料配信枠を管理', '매장별 월간 무료 알림 할당량 관리'],
   ['使用平台預設官方帳號 (2012260287)', 'Use Platform Default LINE OA (2012260287)', 'プラットフォーム標準LINEを使用', '플랫폼 기본 LINE 계정 사용'],
   ['免設定即可推播，並自動啟用電子信箱備援通知', 'Zero setup needed + automatic email backup alerts', '設定不要で配信可能・メール予備通知も自動有効', '설정 없이 알림 발송 + 이메일 백업 자동 활성화'],
@@ -1037,7 +1037,7 @@ function translateSystemText(rawText) {
 }
 
 function trTerm(rawStr) {
-  const s = String(rawStr || '').trim();
+  const s = typeof stripEmoji === 'function' ? stripEmoji(rawStr) : String(rawStr || '').trim();
   const lang = getCurrentAppLang();
   if (!s || lang === 'zh-TW') return s;
   const exact = I18N_DICTIONARY[s];
@@ -1174,22 +1174,19 @@ function syncHeaderLanguageControls() {
   if (sel && sel.value !== lang) sel.value = lang;
   const legacyBtn = document.getElementById('headerLangToggleBtn');
   if (legacyBtn) {
-    const labelMap = { 'zh-TW': '🌐 繁中', 'en': '🌐 EN', 'ja': '🌐 日本語', 'ko': '🌐 한국어' };
-    legacyBtn.innerText = labelMap[lang] || '🌐 繁中';
+    const labelMap = { 'zh-TW': '繁中', 'en': 'EN', 'ja': '日本語', 'ko': '한국어' };
+    legacyBtn.innerText = labelMap[lang] || '繁中';
   }
 
   const staticTextMap = {
     'filter-ALL': t('全部櫃位', 'All', 'すべて', '전체'),
     'filter-FAST': t('免排隊', 'Fast', '待ちなし', '빠른 픽업'),
     'filter-PROMO': t('離峰優惠', 'Deals', '割引', '할인'),
-    'btnOpenOrderLookup': t('🔍 查單', '🔍 Lookup', '🔍 照会', '🔍 조회'),
-    'btnOpenAiAdvisor': t('✨ 選餐助手', '✨ Advisor', '✨ おすすめ', '✨ 추천'),
     'btnCampus-雙溪校區': t('雙溪校區', 'Waishuangxi', '双渓', '솽시'),
     'btnCampus-城中校區': t('城中校區', 'Downtown', '城中', '청중'),
-    'campusBtn-雙溪校區': `⛰️ ${t('雙溪校區', 'Waishuangxi', '双渓', '솽시')}`,
-    'campusBtn-城中校區': `🏙️ ${t('城中校區', 'Downtown', '城中', '청중')}`,
+    'campusBtn-雙溪校區': t('雙溪校區', 'Waishuangxi', '双渓', '솽시'),
+    'campusBtn-城中校區': t('城中校區', 'Downtown', '城中', '청중'),
     'headerLineNotifyBtnText': t('綁定通知', 'Alerts', '通知連携', '알림 연동'),
-    'headerPickupBoardBtn': `📺 ${t('叫號看板', 'Call Board', '呼出ボード', '호출 전광판')}`,
     'cartSubmitBtn': t('確認送出訂單', 'Place Order', '注文を確定', '주문하기')
   };
   Object.entries(staticTextMap).forEach(([id, txt]) => {
@@ -1197,17 +1194,25 @@ function syncHeaderLanguageControls() {
     if (el) el.innerText = txt;
   });
 
+  const iconHtml = (name) => (typeof window.mfIcon === 'function' ? window.mfIcon(name) + ' ' : '');
+  const lookupBtn = document.getElementById('btnOpenOrderLookup');
+  if (lookupBtn) lookupBtn.innerHTML = iconHtml('search') + t('查單', 'Lookup', '照会', '조회');
+  const advisorBtn = document.getElementById('btnOpenAiAdvisor');
+  if (advisorBtn) advisorBtn.innerHTML = iconHtml('sparkles') + t('選餐助手', 'Advisor', 'おすすめ', '추천');
+  const boardBtn = document.getElementById('headerPickupBoardBtn');
+  if (boardBtn) boardBtn.innerHTML = iconHtml('tv') + t('叫號看板', 'Call Board', '呼出ボード', '호출 전광판');
+
   const lineBtnText = document.getElementById('headerLineBtnText');
   if (lineBtnText && typeof state !== 'undefined' && state && state.lineProfile) {
-    lineBtnText.innerText = state.lineProfile.isBound
-      ? t(`💚 已綁定 (${state.lineProfile.lineDisplayName})`, `💚 Alerts On`, `💚 通知ON`, `💚 알림ON`)
-      : t('💬 綁定取餐通知', '💬 Pickup Alerts', '💬 受取通知連携', '💬 픽업 알림');
+    lineBtnText.innerHTML = state.lineProfile.isBound
+      ? iconHtml('check') + t(`已綁定 (${state.lineProfile.lineDisplayName})`, `Alerts On`, `通知ON`, `알림ON`)
+      : iconHtml('bell') + t('綁定取餐通知', 'Pickup Alerts', '受取通知連携', '픽업 알림');
   }
 
   const myOrdersBtn = document.getElementById('headerMyOrdersBtn');
   if (myOrdersBtn) {
     const labelSpan = myOrdersBtn.querySelector ? myOrdersBtn.querySelector('span:first-child') : null;
-    if (labelSpan) labelSpan.innerText = `🧾 ${t('我的訂單 / 查單', 'My Orders', '注文履歴', '주문내역')}`;
+    if (labelSpan) labelSpan.innerHTML = iconHtml('receipt') + t('我的訂單 / 查單', 'My Orders', '注文履歴', '주문내역');
   }
 
   const railLabels = {
@@ -1265,10 +1270,10 @@ function setAppLanguage(nextLang) {
     translateRenderedSubtree(document.body);
   }
   const msgMap = {
-    'zh-TW': '🌐 已切換為繁體中文介面',
-    'en': '🌐 Switched to English interface',
-    'ja': '🌐 日本語インターフェースに切り替えました',
-    'ko': '🌐 한국어 인터페이스로 변경되었습니다'
+    'zh-TW': '已切換為繁體中文介面',
+    'en': 'Switched to English interface',
+    'ja': '日本語インターフェースに切り替えました',
+    'ko': '한국어 인터페이스로 변경되었습니다'
   };
   if (typeof showToast === 'function') showToast(msgMap[cleanLang] || msgMap['zh-TW']);
 }
