@@ -2346,7 +2346,7 @@ function renderXp2ClassicPosPanel(store) {
       cartEl.innerHTML = state.posCart.length === 0 ? `
         <div class="xp2-cart-empty">
           <div style="font-size:18px; font-weight:900; margin-bottom:4px;">尚無點餐品項</div>
-          <div style="font-size:13px;">請點右側黃格品項或紫格飲料加入</div>
+          <div style="font-size:13px;">請點右側藍格品項或紫格飲料加入</div>
         </div>
       ` : state.posCart.map((it, idx) => {
         const isSelected = idx === selectedCartIdx;

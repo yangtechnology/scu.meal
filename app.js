@@ -903,7 +903,7 @@ function autoPromoteScheduledOrdersToCooking() {
         if (state.recentlyAutoFiredOrderIds) state.recentlyAutoFiredOrderIds.add(fo.orderId);
       });
       ensureUnacknowledgedOrderReminderLoop();
-      if (state.kdsSoundEnabled && acquireCrossTabSoundLock('AUTOFIRE_' + storeFired.map(x => x.orderId).join('_'), 10000)) {
+      if (!state.xpMode && !state.xp2Mode && state.kdsSoundEnabled && acquireCrossTabSoundLock('AUTOFIRE_' + storeFired.map(x => x.orderId).join('_'), 10000)) {
         playPickupChime();
         try {
           if ('speechSynthesis' in window) {
@@ -1341,7 +1341,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.9`;
+    script.src = `${base}merchant.js?v=26.11`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -1461,6 +1461,9 @@ var state = {
   checkoutAppliedCoupon: null,
   checkoutAppendToOrderId: '',
   checkoutErrorBannerMsg: '',
+  cartStep: 1,
+  cartOpenNoteIdx: -1,
+  cartShowExtras: false,
   pendingPaymentResolver: null,
   autoFetchedMissingOrderIds: {},
   fetchingOrderInFlightMap: {},
@@ -2578,6 +2581,7 @@ function acquireCrossTabSoundLock(lockKey, ttlMs = 8000) {
  * #1 委派 Service Worker 發出系統級通知（支援背景分頁、最小化與點擊通知自動聚焦對應訂單/後台）
  */
 async function dispatchSystemSwNotification(title, body, tag, targetUrl, orderId = '', extraMeta = {}) {
+  if (state.xpMode || state.xp2Mode) return;
   try {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     if ('serviceWorker' in navigator) {
@@ -2614,6 +2618,7 @@ async function dispatchSystemSwNotification(title, body, tag, targetUrl, orderId
 }
 
 function ensureAudioContextUnlocked(playTestBeep = false) {
+  if (state.xpMode || state.xp2Mode) return;
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return null;
@@ -2646,6 +2651,7 @@ function ensureAudioContextUnlocked(playTestBeep = false) {
  * 若店員重新整理網頁後尚未點擊畫面，AudioContext 會處於 suspended，此時在店家端頂部顯示強制點擊橫幅防止靜音漏單
  */
 function updateMerchantAudioUnlockBanner() {
+  if (state.xpMode || state.xp2Mode) return;
   let banner = document.getElementById('merchantAudioUnlockBanner');
   const isStoreUnlocked = (state.routeMode === 'store' && state.isMerchantUnlocked) || state.routeMode === 'board';
   const audioRunning = Boolean(sharedAudioContext && sharedAudioContext.state === 'running');
@@ -2691,6 +2697,7 @@ async function requestMerchantWakeLock() {
 }
 
 function playPickupChime() {
+  if (state.xpMode || state.xp2Mode) return;
   try {
     const ctx = ensureAudioContextUnlocked();
     if (!ctx) return;
@@ -2715,6 +2722,7 @@ function playPickupChime() {
 }
 
 function announceNewKdsOrder(order) {
+  if (state.xpMode || state.xp2Mode) return;
   if (!order) return;
   state.unacknowledgedOrderIds.add(order.orderId);
   ensureUnacknowledgedOrderReminderLoop();
@@ -2771,6 +2779,7 @@ function acknowledgeAllNewKdsOrders(orderId = null, fromBroadcast = false) {
 }
 
 function ensureUnacknowledgedOrderReminderLoop() {
+  if (state.xpMode || state.xp2Mode) return;
   if (state.unackReminderTimer) return;
   state.unackReminderTimer = setInterval(() => {
     if (state.routeMode !== 'store' || !state.isMerchantUnlocked) return;
@@ -3209,23 +3218,16 @@ function ensureSharedModalsMounted() {
   if (!document.getElementById('cartModal')) {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="cartModal" class="modal-overlay bottom-sheet" onclick="if(event.target===this) closeCartModal()">
-        <div class="modal-card">
-          <div class="modal-header">
-            <h2 style="font-size:1.3rem; font-weight:900; display:flex; align-items:center; gap:8px;">
-              <span>🛒</span> 確認購物車明細與預訂設定
-            </h2>
-            <button type="button" onclick="closeCartModal()" style="border:none; background:#F3F4F6; width:36px; height:36px; border-radius:50%; font-size:1.2rem; font-weight:900;">✕</button>
-          </div>
-          <div class="modal-body" style="background:var(--bg-page);" id="cartPageList"></div>
-          <div class="modal-footer">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <span style="font-size:1.05rem; font-weight:800;">應付總計金額</span>
-              <span id="cartModalTotal" style="font-size:1.55rem; font-weight:900; color:var(--red);">NT$ 0</span>
+        <div class="modal-card cart-modal-card">
+          <div class="modal-header cart-modal-header">
+            <div class="cart-header-top">
+              <h2 id="cartModalTitle" class="cart-modal-title">🛒 確認餐點</h2>
+              <button type="button" class="cart-close-btn" onclick="closeCartModal()" aria-label="關閉">✕</button>
             </div>
-            <button type="button" id="finalSubmitOrderBtn" class="btn-tip-action" style="width:100%; padding:15px; font-size:1.05rem;" onclick="submitStudentCartOrder()">
-              確認餐點並送出訂單
-            </button>
+            <div class="cart-stepper" id="cartModalStepper"></div>
           </div>
+          <div class="modal-body cart-modal-body" id="cartPageList"></div>
+          <div class="modal-footer cart-modal-footer" id="cartModalFooter"></div>
         </div>
       </div>
     `);
@@ -4305,17 +4307,22 @@ function scheduleAdaptiveCloudPoll() {
     return;
   }
 
-  const isFastWatch = shouldKeepBackgroundRuntimeAwake();
-  const hasActiveFirestoreWatch = Boolean(
-    window.__mfRealtimeState &&
-    (window.__mfRealtimeState.studentUnsub || window.__mfRealtimeState.merchantUnsub)
-  );
-  const baseDelay = hasActiveFirestoreWatch
-    ? POLL_INTERVAL_REALTIME_FALLBACK_MS
-    : (isFastWatch ? POLL_INTERVAL_ACTIVE_WATCH_MS : POLL_INTERVAL_FOREGROUND_MS);
-  const backoffFactor = Math.pow(1.5, Math.min(4, state.pollFailureCount || 0));
-  const jitter = Math.floor(Math.random() * 800);
-  const nextDelay = Math.min(POLL_MAX_BACKOFF_MS, Math.round(baseDelay * backoffFactor) + jitter);
+  let nextDelay;
+  if (state.xpMode || state.xp2Mode) {
+    nextDelay = 60000;
+  } else {
+    const isFastWatch = shouldKeepBackgroundRuntimeAwake();
+    const hasActiveFirestoreWatch = Boolean(
+      window.__mfRealtimeState &&
+      (window.__mfRealtimeState.studentUnsub || window.__mfRealtimeState.merchantUnsub)
+    );
+    const baseDelay = hasActiveFirestoreWatch
+      ? POLL_INTERVAL_REALTIME_FALLBACK_MS
+      : (isFastWatch ? POLL_INTERVAL_ACTIVE_WATCH_MS : POLL_INTERVAL_FOREGROUND_MS);
+    const backoffFactor = Math.pow(1.5, Math.min(4, state.pollFailureCount || 0));
+    const jitter = Math.floor(Math.random() * 800);
+    nextDelay = Math.min(POLL_MAX_BACKOFF_MS, Math.round(baseDelay * backoffFactor) + jitter);
+  }
 
   state.pollTimer = setTimeout(async () => {
     if (document.visibilityState === 'hidden') return;
@@ -4821,8 +4828,12 @@ function applyCloudBundle(data, fromBroadcast = false, forceApply = false) {
     });
 
     const newOrdersList = Array.from(mergedMap.values());
+    state.orders = newOrdersList;
+    saveCachedOrders(state.orders);
 
-    if (state.routeMode === 'store' && state.isMerchantUnlocked) {
+    if (state.xpMode || state.xp2Mode) {
+      newOrdersList.forEach(ord => state.knownStoreOrderIds.add(ord.orderId));
+    } else if (state.routeMode === 'store' && state.isMerchantUnlocked) {
       newOrdersList.forEach(ord => {
         if (!state.knownStoreOrderIds.has(ord.orderId)) {
           state.knownStoreOrderIds.add(ord.orderId);
@@ -4835,8 +4846,6 @@ function applyCloudBundle(data, fromBroadcast = false, forceApply = false) {
       newOrdersList.forEach(ord => state.knownStoreOrderIds.add(ord.orderId));
     }
 
-    state.orders = newOrdersList;
-    saveCachedOrders(state.orders);
     checkAndAlertWatchedStudentOrders();
   }
 
@@ -5278,8 +5287,11 @@ function applyRouteView() {
     applyDomSystemTranslation(document.body);
   }
   syncWatchedOrdersToServiceWorker(false);
-  if (typeof syncMealFlowRealtimeSubscriptions === 'function') {
+  if (!state.xpMode && !state.xp2Mode && typeof syncMealFlowRealtimeSubscriptions === 'function') {
     syncMealFlowRealtimeSubscriptions();
+  } else if (state.xpMode || state.xp2Mode) {
+    if (typeof stopStudentOrderFirestoreWatch === 'function') stopStudentOrderFirestoreWatch();
+    if (typeof stopMerchantLiveOrdersFirestoreWatch === 'function') stopMerchantLiveOrdersFirestoreWatch();
   }
   scheduleAdaptiveCloudPoll();
 }
@@ -7246,6 +7258,9 @@ function openCartModal() {
   if (state.cartItems.length === 0) return;
   ensureAudioContextUnlocked(false);
   state.checkoutErrorBannerMsg = '';
+  state.cartStep = 1;
+  state.cartOpenNoteIdx = -1;
+  state.cartShowExtras = false;
   const store = state.stores.find(s => s.id === state.selectedStoreId);
   // A2：每次開啟購物車時，若店家營業中可立即製作，預設「立即製作 (NOW)」而非預訂
   if (store && store.canOrderNow !== false && store.canPreOrder !== false) {
@@ -7256,11 +7271,60 @@ function openCartModal() {
     state.checkoutReserveDate = todayStr;
   }
   updateCartUI();
+  const listDiv = document.getElementById('cartPageList');
+  if (listDiv) listDiv.scrollTop = 0;
   document.getElementById('cartModal').classList.add('open');
 }
 
 function closeCartModal() {
   document.getElementById('cartModal').classList.remove('open');
+}
+
+function setCartStep(step) {
+  const nextStep = step === 2 ? 2 : 1;
+  state.cartStep = nextStep;
+  state.cartOpenNoteIdx = -1;
+  state.checkoutErrorBannerMsg = '';
+  updateCartUI();
+  const listDiv = document.getElementById('cartPageList');
+  if (listDiv) listDiv.scrollTop = 0;
+}
+
+function toggleCartItemNoteEditor(index) {
+  state.cartOpenNoteIdx = state.cartOpenNoteIdx === index ? -1 : index;
+  updateCartUI();
+  if (state.cartOpenNoteIdx === index) {
+    setTimeout(() => {
+      const inp = document.getElementById(`cartItemNoteInput-${index}`);
+      if (inp) {
+        inp.focus();
+        try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
+      }
+    }, 30);
+  }
+}
+
+function toggleCartExtras() {
+  state.cartShowExtras = !state.cartShowExtras;
+  updateCartUI();
+}
+
+function onCheckoutTaxIdInput(rawVal) {
+  const digits = String(rawVal || '').replace(/\D/g, '').slice(0, 8);
+  state.checkoutTaxId = digits;
+  const inp = document.getElementById('checkoutTaxIdInput');
+  if (inp && inp.value !== digits) inp.value = digits;
+  saveStudentCartDraft();
+  const hintEl = document.getElementById('cartTaxIdHint');
+  if (hintEl) {
+    if (!digits) {
+      hintEl.innerHTML = '';
+    } else if (validateTaiwanTaxId(digits)) {
+      hintEl.innerHTML = `<span class="cart-hint-ok">✓ ${t('統一編號格式正確', 'Valid Taiwan Tax ID', '統一番号OK', '유효한 사업자번호')}</span>`;
+    } else {
+      hintEl.innerHTML = `<span class="cart-hint-err">⚠️ ${t('請輸入有效 8 碼台灣統一編號', 'Must be a valid 8-digit Taiwan Tax ID', '有効な8桁の統一番号を入力', '유효한 8자리 사업자번호를 입력하세요')}</span>`;
+    }
+  }
 }
 
 function editCartItemOptions(index, isPos = false) {
@@ -7289,6 +7353,8 @@ function changeCartItemQty(index, delta) {
   state.cartItems[index].qty = (state.cartItems[index].qty || 1) + delta;
   if (state.cartItems[index].qty <= 0) {
     state.cartItems.splice(index, 1);
+    if (state.cartOpenNoteIdx === index) state.cartOpenNoteIdx = -1;
+    else if (state.cartOpenNoteIdx > index) state.cartOpenNoteIdx--;
   }
   state.checkoutErrorBannerMsg = '';
   updateCartUI();
@@ -7297,6 +7363,8 @@ function changeCartItemQty(index, delta) {
 function removeCartItem(index) {
   state.currentCartRequestId = null;
   state.cartItems.splice(index, 1);
+  if (state.cartOpenNoteIdx === index) state.cartOpenNoteIdx = -1;
+  else if (state.cartOpenNoteIdx > index) state.cartOpenNoteIdx--;
   state.checkoutErrorBannerMsg = '';
   updateCartUI();
 }
@@ -7613,6 +7681,9 @@ function updateCartUI() {
   }
 
   const listDiv = document.getElementById('cartPageList');
+  const titleEl = document.getElementById('cartModalTitle');
+  const stepperEl = document.getElementById('cartModalStepper');
+  const footerEl = document.getElementById('cartModalFooter');
   if (!listDiv) return;
 
   if (state.cartItems.length === 0) {
@@ -7622,309 +7693,405 @@ function updateCartUI() {
         <button type="button" class="btn-tip-action" onclick="closeCartModal()">${t('去挑選餐點', 'Browse Menu')}</button>
       </div>
     `;
+    if (footerEl) footerEl.innerHTML = '';
     return;
   }
 
+  const currentStep = state.cartStep === 2 ? 2 : 1;
+
+  if (titleEl) {
+    titleEl.innerHTML = currentStep === 1
+      ? `🛒 ${t('確認餐點', 'Review Order', '注文内容の確認', '주문 확인')}`
+      : `💳 ${t('取餐與付款', 'Pickup & Payment', '受取とお支払い', '픽업 및 결제')}`;
+  }
+
+  if (stepperEl) {
+    stepperEl.innerHTML = `
+      <button type="button" class="cart-step-pill ${currentStep === 1 ? 'active' : 'done'}" onclick="setCartStep(1)">
+        <span class="cart-step-num">${currentStep > 1 ? '✓' : '1'}</span>
+        <span>${t('確認餐點', 'Items', '商品確認', '메뉴 확인')}</span>
+      </button>
+      <span class="cart-step-arrow">→</span>
+      <button type="button" class="cart-step-pill ${currentStep === 2 ? 'active' : ''}" ${isStorePausedCart ? 'disabled' : ''} onclick="setCartStep(2)">
+        <span class="cart-step-num">2</span>
+        <span>${t('取餐付款', 'Checkout', '受取・決済', '픽업·결제')}</span>
+      </button>
+    `;
+  }
+
   const errorBannerHtml = state.checkoutErrorBannerMsg ? `
-    <div style="background:#FEF2F2; border:2px solid #EF4444; color:#991B1B; padding:12px 14px; border-radius:12px; margin-bottom:12px; font-size:0.84rem; font-weight:800; line-height:1.45;">
-      <div style="font-size:0.92rem; font-weight:950; margin-bottom:3px;">🛑 ${t('雲端結帳檢核未通過', 'Checkout Validation Error')}</div>
+    <div class="cart-error-banner">
+      <div class="cart-error-title">⚠️ ${t('請檢查以下資訊', 'Please check your order')}</div>
       <div>${escapeHtml(state.checkoutErrorBannerMsg)}</div>
     </div>
   ` : '';
 
-  const itemsCardsHtml = state.cartItems.map((item, idx) => {
-    const selList = item.selections && Object.keys(item.selections).length > 0
-      ? Object.entries(item.selections).map(([k, v]) => `${trTerm(k)}: ${trTerm(v)}`).join(' / ')
-      : t('標準原味', 'Standard');
-    const storeMenu = store ? (store.menus || []).find(m => String(m.id) === String(item.id)) : null;
-    const canEdit = storeMenu && storeMenu.options && Object.keys(storeMenu.options).length > 0;
-    const itemSubtotal = item.price * (item.qty || 1);
+  const pausedBannerHtml = isStorePausedCart ? `
+    <div class="store-paused-blocker" style="margin-bottom:10px;">
+      ⛔ ${t('本店目前暫停營業中，暫時無法點餐或預訂。', 'This store is currently paused.')}
+    </div>
+  ` : '';
 
-    return `
-      <div style="background:#FFFFFF; padding:14px; border-radius:14px; border:1px solid var(--border); margin-bottom:10px; box-shadow:var(--shadow-sm);">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-          <div style="min-width:0; flex:1;">
-            <h4 data-dish-name="1" style="font-size:1.02rem; font-weight:800; color:var(--text-primary);">${escapeHtml(storeMenu ? trDishName(storeMenu) : trTerm(item.baseName || item.name))}</h4>
-            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:3px;">${escapeHtml(selList)}</p>
-          </div>
-          <span style="font-size:1.05rem; font-weight:900; color:var(--red); white-space:nowrap;">NT$ ${itemSubtotal}</span>
-        </div>
-
-        <input type="text" maxlength="60" class="item-note-inline-input" placeholder="📝 ${t('單品備註（如：不要蔥、醬分開...）', 'Item note (e.g. no scallions, sauce on side)...', '個別メモ（ネギ抜きなど）...', '개별 요청 (파 빼기 등)...')}" value="${escapeHtml(item.itemNote || '')}" oninput="updateCartItemNote(${idx}, this.value)">
-
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid #F3F4F6;">
-          <div style="display:inline-flex; align-items:center; gap:8px; background:var(--bg-page); padding:3px 8px; border-radius:999px; border:1px solid var(--border);">
-            <button type="button" onclick="changeCartItemQty(${idx}, -1)" style="border:none; background:#fff; width:24px; height:24px; border-radius:50%; font-weight:900;">－</button>
-            <span style="font-weight:800; min-width:20px; text-align:center;">${item.qty || 1}</span>
-            <button type="button" onclick="changeCartItemQty(${idx}, 1)" style="border:none; background:var(--brand); color:#fff; width:24px; height:24px; border-radius:50%; font-weight:900;">＋</button>
-          </div>
-
-          <div style="display:flex; gap:8px;">
-            ${canEdit ? `<button type="button" onclick="editCartItemOptions(${idx}, false)" style="border:none; background:var(--brand-light); color:var(--brand-dark); font-weight:800; font-size:0.8rem; padding:6px 12px; border-radius:8px;">✎ ${t('編輯選項', 'Edit', '編集', '수정')}</button>` : ''}
-            <button type="button" onclick="removeCartItem(${idx})" style="border:none; background:#F3F4F6; color:var(--text-secondary); font-weight:800; font-size:0.8rem; padding:6px 12px; border-radius:8px;">🗑️ ${t('移除', 'Remove', '削除', '삭제')}</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  let promoNoticeHtml = '';
-  if (isPeakBlockedPromo) {
-    promoNoticeHtml = `
-      <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:0.82rem; font-weight:800; color:#92400E;">
-        ⚠️ ${t(`您選擇的預訂時段（${state.checkoutReserveTime}）為午間尖峰（11:45~12:45），不適用「離峰優惠」。`, `Peak hours (11:45-12:45) excluded from off-peak promo.`)}
-      </div>
-    `;
-  } else if (promoActive) {
-    const scopePrefix = store.promoScope === 'ALL_DAY' ? t('全天候優惠', 'All-Day Promo') : t('離峰優惠', 'Off-Peak Promo');
-    if (store.promoMode === 'gift' || store.promoMode === 'freebie') {
-      const giftDisplayName = evalPromo.giftMenuObj ? trDishName(evalPromo.giftMenuObj) : store.promoText;
-      if (evalPromo.isGiftSoldOut) {
-        promoNoticeHtml = `
-          <div style="background:#F8FAFC; border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:0.8rem; font-weight:800; color:var(--text-secondary);">
-            ℹ️ ${t(`今日贈品「${giftDisplayName}」已贈畢/售罄`, `Freebie "${giftDisplayName}" is sold out today`)}
-          </div>
-        `;
-      } else if (subtotal < minSpend) {
-        promoNoticeHtml = `
-          <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:0.82rem; font-weight:800; color:#B45309;">
-            💡 ${t(`差 NT$${minSpend - subtotal} 即可獲贈「${giftDisplayName}」（滿 $${minSpend}）`, `Add NT$${minSpend - subtotal} more for free "${giftDisplayName}"`)}
-          </div>
-        `;
-      } else {
-        promoNoticeHtml = `
-          <label class="option-label-row ${state.checkoutWantGift !== false ? 'checked' : ''}" style="background:#ECFDF5; border:1.5px solid #10B981; border-radius:12px; padding:10px 14px; margin-bottom:10px; cursor:pointer;">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <input type="checkbox" ${state.checkoutWantGift !== false ? 'checked' : ''} onchange="setCheckoutMode('checkoutWantGift', this.checked)" style="width:18px; height:18px; accent-color:#059669;">
-              <div>
-                <div style="font-size:0.84rem; font-weight:900; color:#065F46;">🎁 ${escapeHtml(scopePrefix)}：${escapeHtml(giftDisplayName)}</div>
-                <div style="font-size:0.74rem; color:#047857; font-weight:700;">${t('如對食材過敏或不需要贈品，可取消勾選', 'Uncheck if you do not need the free gift')}</div>
-              </div>
-            </div>
-            <span style="font-size:0.82rem; font-weight:900; color:#059669; white-space:nowrap;">${state.checkoutWantGift !== false ? 'NT$ 0' : t('已取消', 'Skipped')}</span>
-          </label>
-        `;
-      }
-    } else if (store.promoMode === 'discount' || store.promoMode === 'second_discount') {
-      if (evalPromo.promoDiscount <= 0) {
-        const hintMsg = store.promoMode === 'second_discount' && totalCount < 2
-          ? t(`再選 1 份餐點即享「${store.promoText}」第二件折價！`, `Add 1 more item for 2nd-item discount!`)
-          : t(`差 NT$${Math.max(0, minSpend - subtotal)} 即可享「${store.promoText}」（滿 $${minSpend}）`, `Add NT$${Math.max(0, minSpend - subtotal)} more for ${store.promoText}`);
-        promoNoticeHtml = `
-          <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:0.82rem; font-weight:800; color:#B45309;">
-            💡 ${escapeHtml(hintMsg)}
-          </div>
-        `;
-      } else {
-        promoNoticeHtml = `
-          <div style="background:#ECFDF5; border:1.5px solid #10B981; border-radius:12px; padding:10px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:0.84rem; font-weight:900; color:#065F46;">🎉 ${escapeHtml(scopePrefix)}：${escapeHtml(store.promoText)}</span>
-            <span style="font-size:0.88rem; font-weight:900; color:#059669;">-NT$ ${evalPromo.promoDiscount}</span>
-          </div>
-        `;
-      }
-    }
-  }
-
-  // B7：顯示已觸發之組合搭配折扣明細（例：雞排 + 飲料 折 $5）
-  if (evalPromo.comboDiscount > 0 && Array.isArray(evalPromo.comboAppliedRules) && evalPromo.comboAppliedRules.length > 0) {
-    promoNoticeHtml += evalPromo.comboAppliedRules.map(cr => `
-      <div style="background:#ECFDF5; border:1.5px solid #10B981; border-radius:12px; padding:10px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:0.84rem; font-weight:900; color:#065F46;">🎁 ${t('組合折扣', 'Combo Deal', 'セット割引', '세트 할인')}：${escapeHtml(cr.name)}${cr.pairs > 1 ? ` ×${cr.pairs}` : ''}</span>
-        <span style="font-size:0.88rem; font-weight:900; color:#059669;">-NT$ ${cr.amount}</span>
-      </div>
-    `).join('');
-  }
-
-  const selectedSlotMeta = isReserve
-    ? (slotsWithQuota.find(s => s.time === state.checkoutReserveTime) || null)
-    : null;
-
-  // B14：若店家尚未開通線上 LINE Pay 金流（enableOnlineLinePay !== true），隱藏線上 LINE Pay，預設為「現場付款（現金 / 現場掃 LINE Pay）」
+  // B14：若店家尚未開通線上 LINE Pay 金流，隱藏線上 LINE Pay，預設為「現場櫃檯付現」
   const onlineLinePayEnabled = Boolean(store && store.enableOnlineLinePay === true);
   if (!onlineLinePayEnabled && state.checkoutPayMethod === 'LINE Pay') {
     state.checkoutPayMethod = '現場櫃檯付現';
   }
-  const isCashSelected = state.checkoutPayMethod === '現場櫃檯付現';
-  const isPostPaySelected = state.checkoutPayMethod === '內用餐後結帳';
   const allowPostPayHere = Boolean(store && store.allowDineInPostPay && state.checkoutDineType === '內用自取' && !isReserve);
-  if (!allowPostPayHere && isPostPaySelected) {
+  if (!allowPostPayHere && state.checkoutPayMethod === '內用餐後結帳') {
     state.checkoutPayMethod = '現場櫃檯付現';
   }
+  const isCashSelected = state.checkoutPayMethod === '現場櫃檯付現';
 
-  const rawTaxDigits = String(state.checkoutTaxId || '').replace(/\D/g, '');
-  const taxIdValidationHint = rawTaxDigits
-    ? (validateTaiwanTaxId(rawTaxDigits)
-        ? `<div style="font-size:0.72rem; color:var(--green); font-weight:800; margin-top:3px;">✓ ${t('統一編號邏輯檢查通過', 'Valid Taiwan Tax ID', '統一番号チェックOK', '유효한 사업자등록번호입니다')}</div>`
-        : `<div style="font-size:0.72rem; color:var(--red); font-weight:800; margin-top:3px;">⚠️ ${t('需為有效 8 碼台灣統一編號', 'Must be a valid 8-digit Taiwan Tax ID', '有効な8桁の統一番号を入力してください', '유효한 8자리 사업자번호를 입력하세요')}</div>`)
-    : '';
+  if (currentStep === 1) {
+    const itemsCardsHtml = state.cartItems.map((item, idx) => {
+      const hasSelections = item.selections && Object.keys(item.selections).length > 0;
+      const selList = hasSelections
+        ? Object.entries(item.selections).map(([k, v]) => `${trTerm(k)}: ${trTerm(v)}`).join(' · ')
+        : '';
+      const storeMenu = store ? (store.menus || []).find(m => String(m.id) === String(item.id)) : null;
+      const canEdit = Boolean(storeMenu && storeMenu.options && Object.keys(storeMenu.options).length > 0);
+      const itemSubtotal = item.price * (item.qty || 1);
+      const savedNote = String(item.itemNote || '').trim();
+      const isNoteOpen = state.cartOpenNoteIdx === idx;
+      const notePreview = savedNote.length > 10 ? savedNote.slice(0, 10) + '…' : savedNote;
 
-  const checkoutSettingsHtml = `
-    ${promoNoticeHtml}
-    <div style="background:#FFFFFF; padding:16px; border-radius:14px; border:1px solid var(--border); margin-top:14px;">
-      <h4 style="font-size:0.95rem; font-weight:900; margin-bottom:12px;">📋 ${t('取餐與結帳設定', 'Pickup & Checkout Options', '受取・会計設定', '픽업 및 결제 설정')}</h4>
-
-      <label class="field-label">🍽️ ${t('用餐方式（學餐自取）', 'Dining Mode (Food Court Self-Pickup)', '受取方法', '식사 방식 (자율 픽업)')}</label>
-      ${hasNoodleInCart ? `
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-          <button type="button" class="filter-chip ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="state.currentCartRequestId=null; setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶自取 (+$1)', 'Takeout (+$1)', 'テイクアウト (+$1)', '포장 (+$1)')}</button>
-          <button type="button" class="filter-chip ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用自取', 'Dine-in Pickup', '店内飲食', '매장 식사')}</button>
-        </div>
-      ` : `
-        <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; padding:8px 12px; margin-bottom:12px; font-size:0.78rem; color:#475569; font-weight:800;">
-          🍽️ ${t('一般自取（非麵類無需加購外帶盒）', 'Standard Pickup (No takeout container fee for non-noodle items)')}
-        </div>
-      `}
-
-      ${friedCountInCart > 1 ? `
-        <div style="background:#FFFBEB; border:1.5px solid #F59E0B; border-radius:12px; padding:10px 12px; margin-bottom:12px;">
-          <div style="font-size:0.82rem; font-weight:900; color:#92400E; margin-bottom:8px;">
-            🍟 ${t(`炸物超過 1 份（共 ${friedCountInCart} 份）：要裝同一袋嗎？`, `Multiple fried items (${friedCountInCart}): Pack in one bag?`)}
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <button type="button" class="filter-chip ${state.checkoutFriedBagPref === '炸物裝一袋' ? 'active' : ''}" onclick="state.checkoutFriedBagPref = (state.checkoutFriedBagPref === '炸物裝一袋' ? '' : '炸物裝一袋'); updateCartUI();">
-              🍟 ${t('裝同一袋', 'One Bag')}
-            </button>
-            <button type="button" class="filter-chip ${state.checkoutFriedBagPref === '炸物分開裝' ? 'active' : ''}" onclick="state.checkoutFriedBagPref = (state.checkoutFriedBagPref === '炸物分開裝' ? '' : '炸物分開裝'); updateCartUI();">
-              🍟 ${t('分開裝', 'Separate Bags')}
-            </button>
-          </div>
-        </div>
-      ` : ''}
-
-      <div style="background:#F8FAFC; border:1px dashed #CBD5E1; border-radius:12px; padding:10px 12px; margin-bottom:12px;">
-        <label class="field-label">🎟️ ${t('優惠券 / 折扣碼（選填）', 'Promo / Coupon Code (Optional)', 'クーポン・割引コード（任意）', '쿠폰 / 할인 코드 (선택)')}</label>
-        <div style="display:flex; gap:6px;">
-          <input type="text" id="checkoutCouponInput" maxlength="24" class="select-input" style="text-transform:uppercase; font-family:monospace; font-weight:800;" placeholder="${t('輸入店家優惠碼，如 SCU10', 'Enter code e.g. SCU10', 'コード入力 (例: SCU10)', '코드 입력 (예: SCU10)')}" value="${escapeHtml(state.checkoutCouponCode || '')}" oninput="state.checkoutCouponCode=this.value.trim().toUpperCase()">
-          <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px; background:#0F172A;" onclick="applyStudentCouponCode()">${t('套用', 'Apply', '適用', '적용')}</button>
-        </div>
-        ${evalPromo.matchedCoupon ? `<div style="font-size:0.76rem; color:var(--green); font-weight:900; margin-top:5px;">✓ ${t(`已套用優惠碼「${evalPromo.matchedCoupon.code}」折抵 NT$${evalPromo.couponDiscount}`, `Applied ${evalPromo.matchedCoupon.code}: -NT$${evalPromo.couponDiscount}`, `クーポン「${evalPromo.matchedCoupon.code}」適用 -NT$${evalPromo.couponDiscount}`, `쿠폰 "${evalPromo.matchedCoupon.code}" 적용 -NT$${evalPromo.couponDiscount}`)}</div>` : ''}
-        ${evalPromo.couponError ? `<div style="font-size:0.76rem; color:var(--red); font-weight:800; margin-top:5px;">⚠️ ${escapeHtml(evalPromo.couponError)}</div>` : ''}
-      </div>
-
-      <label class="option-label-row ${state.checkoutNeedCutlery ? 'checked' : ''}" style="margin-bottom:12px;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <input type="checkbox" ${state.checkoutNeedCutlery ? 'checked' : ''} onchange="setCheckoutMode('checkoutNeedCutlery', this.checked)" style="width:18px; height:18px; accent-color:var(--brand);">
-          <span style="font-weight:800; color:var(--text-primary);">🥢 ${t('需要一次性免洗餐具', 'Need Disposable Cutlery', '使い捨てカトラリーが必要', '일회용 수저 필요')}</span>
-        </div>
-        <span style="font-weight:900; color:var(--brand);">${storeCutleryPrice > 0 ? `+NT$ ${storeCutleryPrice}` : t('免費 ($0)', 'Free ($0)', '無料 ($0)', '무료 ($0)')}</span>
-      </label>
-
-      <label class="field-label">⏰ ${t('取餐時間（預設立即製作；預訂受 15 分鐘產能配額保護）', 'Pickup Time (Default: Make Now; Pre-order uses 15m slot quotas)', '受取時間（標準：即時調理／予約は15分枠制御）', '픽업 시간 (기본: 바로 조리 / 예약은 15분 정원 제한)')}</label>
-      ${isStorePausedCart ? `
-        <div class="store-paused-blocker" style="margin-bottom:12px;">
-          ⛔ ${t('本店目前為「暫停營業」狀態，暫停現場點餐與所有預訂服務，請稍後再試或改選其他營業中櫃位。', 'This store is currently PAUSED. Both immediate orders and pre-orders are unavailable.', '現在営業休止中のため、即時注文・予約ともに停止しております。', '현재 임시 영업 중지 상태이므로 즉시 주문 및 예약 모두 불가합니다.')}
-        </div>
-      ` : ''}
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-        <button type="button" class="filter-chip ${!isStorePausedCart && state.checkoutTimeMode === 'NOW' ? 'active' : ''}" ${(isStorePausedCart || (store && store.canOrderNow === false)) ? 'disabled style="opacity:0.45; cursor:not-allowed;"' : ''} onclick="setCheckoutMode('checkoutTimeMode', 'NOW')">
-          ${isStorePausedCart ? t('⛔ 暫停營業', '⛔ Paused', '⛔ 営業休止', '⛔ 영업 중지') : (store && store.canOrderNow === false ? escapeHtml(getStoreBusinessHoursStatus(store).shortPillText || t('🌙 今日已打烊', '🌙 Closed Now', '🌙 営業終了', '🌙 영업 종료')) : t(`⚡ 立即製作 (約 ${store ? store.avgPrepMinutes : 5} 分)`, `⚡ Make Now (~${store ? store.avgPrepMinutes : 5}m)`, `⚡ 今すぐ調理 (約${store ? store.avgPrepMinutes : 5}分)`, `⚡ 바로 조리 (약 ${store ? store.avgPrepMinutes : 5}분)`))}
-        </button>
-        <button type="button" class="filter-chip ${!isStorePausedCart && state.checkoutTimeMode === 'RESERVE' ? 'active' : ''}" ${isStorePausedCart ? 'disabled style="opacity:0.45; cursor:not-allowed;"' : ''} onclick="setCheckoutMode('checkoutTimeMode', 'RESERVE')">
-          ${isStorePausedCart ? t('⛔ 暫停預訂', '⛔ Pre-order Closed', '⛔ 予約停止中', '⛔ 예약 불가') : `📅 ${t('預訂取餐', 'Pre-order', '時間指定予約', '예약 픽업')}`}
-        </button>
-      </div>
-
-      ${isReserve ? `
-        <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px; padding:12px; margin-bottom:12px;">
-          <div class="checkout-reserve-grid">
-            <div>
-              <label class="field-label">📅 ${t('取餐日期 *', 'Pickup Date *', '受取日 *', '픽업 날짜 *')}</label>
-              <input type="date" class="select-input" min="${getTodayDateStr()}" max="${getDateOffsetStr(14)}" value="${escapeHtml(state.checkoutReserveDate)}" onchange="setCheckoutMode('checkoutReserveDate', this.value)">
+      return `
+        <div class="cart-item-card">
+          <div class="cart-item-top">
+            <div class="cart-item-info">
+              <div data-dish-name="1" class="cart-item-name">${escapeHtml(storeMenu ? trDishName(storeMenu) : trTerm(item.baseName || item.name))}</div>
+              ${selList ? `<div class="cart-item-opts">${escapeHtml(selList)}</div>` : ''}
             </div>
-            <div>
-              <label class="field-label">🕒 ${t('預訂取餐時段 *', 'Time Slot (15m Quota) *', '受取時間帯 (15分枠) *', '예약 시간대 (15분 정원) *')}</label>
-              <select class="select-input" onchange="setCheckoutMode('checkoutReserveTime', this.value)">
-                ${slotsWithQuota.map(s => `
-                  <option value="${s.time}" ${state.checkoutReserveTime === s.time ? 'selected' : ''} ${s.isFull || s.remaining < totalCount ? 'disabled' : ''}>
-                    ${s.time} ${s.isFull ? t('(已額滿)', '(Full)', '(満枠)', '(마감)') : s.remaining < totalCount ? t(`(剩 ${s.remaining} 份，不足本次 ${totalCount} 份)`, `(${s.remaining} left < ${totalCount})`, `(残${s.remaining}点 < ${totalCount})`, `(${s.remaining}개 남음 < ${totalCount})`) : t(`(剩餘 ${s.remaining} 份產能${s.isPeak ? '・尖峰' : '・離峰'})`, `(${s.remaining} portions left)`, `(残${s.remaining}食分)`, `(${s.remaining}개 여유)`)}
-                  </option>
-                `).join('')}
-              </select>
+            <div class="cart-item-price">NT$ ${itemSubtotal}</div>
+          </div>
+
+          <div class="cart-item-actions">
+            <div class="cart-qty-stepper">
+              <button type="button" class="cart-qty-btn" onclick="changeCartItemQty(${idx}, -1)" aria-label="減少">－</button>
+              <span class="cart-qty-num">${item.qty || 1}</span>
+              <button type="button" class="cart-qty-btn plus" onclick="changeCartItemQty(${idx}, 1)" aria-label="增加">＋</button>
+            </div>
+            <div class="cart-item-pills">
+              <button type="button" class="cart-mini-pill ${savedNote || isNoteOpen ? 'has-val' : ''}" onclick="toggleCartItemNoteEditor(${idx})">
+                ${savedNote ? `📝 ${escapeHtml(notePreview)}` : `＋ ${t('備註', 'Note', 'メモ', '메모')}`}
+              </button>
+              ${canEdit ? `<button type="button" class="cart-mini-pill edit" onclick="editCartItemOptions(${idx}, false)">${t('改規格', 'Edit', '変更', '옵션')}</button>` : ''}
+              <button type="button" class="cart-mini-pill del" onclick="removeCartItem(${idx})">${t('刪除', 'Delete', '削除', '삭제')}</button>
             </div>
           </div>
-          ${selectedSlotMeta ? `
-            <div class="slot-quota-info">
-              <span class="slot-quota-badge ${selectedSlotMeta.remaining <= 5 ? 'busy' : 'free'}">
-                📊 ${t(`時段產能配額：已預訂 ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap} 份（尚餘 ${selectedSlotMeta.remaining} 份・本次點 ${totalCount} 份）`, `Slot Quota: ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap} portions (${selectedSlotMeta.remaining} left)`, `時間枠配額：${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap}食（残${selectedSlotMeta.remaining}食）`, `시간대 정원: ${selectedSlotMeta.booked}/${selectedSlotMeta.maxCap}개 (${selectedSlotMeta.remaining}개 여유)`)}
-              </span>
-              <span style="color:var(--text-secondary);">
-                ${selectedSlotMeta.isPeak ? t('🔥 午間尖峰時段（原價供應）', '🔥 Peak Hours', '🔥 ピーク時間帯', '🔥 피크 시간대') : t('🟢 離峰順暢時段（適用分流優惠）', '🟢 Off-Peak', '🟢 オフピーク', '🟢 비혼잡 시간대')}
-              </span>
-            </div>
-          ` : ''}
-          ${isLargeOrderReserve && state.checkoutPayMethod === '現場櫃檯付現' ? `
-            <div style="margin-top:8px; background:#FFFBEB; border:1px solid #F59E0B; color:#92400E; padding:8px 10px; border-radius:8px; font-size:0.76rem; font-weight:800;">
-              💡 ${t(`大額團訂（滿 NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}）選擇現金付款時，訂單狀態將列為「待付款確認」，請於取餐前至櫃檯確認或改選行動支付。`, `Large cash pre-orders (NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}+) require counter confirmation before prep.`, `大口現金予約（NT$${LARGE_ORDER_DEPOSIT_THRESHOLD}以上）は店頭確認が必要です。`, `대량 현금 예약(NT$${LARGE_ORDER_DEPOSIT_THRESHOLD} 이상)은 카운터 확인이 필요합니다.`)}
+
+          ${isNoteOpen ? `
+            <div class="cart-item-note-editor">
+              <input type="text" id="cartItemNoteInput-${idx}" maxlength="60" class="cart-inline-input" placeholder="${t('輸入單品備註（如：不要蔥、醬分開）', 'Item note (e.g. no scallions)', '個別メモ（ネギ抜きなど）', '개별 요청 (파 빼기 등)')}" value="${escapeHtml(item.itemNote || '')}" oninput="updateCartItemNote(${idx}, this.value)">
+              <button type="button" class="cart-note-done-btn" onclick="toggleCartItemNoteEditor(${idx})">${t('完成', 'Done', '完了', '완료')}</button>
             </div>
           ` : ''}
         </div>
-      ` : ''}
+      `;
+    }).join('');
 
-      <div style="margin-bottom:12px;">
-        <label class="field-label" style="color:${(isReserve || isCashSelected) ? 'var(--red)' : 'var(--brand-dark)'};">
-          📱 ${t('聯絡手機號碼', 'Mobile Phone', '携帯電話番号', '휴대폰 번호')} ${(isReserve || isCashSelected) ? t('*（預訂與付現必填完整手機號碼）', '* (Required for Pre-order / Cash)', '*（予約・現金払いは必須）', '* (예약/현금 결제 시 필수)') : t('（選填，搭配取餐號可跨裝置找回取餐單）', '(Optional, for cross-device lookup)', '（任意・注文照会用）', '(선택, 주문 조회용)')}
+    let promoNoticeHtml = '';
+    if (isPeakBlockedPromo) {
+      promoNoticeHtml = `<div class="cart-promo-strip muted">⏰ ${t('尖峰時段（11:45–12:45）不適用離峰優惠', 'Off-peak promo unavailable during 11:45–12:45')}</div>`;
+    } else if (promoActive) {
+      if (store.promoMode === 'gift' || store.promoMode === 'freebie') {
+        const giftDisplayName = evalPromo.giftMenuObj ? trDishName(evalPromo.giftMenuObj) : store.promoText;
+        if (evalPromo.isGiftSoldOut) {
+          promoNoticeHtml = `<div class="cart-promo-strip muted">ℹ️ ${t(`今日贈品「${giftDisplayName}」已贈畢`, `Freebie "${giftDisplayName}" sold out`)}</div>`;
+        } else if (subtotal < minSpend) {
+          promoNoticeHtml = `<div class="cart-promo-strip hint">💡 ${t(`再差 NT$${minSpend - subtotal} 即贈「${giftDisplayName}」`, `Add NT$${minSpend - subtotal} for free "${giftDisplayName}"`)}</div>`;
+        } else {
+          promoNoticeHtml = `
+            <label class="cart-promo-gift-row">
+              <div class="cart-check-left">
+                <input type="checkbox" ${state.checkoutWantGift !== false ? 'checked' : ''} onchange="setCheckoutMode('checkoutWantGift', this.checked)">
+                <span>🎁 ${escapeHtml(giftDisplayName)}</span>
+              </div>
+              <span class="cart-promo-val">${state.checkoutWantGift !== false ? 'NT$ 0' : t('不需贈品', 'Skipped')}</span>
+            </label>
+          `;
+        }
+      } else if (store.promoMode === 'discount' || store.promoMode === 'second_discount') {
+        if (evalPromo.promoDiscount <= 0) {
+          const hintMsg = store.promoMode === 'second_discount' && totalCount < 2
+            ? t(`再點 1 份即享「${store.promoText}」`, `Add 1 more item for ${store.promoText}`)
+            : t(`再差 NT$${Math.max(0, minSpend - subtotal)} 享「${store.promoText}」`, `Add NT$${Math.max(0, minSpend - subtotal)} for ${store.promoText}`);
+          promoNoticeHtml = `<div class="cart-promo-strip hint">💡 ${escapeHtml(hintMsg)}</div>`;
+        } else {
+          promoNoticeHtml = `
+            <div class="cart-promo-strip ok">
+              <span>🎉 ${escapeHtml(store.promoText)}</span>
+              <strong>-NT$ ${evalPromo.promoDiscount}</strong>
+            </div>
+          `;
+        }
+      }
+    }
+
+    if (evalPromo.comboDiscount > 0 && Array.isArray(evalPromo.comboAppliedRules) && evalPromo.comboAppliedRules.length > 0) {
+      promoNoticeHtml += evalPromo.comboAppliedRules.map(cr => `
+        <div class="cart-promo-strip ok">
+          <span>🎁 ${escapeHtml(cr.name)}${cr.pairs > 1 ? ` ×${cr.pairs}` : ''}</span>
+          <strong>-NT$ ${cr.amount}</strong>
+        </div>
+      `).join('');
+    }
+
+    const packagingCardHtml = `
+      <div class="cart-section-card">
+        <label class="cart-cutlery-row ${state.checkoutNeedCutlery ? 'checked' : ''}">
+          <div class="cart-check-left">
+            <input type="checkbox" ${state.checkoutNeedCutlery ? 'checked' : ''} onchange="setCheckoutMode('checkoutNeedCutlery', this.checked)">
+            <span>🥢 ${t('需要免洗餐具', 'Disposable Cutlery', '使い捨てカトラリー', '일회용 수저')}</span>
+          </div>
+          <span class="cart-cutlery-fee">${storeCutleryPrice > 0 ? `+NT$ ${storeCutleryPrice}` : t('免費', 'Free', '無料', '무료')}</span>
         </label>
-        <input type="tel" id="checkoutPhoneInput" class="select-input" placeholder="${(isReserve || isCashSelected) ? t('請輸入完整手機號碼，例如：0912345678', 'Enter mobile number, e.g. 0912345678', '携帯番号を入力 (例: 0912345678)', '휴대폰 번호 입력 (예: 0912345678)') : t('輸入手機號碼或末 3 碼（如 678）', 'Mobile number or last 3 digits', '携帯番号または下3桁', '휴대폰 번호 또는 뒷 3자리')}" value="${escapeHtml(state.checkoutPhone)}" oninput="state.checkoutPhone=this.value">
-      </div>
 
-      <div class="checkout-two-col-grid" style="margin-bottom:10px;">
-        <div>
-          <label class="field-label">💳 ${t('付款方式', 'Payment Method', 'お支払い方法', '결제 수단')}</label>
-          <select class="select-input" onchange="setCheckoutMode('checkoutPayMethod', this.value)">
-            ${onlineLinePayEnabled ? `<option value="LINE Pay" ${state.checkoutPayMethod === 'LINE Pay' ? 'selected' : ''}>${t('LINE Pay 線上預付', 'LINE Pay (Online)', 'LINE Pay オンライン決済', 'LINE Pay 온라인 결제')}</option>` : ''}
-            <option value="現場櫃檯付現" ${state.checkoutPayMethod === '現場櫃檯付現' ? 'selected' : ''}>
-              ${isLargeOrderReserve
-                ? t('現場櫃檯付訂確認 (大額團訂)', 'Deposit at Counter (Large Order)', '店頭前金確認', '카운터 선금 확인')
-                : (!onlineLinePayEnabled
-                  ? t('💵 現場付款（現金 / 現場掃 LINE Pay）', '💵 Pay at Counter (Cash / Counter LINE Pay)', '💵 店頭払い（現金／店頭LINE Pay）', '💵 현장 결제 (현금 / 현장 LINE Pay)')
-                  : t('取餐時櫃檯付現', 'Pay Cash at Pickup', '受取時店頭現金', '픽업 시 현장 현금'))}
-            </option>
-            ${allowPostPayHere ? `<option value="內用餐後結帳" ${state.checkoutPayMethod === '內用餐後結帳' ? 'selected' : ''}>🍽️ ${t('內用餐後至櫃檯結帳', 'Pay After Meal (Dine-in)', '食後カウンター会計', '식후 카운터 결제')}</option>` : ''}
-          </select>
-          ${!onlineLinePayEnabled ? `<div style="font-size:0.72rem; color:#047857; font-weight:800; margin-top:4px;">💡 ${t('取餐時可於櫃檯付現金或掃描店家立牌 LINE Pay', 'Pay with cash or counter LINE Pay QR at pickup', '受取時に店頭で現金またはLINE Payでお支払いください', '픽업 시 카운터에서 현금 또는 LINE Pay QR로 결제하세요')}</div>` : ''}
+        ${hasNoodleInCart ? `
+          <div class="cart-sub-group">
+            <div class="cart-sub-label">${t('用餐方式', 'Dining Mode', '受取方法', '식사 방식')}</div>
+            <div class="cart-seg-row">
+              <button type="button" class="cart-seg-btn ${state.checkoutDineType === '內用自取' ? 'active' : ''}" onclick="setCheckoutMode('checkoutDineType', '內用自取')">🍽️ ${t('內用', 'Dine-in', '店内', '매장')}</button>
+              <button type="button" class="cart-seg-btn ${state.checkoutDineType === '外帶自取' ? 'active' : ''}" onclick="state.currentCartRequestId=null; setCheckoutMode('checkoutDineType', '外帶自取')">🛍️ ${t('外帶 +$1', 'Takeout +$1', 'テイクアウト +$1', '포장 +$1')}</button>
+            </div>
+          </div>
+        ` : ''}
+
+        ${friedCountInCart > 1 ? `
+          <div class="cart-sub-group">
+            <div class="cart-sub-label">🍟 ${t(`炸物裝袋（共 ${friedCountInCart} 份）`, `Fried items (${friedCountInCart}): Bagging`)}</div>
+            <div class="cart-seg-row">
+              <button type="button" class="cart-seg-btn ${state.checkoutFriedBagPref === '炸物裝一袋' ? 'active' : ''}" onclick="state.checkoutFriedBagPref = (state.checkoutFriedBagPref === '炸物裝一袋' ? '' : '炸物裝一袋'); updateCartUI();">${state.checkoutFriedBagPref === '炸物裝一袋' ? '✓ ' : ''}🍟 ${t('裝同一袋', 'One Bag')}</button>
+              <button type="button" class="cart-seg-btn ${state.checkoutFriedBagPref === '炸物分開裝' ? 'active' : ''}" onclick="state.checkoutFriedBagPref = (state.checkoutFriedBagPref === '炸物分開裝' ? '' : '炸物分開裝'); updateCartUI();">${state.checkoutFriedBagPref === '炸物分開裝' ? '✓ ' : ''}🍟 ${t('分開裝', 'Separate')}</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    listDiv.innerHTML = errorBannerHtml + pausedBannerHtml + itemsCardsHtml + promoNoticeHtml + packagingCardHtml;
+
+    if (footerEl) {
+      footerEl.innerHTML = `
+        <div class="cart-footer-summary">
+          <span class="cart-footer-label">${t('總計', 'Total', '合計', '총액')} (${totalCount} ${t('份', 'items', '点', '개')})</span>
+          <span id="cartModalTotal" class="cart-footer-total">${discount > 0 ? `<small class="cart-footer-saved">-${discount}</small>` : ''}NT$ ${finalTotal}</span>
         </div>
-        <div>
-          <label class="field-label">🏢 ${t('統一編號 (8碼，選填)', 'Tax ID (8 digits, Optional)', '統一番号 (8桁・任意)', '사업자번호 (8자리, 선택)')}</label>
-          <input type="tel" id="checkoutTaxIdInput" maxlength="8" inputmode="numeric" class="select-input" style="font-family:monospace;" placeholder="${t('例：24536806', 'e.g. 24536806', '例：24536806', '예: 24536806')}" value="${escapeHtml(state.checkoutTaxId || '')}" oninput="state.checkoutTaxId=this.value.replace(/\\D/g,'').slice(0,8); updateCartUI();">
-          ${taxIdValidationHint}
+        <button type="button" class="btn-tip-action cart-btn-next" ${isStorePausedCart ? 'disabled' : ''} onclick="setCartStep(2)">
+          ${isStorePausedCart
+            ? t('⛔ 本店暫停營業中', '⛔ Store Paused', '⛔ 営業休止中', '⛔ 영업 중지 중')
+            : t('下一步 · 去結帳 ➔', 'Next · Checkout ➔', '次へ · お会計 ➔', '다음 · 결제하기 ➔')}
+        </button>
+      `;
+    }
+  } else {
+    const selectedSlotMeta = isReserve
+      ? (slotsWithQuota.find(s => s.time === state.checkoutReserveTime) || null)
+      : null;
+
+    const hasActiveStoreCoupons = Boolean(store && Array.isArray(store.coupons) && store.coupons.some(c => c && c.active !== false));
+    const hasFilledExtras = Boolean(
+      String(state.checkoutNote || '').trim() ||
+      String(state.checkoutTaxId || '').trim() ||
+      (hasActiveStoreCoupons && String(state.checkoutCouponCode || '').trim())
+    );
+    const rawTaxDigits = String(state.checkoutTaxId || '').replace(/\D/g, '');
+    const taxIdHintInner = rawTaxDigits
+      ? (validateTaiwanTaxId(rawTaxDigits)
+          ? `<span class="cart-hint-ok">✓ ${t('統一編號格式正確', 'Valid Taiwan Tax ID', '統一番号OK', '유효한 사업자번호')}</span>`
+          : `<span class="cart-hint-err">⚠️ ${t('請輸入有效 8 碼台灣統一編號', 'Must be a valid 8-digit Taiwan Tax ID', '有効な8桁の統一番号を入力', '유효한 8자리 사업자번호를 입력하세요')}</span>`)
+      : '';
+
+    const timeCardHtml = `
+      <div class="cart-section-card">
+        <div class="cart-section-title">⏰ ${t('取餐時間', 'Pickup Time', '受取時間', '픽업 시간')}</div>
+        <div class="cart-seg-row">
+          <button type="button" class="cart-seg-btn ${!isStorePausedCart && state.checkoutTimeMode === 'NOW' ? 'active' : ''}" ${(isStorePausedCart || (store && store.canOrderNow === false)) ? 'disabled' : ''} onclick="setCheckoutMode('checkoutTimeMode', 'NOW')">
+            ${isStorePausedCart
+              ? t('⛔ 暫停營業', '⛔ Paused')
+              : (store && store.canOrderNow === false
+                ? escapeHtml(getStoreBusinessHoursStatus(store).shortPillText || t('🌙 今日已打烊', '🌙 Closed'))
+                : t(`⚡ 立即製作（約 ${store ? store.avgPrepMinutes : 5} 分）`, `⚡ Now (~${store ? store.avgPrepMinutes : 5}m)`, `⚡ 今すぐ (約${store ? store.avgPrepMinutes : 5}分)`, `⚡ 바로 조리 (약 ${store ? store.avgPrepMinutes : 5}분)`))}
+          </button>
+          <button type="button" class="cart-seg-btn ${!isStorePausedCart && state.checkoutTimeMode === 'RESERVE' ? 'active' : ''}" ${isStorePausedCart ? 'disabled' : ''} onclick="setCheckoutMode('checkoutTimeMode', 'RESERVE')">
+            📅 ${t('預訂取餐', 'Pre-order', '予約受取', '예약 픽업')}
+          </button>
+        </div>
+
+        ${isReserve ? `
+          <div class="cart-reserve-box">
+            <div class="checkout-reserve-grid">
+              <div>
+                <label class="cart-mini-field-lbl">${t('日期', 'Date', '日付', '날짜')}</label>
+                <input type="date" class="select-input" min="${getTodayDateStr()}" max="${getDateOffsetStr(14)}" value="${escapeHtml(state.checkoutReserveDate)}" onchange="setCheckoutMode('checkoutReserveDate', this.value)">
+              </div>
+              <div>
+                <label class="cart-mini-field-lbl">${t('時段', 'Time', '時間', '시간')}</label>
+                <select class="select-input" onchange="setCheckoutMode('checkoutReserveTime', this.value)">
+                  ${slotsWithQuota.map(s => `
+                    <option value="${s.time}" ${state.checkoutReserveTime === s.time ? 'selected' : ''} ${s.isFull || s.remaining < totalCount ? 'disabled' : ''}>
+                      ${s.time} ${s.isFull ? t('(滿)', '(Full)') : s.remaining < totalCount ? t(`(剩 ${s.remaining} 份)`, `(${s.remaining} left)`) : t(`(剩 ${s.remaining} 份)`, `(${s.remaining} left)`)}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+            </div>
+            ${selectedSlotMeta ? `
+              <div class="cart-quota-tiny">
+                <span>${t(`剩 ${selectedSlotMeta.remaining} 份`, `${selectedSlotMeta.remaining} left`)}${selectedSlotMeta.isPeak ? ` · ${t('尖峰', 'Peak')}` : ''}</span>
+              </div>
+            ` : ''}
+            ${isLargeOrderReserve && isCashSelected ? `
+              <div class="cart-quota-tiny warn">${t(`滿 $${LARGE_ORDER_DEPOSIT_THRESHOLD} 現金預訂請於取餐前至櫃檯確認`, `Cash pre-orders $${LARGE_ORDER_DEPOSIT_THRESHOLD}+ require counter confirmation`)}</div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    const phoneRequired = isReserve || isCashSelected;
+    const phoneCardHtml = `
+      <div class="cart-section-card">
+        <div class="cart-section-head">
+          <span class="cart-section-title">📱 ${t('手機號碼', 'Mobile Phone', '携帯番号', '휴대폰 번호')}</span>
+          <span class="${phoneRequired ? 'cart-badge-req' : 'cart-badge-opt'}">${phoneRequired ? t('必填', 'Required', '必須', '필수') : t('選填', 'Optional', '任意', '선택')}</span>
+        </div>
+        <input type="tel" id="checkoutPhoneInput" inputmode="tel" class="select-input" placeholder="0912345678" value="${escapeHtml(state.checkoutPhone)}" oninput="state.checkoutPhone=this.value">
+      </div>
+    `;
+
+    const paymentCardHtml = `
+      <div class="cart-section-card">
+        <div class="cart-section-title">💳 ${t('付款方式', 'Payment Method', 'お支払い方法', '결제 수단')}</div>
+        <div class="cart-pay-list">
+          <button type="button" class="cart-pay-card ${state.checkoutPayMethod === '現場櫃檯付現' ? 'active' : ''}" onclick="setCheckoutMode('checkoutPayMethod', '現場櫃檯付現')">
+            <div class="cart-pay-card-left">
+              <span class="cart-pay-radio"></span>
+              <div>
+                <div class="cart-pay-name">💵 ${t('現金／現場付款', 'Cash / Pay at Counter', '現金／店頭払い', '현금 / 현장 결제')}</div>
+                <div class="cart-pay-desc">${!onlineLinePayEnabled ? t('現場付現或掃立牌 LINE Pay', 'Cash or counter LINE Pay QR') : t('取餐時於櫃檯付款', 'Pay at counter upon pickup')}</div>
+              </div>
+            </div>
+          </button>
+
+          ${onlineLinePayEnabled ? `
+            <button type="button" class="cart-pay-card ${state.checkoutPayMethod === 'LINE Pay' ? 'active' : ''}" onclick="setCheckoutMode('checkoutPayMethod', 'LINE Pay')">
+              <div class="cart-pay-card-left">
+                <span class="cart-pay-radio"></span>
+                <div>
+                  <div class="cart-pay-name">💚 ${t('線上 LINE Pay', 'Online LINE Pay', 'LINE Pay オンライン', '온라인 LINE Pay')}</div>
+                  <div class="cart-pay-desc">${t('立即線上付款，免排隊結帳', 'Pay online now')}</div>
+                </div>
+              </div>
+            </button>
+          ` : ''}
+
+          ${allowPostPayHere ? `
+            <button type="button" class="cart-pay-card ${state.checkoutPayMethod === '內用餐後結帳' ? 'active' : ''}" onclick="setCheckoutMode('checkoutPayMethod', '內用餐後結帳')">
+              <div class="cart-pay-card-left">
+                <span class="cart-pay-radio"></span>
+                <div>
+                  <div class="cart-pay-name">🍽️ ${t('內用餐後結帳', 'Pay After Meal (Dine-in)', '食後カウンター会計', '식후 카운터 결제')}</div>
+                  <div class="cart-pay-desc">${t('用餐完畢後至櫃檯結帳', 'Pay at counter after dining')}</div>
+                </div>
+              </div>
+            </button>
+          ` : ''}
         </div>
       </div>
+    `;
 
-      <div>
-        <label class="field-label">📝 ${t('飲食備註 (選填)', 'Order Notes (Optional)', 'ご要望・メモ（任意）', '주문 요청사항 (선택)')}</label>
-        <input type="text" class="select-input" placeholder="${t('例：飯少、湯分開裝、不要蔥', 'e.g. Less rice, sauce on side', '例：ご飯少なめ、ネギ抜き', '예: 밥 적게, 소스 따로')}" value="${escapeHtml(state.checkoutNote)}" oninput="state.checkoutNote=this.value">
+    const extrasLabel = hasActiveStoreCoupons
+      ? t('備註 / 統一編號 / 優惠碼', 'Note / Tax ID / Promo Code', 'メモ / 統一番号 / クーポン', '메모 / 사업자번호 / 쿠폰')
+      : t('備註 / 統一編號', 'Note / Tax ID', 'メモ / 統一番号', '메모 / 사업자번호');
+
+    const extrasHtml = `
+      <div class="cart-extras-wrap">
+        <button type="button" class="cart-extras-toggle" onclick="toggleCartExtras()">
+          <span>${state.cartShowExtras ? '－' : '＋'} ${state.cartShowExtras ? t('收合', 'Hide') : t('新增', 'Add')} ${extrasLabel}</span>
+          ${!state.cartShowExtras && hasFilledExtras ? `<span class="cart-extras-filled">${t('已填寫', 'Added')}</span>` : ''}
+        </button>
+
+        ${state.cartShowExtras ? `
+          <div class="cart-section-card cart-extras-body">
+            <div class="cart-extra-field">
+              <label class="cart-mini-field-lbl">📝 ${t('訂單備註', 'Order Note', 'メモ', '주문 메모')}</label>
+              <input type="text" class="select-input" placeholder="${t('例：飯少、湯分開、不要蔥', 'e.g. Less rice, sauce on side')}" value="${escapeHtml(state.checkoutNote)}" oninput="state.checkoutNote=this.value">
+            </div>
+
+            <div class="cart-extra-field">
+              <label class="cart-mini-field-lbl">🏢 ${t('統一編號（8 碼）', 'Tax ID (8 digits)', '統一番号 (8桁)', '사업자번호 (8자리)')}</label>
+              <input type="tel" id="checkoutTaxIdInput" maxlength="8" inputmode="numeric" class="select-input" style="font-family:monospace;" placeholder="24536806" value="${escapeHtml(state.checkoutTaxId || '')}" oninput="onCheckoutTaxIdInput(this.value)">
+              <div id="cartTaxIdHint" class="cart-tax-hint">${taxIdHintInner}</div>
+            </div>
+
+            ${hasActiveStoreCoupons ? `
+              <div class="cart-extra-field">
+                <label class="cart-mini-field-lbl">🎟️ ${t('優惠碼', 'Promo Code', 'クーポンコード', '쿠폰 코드')}</label>
+                <div style="display:flex; gap:6px;">
+                  <input type="text" id="checkoutCouponInput" maxlength="24" class="select-input" style="text-transform:uppercase; font-family:monospace; font-weight:800;" placeholder="${t('輸入優惠碼', 'Enter code')}" value="${escapeHtml(state.checkoutCouponCode || '')}" oninput="state.checkoutCouponCode=this.value.trim().toUpperCase()">
+                  <button type="button" class="btn-tip-action" style="white-space:nowrap; padding:8px 14px; background:#0F172A;" onclick="applyStudentCouponCode()">${t('套用', 'Apply', '適用', '적용')}</button>
+                </div>
+                ${evalPromo.matchedCoupon ? `<div class="cart-tax-hint"><span class="cart-hint-ok">✓ ${escapeHtml(evalPromo.matchedCoupon.code)} -NT$${evalPromo.couponDiscount}</span></div>` : ''}
+                ${evalPromo.couponError ? `<div class="cart-tax-hint"><span class="cart-hint-err">⚠️ ${escapeHtml(evalPromo.couponError)}</span></div>` : ''}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
       </div>
-    </div>
-  `;
+    `;
 
-  listDiv.innerHTML = errorBannerHtml + itemsCardsHtml + checkoutSettingsHtml;
+    const breakdownHtml = `
+      <div class="cart-breakdown-card">
+        <div class="cart-breakdown-row">
+          <span>${t('餐點小計', 'Subtotal', '小計', '소계')}</span>
+          <span>NT$ ${subtotal}</span>
+        </div>
+        ${takeoutFee > 0 ? `
+          <div class="cart-breakdown-row">
+            <span>${t('外帶盒', 'Takeout Container', '容器代', '포장 용기')}</span>
+            <span>+NT$ ${takeoutFee}</span>
+          </div>
+        ` : ''}
+        ${cutleryFee > 0 ? `
+          <div class="cart-breakdown-row">
+            <span>${t('免洗餐具', 'Cutlery', 'カトラリー', '일회용 수저')}</span>
+            <span>+NT$ ${cutleryFee}</span>
+          </div>
+        ` : ''}
+        ${discount > 0 ? `
+          <div class="cart-breakdown-row discount">
+            <span>${t('優惠折抵', 'Discount', '割引', '할인')}</span>
+            <span>-NT$ ${discount}</span>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    listDiv.innerHTML = errorBannerHtml + pausedBannerHtml + timeCardHtml + phoneCardHtml + paymentCardHtml + extrasHtml + breakdownHtml;
+
+    if (footerEl) {
+      const submitBtnLabel = state.isStudentSubmittingOrder
+        ? t('⏳ 訂單傳送中...', '⏳ Submitting...', '⏳ 送信中...', '⏳ 전송 중...')
+        : (isStorePausedCart
+          ? t('⛔ 暫停營業中', '⛔ Store Paused', '⛔ 営業休止中', '⛔ 영업 중지 중')
+          : `${t('確認送出訂單', 'Place Order', '注文を確定', '주문하기')} · NT$ ${finalTotal}`);
+      footerEl.innerHTML = `
+        <div class="cart-footer-step2">
+          <button type="button" class="cart-btn-back" ${state.isStudentSubmittingOrder ? 'disabled' : ''} onclick="setCartStep(1)">← ${t('返回', 'Back', '戻る', '뒤로')}</button>
+          <button type="button" id="finalSubmitOrderBtn" class="btn-tip-action cart-btn-submit ${state.isStudentSubmittingOrder ? 'btn-is-busy' : ''}" ${(isStorePausedCart || state.isStudentSubmittingOrder) ? 'disabled' : ''} onclick="submitStudentCartOrder()">
+            ${submitBtnLabel}
+          </button>
+        </div>
+      `;
+    }
+  }
+
   if (state.checkoutErrorBannerMsg) {
     listDiv.scrollTop = 0;
   }
 
-  const modalTotalEl = document.getElementById('cartModalTotal');
-  if (modalTotalEl) {
-    const tags = [];
-    if (takeoutFee > 0) tags.push(t('外帶+$1', 'Takeout +$1', 'テイクアウト+$1', '포장 +$1'));
-    if (cutleryFee > 0) tags.push(t(`含免洗餐具+$${cutleryFee}`, `Cutlery +$${cutleryFee}`, `カトラリー+$${cutleryFee}`, `수저 +$${cutleryFee}`));
-    if (discount > 0) tags.push(t(`優惠折抵-$${discount}`, `Promo -$${discount}`, `割引-$${discount}`, `할인 -$${discount}`));
-    modalTotalEl.innerHTML = tags.length > 0
-      ? `<span style="font-size:0.8rem; color:var(--green); margin-right:6px;">(${tags.join(' / ')})</span>NT$ ${finalTotal}`
-      : `NT$ ${finalTotal}`;
-  }
-  const finalSubmitBtn = document.getElementById('finalSubmitOrderBtn');
-  if (finalSubmitBtn) {
-    if (state.isStudentSubmittingOrder) {
-      finalSubmitBtn.disabled = true;
-      finalSubmitBtn.innerText = t('⏳ 訂單傳送中，請勿重複點擊...', '⏳ Submitting order, please wait...', '⏳ 送信中です。連打しないでください...', '⏳ 주문 전송 중입니다...');
-    } else {
-      finalSubmitBtn.disabled = isStorePausedCart;
-      finalSubmitBtn.innerText = isStorePausedCart
-        ? t('⛔ 本店暫停營業中（暫停點餐與預訂）', '⛔ Store Paused (Ordering Unavailable)', '⛔ 営業休止中（注文・予約停止）', '⛔ 영업 중지 중 (주문・예약 불가)')
-        : t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
-    }
-  }
   if (state.lang && state.lang !== 'zh-TW') {
     applyDomSystemTranslation(document.getElementById('cartModal'));
     applyDomSystemTranslation(document.getElementById('floatingCartBar'));
@@ -7946,6 +8113,7 @@ async function submitStudentCartOrder() {
 
   state.checkoutErrorBannerMsg = '';
   if (navigator.onLine === false) {
+    state.cartStep = 2;
     state.checkoutErrorBannerMsg = '偵測到您目前處於離線模式，請恢復網路連線後再送出訂單！';
     updateCartUI();
     return;
@@ -7997,6 +8165,8 @@ async function submitStudentCartOrder() {
     const cleanTaxId = (state.checkoutTaxId || '').replace(/\D/g, '');
 
     if (cleanTaxId && !validateTaiwanTaxId(cleanTaxId)) {
+      state.cartStep = 2;
+      state.cartShowExtras = true;
       state.checkoutErrorBannerMsg = '統一編號格式錯誤，請輸入有效之 8 碼台灣統一編號或留空。';
       unlockSubmitBtnOnError();
       updateCartUI();
@@ -8004,7 +8174,8 @@ async function submitStudentCartOrder() {
     }
 
     if ((isReserve || isCashOrder) && !/^09\d{8}$/.test(cleanPhone)) {
-      state.checkoutErrorBannerMsg = '選擇「現場櫃檯付現」或「預訂取餐」請填寫完整的 10 碼手機號碼（09xxxxxxxx）！';
+      state.cartStep = 2;
+      state.checkoutErrorBannerMsg = '選擇「現金／現場付款」或「預訂取餐」請填寫完整的 10 碼手機號碼（09xxxxxxxx）！';
       unlockSubmitBtnOnError();
       updateCartUI();
       return;
@@ -8108,6 +8279,9 @@ async function submitStudentCartOrder() {
     state.currentCartRequestId = null;
     state.cartItems = [];
     state.checkoutFriedBagPref = '';
+    state.cartStep = 1;
+    state.cartOpenNoteIdx = -1;
+    state.cartShowExtras = false;
     if (state.cartByStoreMap && store.id) delete state.cartByStoreMap[store.id];
     saveStudentCartDraft();
     closeCartModal();
@@ -8119,11 +8293,12 @@ async function submitStudentCartOrder() {
       if (btn) {
         btn.classList.remove('btn-is-busy');
         btn.disabled = false;
-        btn.innerText = t('確認餐點並送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
+        btn.innerText = t('確認送出訂單', 'Place Order', '注文を確定する', '주문 확정하기');
       }
     }, 800);
   } catch (err) {
     // 失敗才解鎖按鈕，並保留 currentCartRequestId，學生重試也不會重複下單
+    state.cartStep = 2;
     state.checkoutErrorBannerMsg = translateServerError(err.message || '網路異常，請再按一次確認送出');
     unlockSubmitBtnOnError();
     updateCartUI();
@@ -9192,6 +9367,11 @@ function startMerchantLiveOrdersFirestoreWatch(storeId) {
 }
 
 function syncMealFlowRealtimeSubscriptions() {
+  if (state.xpMode || state.xp2Mode) {
+    stopStudentOrderFirestoreWatch();
+    stopMerchantLiveOrdersFirestoreWatch();
+    return;
+  }
   const cfg = window.MEALFLOW_REALTIME_CONFIG;
   if (!cfg || !cfg.isCloudflareMode || !cfg.isCloudflareMode() || !cfg.isFirebaseConfigured || !cfg.isFirebaseConfigured()) {
     stopStudentOrderFirestoreWatch();

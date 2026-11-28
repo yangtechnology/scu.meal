@@ -2678,6 +2678,691 @@ select.select-input {
   background: #FFFFFF;
 }
 
+/* ==================== 學生端 2 步驟結帳購物車 (v26.11) ==================== */
+.cart-modal-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 14px 16px 12px;
+}
+
+.cart-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.cart-modal-title {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.cart-close-btn {
+  border: none;
+  background: #F1F5F9;
+  color: #334155;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 1.05rem;
+  font-weight: 900;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cart-step-pill {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #F8FAFC;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cart-step-pill.active {
+  background: var(--brand-light);
+  border-color: var(--brand);
+  color: var(--brand-dark);
+}
+
+.cart-step-pill.done {
+  background: #ECFDF5;
+  border-color: #A7F3D0;
+  color: #065F46;
+}
+
+.cart-step-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cart-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #CBD5E1;
+  color: #FFFFFF;
+  font-size: 0.72rem;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-step-pill.active .cart-step-num {
+  background: var(--brand);
+}
+
+.cart-step-pill.done .cart-step-num {
+  background: #059669;
+}
+
+.cart-step-arrow {
+  color: #94A3B8;
+  font-size: 0.85rem;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.cart-modal-body {
+  background: #F8FAFC;
+  padding: 12px 14px;
+}
+
+.cart-modal-footer {
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.cart-error-banner {
+  background: #FEF2F2;
+  border: 1.5px solid #EF4444;
+  color: #991B1B;
+  padding: 10px 12px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.cart-error-title {
+  font-size: 0.86rem;
+  font-weight: 900;
+  margin-bottom: 2px;
+}
+
+/* 步驟 1：精簡餐點卡片 */
+.cart-item-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.cart-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.cart-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.cart-item-name {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.cart-item-opts {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  line-height: 1.35;
+}
+
+.cart-item-price {
+  font-size: 0.98rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cart-item-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #F1F5F9;
+}
+
+.cart-qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+.cart-qty-btn {
+  border: none;
+  background: #FFFFFF;
+  color: var(--text-primary);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-weight: 900;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-qty-btn.plus {
+  background: var(--brand);
+  color: #FFFFFF;
+}
+
+.cart-qty-num {
+  font-weight: 800;
+  font-size: 0.88rem;
+  min-width: 18px;
+  text-align: center;
+}
+
+.cart-item-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.cart-mini-pill {
+  border: 1px solid #E2E8F0;
+  background: #F8FAFC;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cart-mini-pill.has-val {
+  background: #FFF7ED;
+  border-color: #FDBA74;
+  color: #9A3412;
+}
+
+.cart-mini-pill.edit {
+  background: var(--brand-light);
+  border-color: transparent;
+  color: var(--brand-dark);
+}
+
+.cart-mini-pill.del {
+  background: #F8FAFC;
+  color: #64748B;
+}
+
+.cart-item-note-editor {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.cart-inline-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  border: 1.5px solid var(--brand);
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.cart-note-done-btn {
+  border: none;
+  background: #0F172A;
+  color: #FFFFFF;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 精簡單行優惠條 */
+.cart-promo-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.cart-promo-strip.ok {
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  color: #065F46;
+}
+
+.cart-promo-strip.hint {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+}
+
+.cart-promo-strip.muted {
+  background: #F1F5F9;
+  color: #64748B;
+}
+
+.cart-promo-gift-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #065F46;
+}
+
+.cart-promo-val {
+  font-weight: 900;
+  color: #059669;
+  white-space: nowrap;
+}
+
+/* 共通白卡區塊 */
+.cart-section-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 13px 14px;
+  margin-bottom: 10px;
+}
+
+.cart-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cart-section-title {
+  font-size: 0.92rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin-bottom: 9px;
+}
+
+.cart-section-head .cart-section-title {
+  margin-bottom: 0;
+}
+
+.cart-badge-req {
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: #DC2626;
+  background: #FEF2F2;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.cart-badge-opt {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #64748B;
+  background: #F1F5F9;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.cart-check-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.cart-check-left input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+  margin: 0;
+}
+
+.cart-cutlery-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.cart-cutlery-fee {
+  font-size: 0.86rem;
+  font-weight: 900;
+  color: var(--brand-dark);
+  white-space: nowrap;
+}
+
+.cart-sub-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #F1F5F9;
+}
+
+.cart-sub-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.cart-seg-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cart-seg-btn {
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1.5px solid #E2E8F0;
+  background: #F8FAFC;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cart-seg-btn.active {
+  background: var(--brand-light);
+  border-color: var(--brand);
+  color: var(--brand-dark);
+  font-weight: 900;
+}
+
+.cart-seg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 步驟 2：預訂區、付款卡片、收合進階、精簡明細 */
+.cart-reserve-box {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #F1F5F9;
+}
+
+.cart-mini-field-lbl {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.cart-quota-tiny {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #64748B;
+}
+
+.cart-quota-tiny.warn {
+  color: #B45309;
+}
+
+.cart-pay-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cart-pay-card {
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1.5px solid #E2E8F0;
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cart-pay-card.active {
+  border-color: var(--brand);
+  background: var(--brand-light);
+}
+
+.cart-pay-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cart-pay-radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #CBD5E1;
+  background: #FFFFFF;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.cart-pay-card.active .cart-pay-radio {
+  border-color: var(--brand);
+  background: var(--brand);
+  box-shadow: inset 0 0 0 3px #FFFFFF;
+}
+
+.cart-pay-name {
+  font-size: 0.9rem;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.cart-pay-desc {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.cart-extras-wrap {
+  margin-bottom: 10px;
+}
+
+.cart-extras-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px dashed #CBD5E1;
+  background: #FFFFFF;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cart-extras-filled {
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: #059669;
+  background: #ECFDF5;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.cart-extras-body {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.cart-extra-field {
+  margin-bottom: 10px;
+}
+
+.cart-extra-field:last-child {
+  margin-bottom: 0;
+}
+
+.cart-tax-hint {
+  margin-top: 4px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.cart-hint-ok {
+  color: #059669;
+}
+
+.cart-hint-err {
+  color: #DC2626;
+}
+
+.cart-breakdown-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 11px 14px;
+}
+
+.cart-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #475569;
+  padding: 3px 0;
+}
+
+.cart-breakdown-row.discount {
+  color: #059669;
+  font-weight: 800;
+}
+
+/* 底部操作列 */
+.cart-footer-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.cart-footer-label {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.cart-footer-total {
+  font-size: 1.38rem;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.cart-footer-saved {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #059669;
+  margin-right: 6px;
+}
+
+.cart-btn-next {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+  font-weight: 900;
+  border-radius: 12px;
+}
+
+.cart-footer-step2 {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.cart-btn-back {
+  flex: 0 0 auto;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #334155;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cart-btn-back:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cart-btn-submit {
+  flex: 1;
+  padding: 13px 14px;
+  font-size: 0.98rem;
+  font-weight: 900;
+  border-radius: 12px;
+}
+
 .alert-mode-bar {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
