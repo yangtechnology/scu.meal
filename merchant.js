@@ -428,6 +428,7 @@ async function switchStoreTabMode(mode) {
 
 function switchSettingsSubTab(sub) {
   state.settingsSubTab = sub;
+  state.settingsAdvancedLineOpen = false;
   const store = state.stores.find(s => s.id === state.merchantStoreId) || state.stores[0];
   if (store) renderMerchantSettingsPanel(store);
 }
@@ -8243,6 +8244,7 @@ function renderMerchantSettingsPanel(store) {
   if (!panel) return;
 
   const sub = state.settingsSubTab || 'menu';
+  const isDev = typeof isCurrentMerchantDeveloper === 'function' && isCurrentMerchantDeveloper();
   const storeCutleryPrice = store.cutleryPrice !== undefined ? Number(store.cutleryPrice) : 1;
   const rawMenus = store.menus || [];
   const menusWithOrigIdx = (typeof sortMenusByCategoryPrice === 'function'
@@ -8252,14 +8254,23 @@ function renderMerchantSettingsPanel(store) {
   const remainMins = Math.max(0, Math.round((state.merchantSessionExpiresAt - Date.now()) / 60000));
   const storeAuditLogs = (state.merchantAuditLogs || []).filter(l => !l.storeId || l.storeId === store.id).slice(0, 30);
 
+  const rawProfileIcon = String(store.icon || '').trim();
+  const cleanProfileIcon = /^(https?:\/\/|data:image\/|\.?\.?\/)/i.test(rawProfileIcon) ? rawProfileIcon : '';
+
+  const curPromoMode = (store.promoMode === 'freebie') ? 'gift' : (store.promoMode || 'none');
+  const showPromoFields = curPromoMode !== 'none';
+  const showPromoMin = curPromoMode === 'gift' || curPromoMode === 'discount';
+  const showPromoDiscount = curPromoMode === 'discount' || curPromoMode === 'second_discount';
+  const showPromoGift = curPromoMode === 'gift';
+
   panel.innerHTML = `
     <div class="settings-panel-wrap">
-      <div style="display:flex; justify-content:space-between; align-items:center; background:#FFFFFF; padding:12px 16px; border-radius:14px; border:1px solid var(--border); flex-wrap:wrap; gap:10px;">
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="pos-cat-pill ${sub === 'menu' ? 'active' : ''}" onclick="switchSettingsSubTab('menu')">${t('菜單管理與智慧照片辨識', 'Menu & AI Scan', 'メニュー管理・AI認識', '메뉴 관리 & AI 스캔')}</button>
-          <button type="button" class="pos-cat-pill ${sub === 'promo' ? 'active' : ''}" onclick="switchSettingsSubTab('promo')">${t('營業狀態・餐具收費與離峰優惠', 'Hours, Cutlery & Promos', '営業・カトラリー・割引', '영업・수저・할인 설정')}</button>
-          <button type="button" class="pos-cat-pill ${sub === 'storeProfile' ? 'active' : ''}" onclick="switchSettingsSubTab('storeProfile')">${t('餐廳與校區管理', 'Store & Visibility', '店舗・表示制御', '매장 및 노출 관리')}</button>
-          <button type="button" class="pos-cat-pill ${sub === 'line' ? 'active' : ''}" onclick="switchSettingsSubTab('line')">${t('推播設定・安全鎖與稽核紀錄', 'LINE, Security & Audit', 'LINE・セキュリティ・監査', 'LINE・보안 및 감사 로그')}</button>
+      <div class="settings-subtabs-bar">
+        <div class="settings-subtabs-pills">
+          <button type="button" class="pos-cat-pill ${sub === 'menu' ? 'active' : ''}" onclick="switchSettingsSubTab('menu')">${t('菜單管理', 'Menu', 'メニュー管理', '메뉴 관리')}</button>
+          <button type="button" class="pos-cat-pill ${sub === 'storeProfile' ? 'active' : ''}" onclick="switchSettingsSubTab('storeProfile')">${t('營業與點餐', 'Hours & Ordering', '営業・注文設定', '영업 및 주문')}</button>
+          <button type="button" class="pos-cat-pill ${sub === 'promo' ? 'active' : ''}" onclick="switchSettingsSubTab('promo')">${t('行銷優惠', 'Promotions', 'プロモーション', '프로모션')}</button>
+          <button type="button" class="pos-cat-pill ${sub === 'line' ? 'active' : ''}" onclick="switchSettingsSubTab('line')">${t('人員與系統', 'Staff & System', 'スタッフ・システム', '직원 및 시스템')}</button>
         </div>
 
         <select class="select-input" style="width:auto; padding:6px 10px; font-weight:800;" onchange="switchMerchantStore(this.value)">
@@ -8268,41 +8279,22 @@ function renderMerchantSettingsPanel(store) {
       </div>
 
       ${sub === 'menu' ? `
-        <div class="chart-card" style="background:linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%); border:1.5px solid #C7D2FE;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-            <div>
-              <h3 style="font-size:1.02rem; font-weight:900; color:#312E81;">${t('智慧視覺菜單辨識（支援拍照上傳與穩定品項 ID 匯入）', 'AI Visual Menu Import (Photo / Text)', 'AIメニュー認識（写真・テキスト読取）', 'AI 메뉴 인식 (사진 / 텍스트 가져오기)')}</h3>
-              <p style="font-size:0.78rem; color:#4338CA;">${t('上傳紙本菜單照片或貼上文字，系統將自動進行結構化解析並綁定確定性品項 ID，絕不破壞進行中訂單關聯！', 'Upload a menu photo or paste text to import items with stable IDs without affecting active orders.', 'メニュー写真またはテキストから安定ID付きで構造化インポートできます。', '메뉴 사진이나 텍스트를 붙여넣으면 진행 중인 주문에 영향 없이 자동 등록됩니다.')}</p>
-            </div>
-            <label style="background:#4F46E5; color:#FFFFFF; padding:8px 14px; border-radius:10px; font-size:0.82rem; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(79,70,229,0.25);">
- ${t('拍照 / 上傳菜單圖片', 'Upload Menu Photo', 'メニュー写真をアップロード', '메뉴 사진 업로드')}
-              <input type="file" id="aiMenuImageInput" accept="image/*" style="display:none;" onchange="handleMenuImageUpload(event)">
-            </label>
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('新增餐點', 'Add Menu Item', 'メニューを追加', '메뉴 추가')}</h3>
           </div>
-
-          <textarea id="aiMenuRawText" class="select-input" rows="3" placeholder="${t('或在此直接貼上菜單文字（例如：招牌牛肉麵 120 (加麵+15/小辣)、紅油抄手 65、燙青菜 40）...', 'Or paste menu text here (e.g. Beef Noodles 120, Wonton 65)...', 'メニューテキストを貼り付け（例：牛肉麺 120）...', '메뉴 텍스트를 여기에 붙여넣으세요 (예: 소고기 국수 120)...')}" style="background:#FFFFFF; margin-bottom:8px; font-size:0.84rem;"></textarea>
-
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button type="button" class="btn-tip-action" style="background:#4F46E5;" onclick="runAiMenuRecognition()">${t('執行結構化解析與預覽', 'Parse & Preview', '解析してプレビュー', '파싱 및 미리보기')}</button>
-            <button type="button" class="filter-chip" onclick="loadSampleMenuTextForAi()">${t('載入範例新菜單測試', 'Load Sample Menu', 'サンプル読込', '샘플 메뉴 불러오기')}</button>
-          </div>
-          <div id="aiScannedPreviewArea" style="display:none; margin-top:12px;"></div>
-        </div>
-
-        <div class="chart-card">
-          <h3 style="font-size:0.98rem; font-weight:900; margin-bottom:10px;">${t(`手動新增單一品項至「${store.name}」`, `Add Menu Item to ${trTerm(store.name)}`, `${trTerm(store.name)}にメニューを追加`, `${trTerm(store.name)}에 메뉴 추가`)}</h3>
           ${(function () {
             const existingCats = getStoreExistingMenuCategories(store);
             const hasExisting = existingCats.length > 0;
             return `
-          <div style="display:grid; grid-template-columns:1.05fr 1.25fr 0.65fr 0.65fr 0.9fr 1.15fr auto; gap:8px; align-items:end;">
+          <div class="settings-menu-add-grid">
             <div>
               <label class="field-label">${t('分類', 'Category', 'カテゴリ', '카테고리')}</label>
               <select id="newMenuCatSelect" class="select-input" onchange="onMenuCategorySelectChange('newMenuCatSelect', 'newMenuCatCustom')">
                 ${existingCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
-                <option value="__NEW__" ${!hasExisting ? 'selected' : ''}>新增其他分類...</option>
+                <option value="__NEW__" ${!hasExisting ? 'selected' : ''}>${t('新增其他分類...', 'New category...')}</option>
               </select>
-              <input type="text" id="newMenuCatCustom" class="select-input" style="display:${!hasExisting ? 'block' : 'none'}; margin-top:5px;" placeholder="${t('輸入新分類名稱，如：主廚推薦', 'Enter new category name')}">
+              <input type="text" id="newMenuCatCustom" class="select-input" style="display:${!hasExisting ? 'block' : 'none'}; margin-top:5px;" placeholder="${t('輸入新分類名稱', 'Category name')}">
             </div>
             <div>
               <label class="field-label">${t('餐點名稱 *', 'Dish Name *', '商品名 *', '메뉴명 *')}</label>
@@ -8317,11 +8309,11 @@ function renderMerchantSettingsPanel(store) {
               <input type="number" id="newMenuDailyLimit" class="select-input" min="0" placeholder="${t('0=不限', '0=Unlimited', '0=無制限', '0=무제한')}" value="0">
             </div>
             <div>
-              <label class="field-label">${t('推薦標籤', 'Badge Tag', 'タグ', '추천 태그')}</label>
+              <label class="field-label">${t('推薦標籤', 'Tag', 'タグ', '태그')}</label>
               <input type="text" id="newMenuTag" class="select-input" placeholder="${t('店長推薦', 'Popular', '人気', '인기')}">
             </div>
             <div>
-              <label class="field-label">${t('客製選項 (逗號分隔)', 'Options (comma)', 'オプション(カンマ区切)', '옵션 (쉼표 구분)')}</label>
+              <label class="field-label">${t('客製選項 (逗號分隔)', 'Options (comma)', 'オプション', '옵션 (쉼표 구분)')}</label>
               <input type="text" id="newMenuOpts" class="select-input" placeholder="${t('正常, 飯少', 'Regular, Less Rice', '普通, ご飯少なめ', '보통, 밥 적게')}">
             </div>
             <button type="button" class="btn-tip-action" style="height:40px;" onclick="addManualMenuItem()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
@@ -8330,37 +8322,63 @@ function renderMerchantSettingsPanel(store) {
           })()}
         </div>
 
-        <div class="chart-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-            <h3 style="font-size:0.98rem; font-weight:900;">${t(`目前架上菜單（共 ${menus.length} 道，支援每日限量自動扣減售罄與客製加料規則）`, `Active Menu (${menus.length} items · daily limits & modifiers)`, `登録メニュー（全${menus.length}品）`, `현재 메뉴 (총 ${menus.length}개)`)}</h3>
+        <details class="settings-accordion">
+          <summary>
+            <span>${t('智慧視覺菜單辨識', 'AI Menu Scan', 'AIメニュー認識', 'AI 메뉴 인식')}<span class="settings-accordion-meta">${t('拍照上傳或貼上文字批次匯入', 'Import by photo or text')}</span></span>
+          </summary>
+          <div class="settings-accordion-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+              <span style="font-size:0.78rem; color:var(--text-secondary);">${t('上傳紙本菜單照片或貼上文字即可快速解析匯入。', 'Upload a menu photo or paste text to parse items.')}</span>
+              <label style="background:#4F46E5; color:#FFFFFF; padding:7px 14px; border-radius:10px; font-size:0.8rem; font-weight:800; cursor:pointer;">
+                ${t('拍照 / 上傳菜單圖片', 'Upload Menu Photo', 'メニュー写真をアップロード', '메뉴 사진 업로드')}
+                <input type="file" id="aiMenuImageInput" accept="image/*" style="display:none;" onchange="handleMenuImageUpload(event)">
+              </label>
+            </div>
+            <textarea id="aiMenuRawText" class="select-input" rows="3" placeholder="${t('貼上菜單文字（例如：招牌牛肉麵 120 (加麵+15/小辣)、紅油抄手 65）...', 'Paste menu text (e.g. Beef Noodles 120, Wonton 65)...')}" style="background:#FFFFFF; margin-bottom:8px; font-size:0.84rem;"></textarea>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn-tip-action" style="background:#4F46E5;" onclick="runAiMenuRecognition()">${t('解析與預覽', 'Parse & Preview', '解析してプレビュー', '파싱 및 미리보기')}</button>
+              <button type="button" class="filter-chip" onclick="loadSampleMenuTextForAi()">${t('載入範例', 'Load Sample', 'サンプル読込', '샘플 불러오기')}</button>
+            </div>
+            <div id="aiScannedPreviewArea" style="display:none; margin-top:12px;"></div>
           </div>
-          ${(function () {
-            const modMap = {};
-            menus.forEach(m => {
-              Object.values(m.options || {}).forEach(grp => {
-                (grp && Array.isArray(grp.choices) ? grp.choices : []).forEach(c => {
-                  const cName = String(Array.isArray(c) ? c[0] : c).trim();
-                  if (!cName) return;
-                  if (!modMap[cName]) modMap[cName] = { total: 0, soldOut: 0 };
-                  modMap[cName].total++;
-                  if (Array.isArray(c) && Boolean(c[2])) modMap[cName].soldOut++;
-                });
+        </details>
+
+        ${(function () {
+          const modMap = {};
+          menus.forEach(m => {
+            Object.values(m.options || {}).forEach(grp => {
+              (grp && Array.isArray(grp.choices) ? grp.choices : []).forEach(c => {
+                const cName = String(Array.isArray(c) ? c[0] : c).trim();
+                if (!cName) return;
+                if (!modMap[cName]) modMap[cName] = { total: 0, soldOut: 0 };
+                modMap[cName].total++;
+                if (Array.isArray(c) && Boolean(c[2])) modMap[cName].soldOut++;
               });
             });
-            const sharedMods = Object.entries(modMap).filter(([, info]) => info.total >= 2).slice(0, 16);
-            if (sharedMods.length === 0) return '';
-            return `
-              <div style="background:#FFFBEB; border:1px solid #FDE68A; border-radius:10px; padding:10px 12px; margin-bottom:12px;">
-                <div style="font-size:0.78rem; font-weight:900; color:#92400E; margin-bottom:6px;">${t('批次加料售罄開關（點擊一次即同步全店所有含該加料的主餐）', 'Bulk Modifier Sold-Out Toggle (Applies to all dishes using this add-on)', 'トッピング一括品切れ切替', '토핑 일괄 품절 스위치')}</div>
+          });
+          const sharedMods = Object.entries(modMap).filter(([, info]) => info.total >= 2).slice(0, 16);
+          if (sharedMods.length === 0) return '';
+          return `
+            <details class="settings-accordion">
+              <summary>
+                <span>${t('批次加料售罄開關', 'Bulk Modifier Sold-Out', 'トッピング一括品切れ', '토핑 일괄 품절')}<span class="settings-accordion-meta">${t(`共 ${sharedMods.length} 項共用加料`, `${sharedMods.length} shared add-ons`)}</span></span>
+              </summary>
+              <div class="settings-accordion-body">
                 <div style="display:flex; flex-wrap:wrap; gap:6px;">
                   ${sharedMods.map(([cName, info]) => {
                     const allOut = info.soldOut >= info.total;
-                    return `<button type="button" onclick="bulkToggleModifierChoiceSoldOut(${escapeJsAttr(cName)})" style="border:1px solid ${allOut ? '#EF4444' : '#D97706'}; background:${allOut ? '#FEE2E2' : '#FFFFFF'}; color:${allOut ? '#B91C1C' : '#92400E'}; padding:4px 10px; border-radius:999px; font-size:0.74rem; font-weight:800;">${allOut ? '' : ''}<span data-dish-name="1">${escapeHtml(trTerm(cName))}</span> (${info.total})${allOut ? ` [${t('已售罄', 'Sold Out', '売切', '품절')}]` : ''}</button>`;
+                    return `<button type="button" onclick="bulkToggleModifierChoiceSoldOut(${escapeJsAttr(cName)})" style="border:1px solid ${allOut ? '#EF4444' : '#D97706'}; background:${allOut ? '#FEE2E2' : '#FFFFFF'}; color:${allOut ? '#B91C1C' : '#92400E'}; padding:5px 11px; border-radius:999px; font-size:0.75rem; font-weight:800;"><span data-dish-name="1">${escapeHtml(trTerm(cName))}</span> (${info.total})${allOut ? ` [${t('已售罄', 'Sold Out', '売切', '품절')}]` : ''}</button>`;
                   }).join('')}
                 </div>
               </div>
-            `;
-          })()}
+            </details>
+          `;
+        })()}
+
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t(`目前架上菜單（共 ${menus.length} 道）`, `Active Menu (${menus.length} items)`, `登録メニュー（全${menus.length}品）`, `현재 메뉴 (총 ${menus.length}개)`)}</h3>
+          </div>
           <div class="mgr-menu-grid">
             ${menusWithOrigIdx.map((m) => {
               const idx = m.__origIdx;
@@ -8373,7 +8391,7 @@ function renderMerchantSettingsPanel(store) {
                     <div class="mgr-menu-badges">
                       <span class="mgr-menu-cat">${escapeHtml(trTerm(m.category || '主餐'))}</span>
                       ${optCount > 0 ? `<span class="mgr-menu-opt-badge">${optCount} ${t('組客製', 'opts', 'オプション', '옵션')}</span>` : ''}
-                      ${m.soldOutGroup ? `<span class="mgr-menu-group-badge" title="連動售完群組">${escapeHtml(m.soldOutGroup)}</span>` : ''}
+                      ${m.soldOutGroup ? `<span class="mgr-menu-group-badge" title="${t('連動售完群組', 'Linked sold-out group')}">${escapeHtml(m.soldOutGroup)}</span>` : ''}
                       ${isSoldOut ? `<span class="sold-out-ribbon" style="${m.soldOutType === 'PERMANENT' ? 'background:#DC2626;' : 'background:#D97706;'}">${m.soldOutType === 'PERMANENT' ? t('長期缺貨', 'Out of Stock', '長期品切', '장기 품절') : t('本日售完', 'Sold Out Today', '本日完売', '오늘 품절')}</span>` : (m.tag ? `<span data-dish-name="1" class="mgr-menu-tag-badge">${escapeHtml(trTerm(typeof stripEmoji === 'function' ? stripEmoji(m.tag) : m.tag))}</span>` : '')}
                       ${dLimit > 0 ? `<span class="mgr-menu-limit-badge">${t(`限量 ${dLimit} 份`, `Limit ${dLimit}`, `限定${dLimit}`, `한정 ${dLimit}`)}${m.remainingToday !== null && m.remainingToday !== undefined ? ` (${t('剩', 'Left', '残', '잔여')}:${m.remainingToday})` : ''}</span>` : ''}
                     </div>
@@ -8386,7 +8404,7 @@ function renderMerchantSettingsPanel(store) {
                     </div>
                     <div class="mgr-menu-actions">
                       <button type="button" onclick="toggleMenuItemSoldOut(${idx})" class="mgr-menu-btn ${isSoldOut ? 'btn-restock' : 'btn-soldout'}">${isSoldOut ? t('上架', 'Restock', '販売再開', '재입고') : t('售罄', 'Sold Out', '売切', '품절')}</button>
-                      ${optCount > 0 ? `<button type="button" onclick="openBatchApplyOptionsModal(${idx})" title="${escapeHtml(t('將此品項的客製化選項批次套用到同分類其他餐點', 'Batch apply this item\'s customization options to other dishes'))}" class="mgr-menu-btn btn-apply-opts">${t('套用客製', 'Apply Opts', '一括適用', '옵션 적용')}</button>` : ''}
+                      ${optCount > 0 ? `<button type="button" onclick="openBatchApplyOptionsModal(${idx})" title="${escapeHtml(t('套用客製選項至其他餐點', 'Apply options to other dishes'))}" class="mgr-menu-btn btn-apply-opts">${t('套用客製', 'Apply Opts', '一括適用', '옵션 적용')}</button>` : ''}
                       <button type="button" onclick="openMenuEditModal(${idx})" class="mgr-menu-btn btn-edit">${t('編輯', 'Edit', '編集', '수정')}</button>
                       <button type="button" onclick="deleteMenuItem(${idx})" class="mgr-menu-btn btn-del">${t('刪', 'Del', '削除', '삭제')}</button>
                     </div>
@@ -8398,259 +8416,44 @@ function renderMerchantSettingsPanel(store) {
         </div>
       ` : ''}
 
-      ${sub === 'promo' ? `
-        <div class="chart-card">
-          <h3 style="font-size:1.05rem; font-weight:900; margin-bottom:6px;">${t(`營業狀態・基礎出餐時間・預訂備餐前置・餐具與離峰優惠設定（${store.name}）`, `Store Status, Prep Capacity, Cutlery & Promos (${trTerm(store.name)})`, `営業状態・調理時間・カトラリー・割引設定（${trTerm(store.name)}）`, `영업 상태・조리 시간・수저 및 할인 설정 (${trTerm(store.name)})`)}</h3>
-          <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:16px;">
-            ${t('可在此調整每 15 分鐘餐點份數產能上限、預訂單自動推入廚房前置時間與離峰折抵/招待優惠。', 'Adjust 15-min order capacity, pre-order kitchen auto-fire lead time, cutlery fees, and promotional discounts.', '15分あたりの生産上限、予約自動開始時間、カトラリー代や割引ルールを設定します。', '15분당 생산 정원, 예약 자동 투입 시간, 수저 요금 및 할인 규칙을 설정하세요.')}
-          </p>
-
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:16px;">
-            <div>
-              <label class="field-label">${t('本店目前營業狀態', 'Current Store Status', '現在の営業状態', '현재 매장 영업 상태')}</label>
-              <select id="cfgStoreIsOpen" class="select-input">
-                <option value="true" ${store.isOpen !== false ? 'selected' : ''}>${t('正常營業中 (營業時間開放立即製作，打烊後自動開放預訂)', 'Open (Make Now during hours, Pre-order after closing)', '通常営業中（営業時間外は自動で予約受付）', '정상 영업 중 (마감 후 자동 예약 허용)')}</option>
-                <option value="false" ${store.isOpen === false ? 'selected' : ''}>${t('暫停營業（全面停止現場點餐與預訂）', 'Paused (Stops ALL Ordering & Pre-orders)', '営業休止（注文・予約すべて停止）', '영업 중지 (모든 주문 및 예약 중단)')}</option>
-              </select>
-              <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:4px; line-height:1.4;">
- ${t('「已打烊」會依營業時間自動切換並開放預訂；「暫停營業」則會完全關閉點餐與預訂。', '"Closed" follows business hours and allows pre-orders; "Paused" disables all ordering immediately.', '「営業時間外」は予約可、「営業休止」は全注文を停止します。', '"영업 종료"는 예약이 가능하며, "영업 중지"는 모든 주문과 예약을 차단합니다.')}
-              </div>
-            </div>
-
-            <div>
-              <label class="field-label" style="color:var(--brand-dark);">${t('一次性免洗餐具收費金額 (NT$)', 'Disposable Cutlery Fee (NT$)', 'カトラリー料金 (NT$)', '일회용 수저 요금 (NT$)')}</label>
-              <input type="number" id="cfgCutleryPrice" class="select-input" min="0" max="50" value="${storeCutleryPrice}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('空閒時基礎出餐時間 (分鐘)', 'Base Prep Time (min)', '基本調理時間 (分)', '기본 조리 시간 (분)')}</label>
-              <input type="number" id="cfgBasePrepMin" class="select-input" min="1" max="25" value="${store.basePrepMinutes || 4}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('每 15 分鐘產能與預訂配額上限 (份數)', 'Max Capacity per 15 Min (portions)', '15分あたりの上限 (食数)', '15분당 최대 생산량 (수량)')}</label>
-              <input type="number" id="cfgMaxCap" class="select-input" min="5" max="200" value="${store.maxCapacityPer15Min}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('預訂單提前自動推入廚房時間 (分鐘)', 'Pre-order Auto-Fire Lead Time (min)', '予約自動調理開始 (分前)', '예약 자동 조리 투입 (분 전)')}</label>
-              <input type="number" id="cfgReserveLeadMins" class="select-input" min="10" max="90" value="${store.reserveLeadMinutes || 25}">
-            </div>
-
-            <div>
-              <label class="field-label" style="color:var(--indigo);">${t('忙碌店逾時自動結單時間 (分鐘，0=關閉手動結單)', 'Auto-Complete Orders After (min, 0=Manual)', '自動完了時間（分、0=手動）', '자동 완료 시간 (분, 0=수동)')}</label>
-              <input type="number" id="cfgAutoCompleteMinutes" class="select-input" min="0" max="240" value="${Number(store.autoCompleteMinutes) || 0}">
-              <div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:5px;">
-                ${[0, 15, 20, 30, 45].map(m => `
-                  <button type="button" class="pos-chip-btn" style="padding:2px 8px; font-size:0.7rem;" onclick="const el=document.getElementById('cfgAutoCompleteMinutes'); if(el) el.value='${m}';">${m === 0 ? '關閉(手動)' : `${m}分鐘`}</button>
-                `).join('')}
-              </div>
-              <div style="font-size:0.71rem; color:var(--text-secondary); margin-top:4px; line-height:1.4;">
- ${t('適合口頭叫號、無暇按「通知取餐／結單」的店家。設為 0 表示關閉（維持手動結單）；設為例如 15 或 20 分鐘，逾時後系統將自動結單為「已完成」，避免學生端預估等候時間暴增。', 'For busy oral-call stores that skip pressing Ready/Complete. 0 = manual completion; e.g. 15–20 min auto-completes expired orders so student wait times stay accurate.')}
-              </div>
-            </div>
-
-            <div>
-              <label class="field-label">${t('行銷優惠模式', 'Promotion Mode', '割引・プロモーション', '프로모션 모드')}</label>
-              <select id="cfgPromoMode" class="select-input">
-                <option value="none" ${store.promoMode === 'none' ? 'selected' : ''}>${t('關閉優惠', 'Disabled', '無効', '사용 안 함')}</option>
-                <option value="gift" ${(store.promoMode === 'gift' || store.promoMode === 'freebie') ? 'selected' : ''}>${t('滿額贈送指定餐點 / 飲品', 'Free Gift Over Minimum', '金額達成で無料特典', '기준 금액 이상 사은품')}</option>
-                <option value="discount" ${store.promoMode === 'discount' ? 'selected' : ''}>${t('滿額現金現折', 'Cash Discount Over Minimum', '金額達成で現金割引', '기준 금액 이상 할인')}</option>
-                <option value="second_discount" ${store.promoMode === 'second_discount' ? 'selected' : ''}>${t('第二件折價 (每 2 件折抵)', '2nd Item Discount', '2点目割引', '2번째 메뉴 할인')}</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="field-label">${t('優惠適用時段', 'Promo Active Window', '割引適用時間帯', '할인 적용 시간대')}</label>
-              <select id="cfgPromoScope" class="select-input">
-                <option value="OFF_PEAK" ${store.promoScope !== 'ALL_DAY' ? 'selected' : ''}>${t('僅離峰順暢時段適用 (分流專用)', 'Off-Peak Only', 'オフピークのみ', '비혼잡 시간대 전용')}</option>
-                <option value="ALL_DAY" ${store.promoScope === 'ALL_DAY' ? 'selected' : ''}>${t('全天候營業時段皆適用', 'All Day', '終日適用', '전일 적용')}</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="field-label">${t('優惠最低消費門檻 (NT$)', 'Min Spend Threshold (NT$)', '最低利用金額 (NT$)', '최소 주문 금액 (NT$)')}</label>
-              <input type="number" id="cfgPromoMinSubtotal" class="select-input" min="0" max="1000" value="${store.promoMinSubtotal !== undefined ? Number(store.promoMinSubtotal) : AI_DISCOUNT_MIN_SUBTOTAL}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('優惠顯示文案', 'Promo Banner Text', '割引表示テキスト', '프로모션 안내 문구')}</label>
-              <input type="text" id="cfgPromoText" class="select-input" value="${escapeHtml(store.promoText || '')}" placeholder="${t('例：滿百贈招牌紅茶', 'e.g. Free Tea over $100', '例：100元以上で紅茶無料', '예: $100 이상 음료 무료')}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('現金折抵 / 第二件折抵金額 (NT$)', 'Discount Amount (NT$)', '割引額 (NT$)', '할인 금액 (NT$)')}</label>
-              <input type="number" id="cfgPromoDiscount" class="select-input" min="0" max="200" value="${store.promoDiscount || store.secondItemDiscount || 0}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('指定贈品品項（滿額贈送專用・售罄自動停贈）', 'Gift Item (Auto-pauses when sold out)', '無料特典メニュー', '사은품 지정 메뉴')}</label>
-              <select id="cfgGiftMenuItemId" class="select-input">
-                <option value="">${t('（不指定特定品項，依文案顯示）', '(None selected — show banner only)', '（指定なし）', '(지정 안 함)')}</option>
-                ${menus.map(m => `<option data-dish-name="1" value="${escapeHtml(m.id)}" ${String(store.giftMenuItemId || '') === String(m.id) ? 'selected' : ''}>${escapeHtml(trDishName(m))} (NT$${m.price})${m.soldOut ? ' [Out]' : ''}</option>`).join('')}
-              </select>
-            </div>
-
-            <div>
-              <label class="field-label">${t('內用掃碼「餐後結帳」模式', 'Dine-in Pay After Meal Mode', '店内後払いモード', '매장 식사 후불 모드')}</label>
-              <select id="cfgAllowDineInPostPay" class="select-input">
-                <option value="false" ${!store.allowDineInPostPay ? 'selected' : ''}>${t('關閉（學生須先付或取餐付現）', 'Off (Prepay or cash at pickup)', 'オフ（事前決済または受取時払い）', '꺼짐 (선결제 또는 픽업 결제)')}</option>
-                <option value="true" ${store.allowDineInPostPay ? 'selected' : ''}>${t('開啟內用餐後至櫃檯結帳', 'Enabled (Pay at counter after meal)', 'オン（食後にレジで会計）', '켜짐 (식사 후 카운터 결제)')}</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="field-label">${t('LINE Pay 金流手續費率 (%)（供實拿淨額分析）', 'LINE Pay Fee Rate (%) for Net Analytics', 'LINE Pay 手数料率 (%)', 'LINE Pay 수수료율 (%)')}</label>
-              <input type="number" step="0.1" min="0" max="20" id="cfgLinePayFeeRate" class="select-input" value="${store.linePayFeeRate !== undefined ? Number(store.linePayFeeRate) : 2.2}">
-            </div>
-
-            <div>
-              <label class="field-label">${t('昨日「本日售完」品項早班恢復模式', 'Morning Policy for Yesterday\'s Sold-Out Items', '翌朝の品切れ再開方式', '오전 오픈 품절 복구 방식')}</label>
-              <select id="cfgMorningSoldOutPolicy" class="select-input">
-                <option value="ASK_MORNING" ${store.morningSoldOutPolicy !== 'AUTO_RESTORE' ? 'selected' : ''}>${t('每日早班開機自動跳出詢問上架（推薦）', 'Prompt morning staff to review & restock (Recommended)', '翌朝に確認ダイアログを表示（推奨）', '오전 오픈 시 재입고 확인창 표시 (권장)')}</option>
-                <option value="AUTO_RESTORE" ${store.morningSoldOutPolicy === 'AUTO_RESTORE' ? 'selected' : ''}>${t('隔日自動全部重新上架（長期缺貨除外）', 'Auto-restock all "Today Out" items next day', '翌日自動で再販売（長期品切を除く）', '다음날 자동 재입고 (장기 품절 제외)')}</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="field-label">${t('學生端開放線上 LINE Pay 預付', 'Student Online LINE Pay Prepayment', '学生画面のオンラインLINE Pay', '학생 온라인 LINE Pay 선결제')}</label>
-              <select id="cfgEnableOnlineLinePay" class="select-input">
-                <option value="false" ${store.enableOnlineLinePay !== true ? 'selected' : ''}>${t('關閉（學生端僅顯示「現場付款：現金 / 現場掃 LINE Pay」）', 'Off — Show "Pay at Counter (Cash / Counter LINE Pay)"', 'オフ（店頭払いのみ表示：現金／店頭LINE Pay）', '꺼짐 (현장 결제만 표시: 현금/현장 LINE Pay)')}</option>
-                <option value="true" ${store.enableOnlineLinePay === true ? 'selected' : ''}>${t('開啟（須先完成 LINE Pay 商家線上金流審核串接）', 'On — Enable Online LINE Pay Checkout', 'オン（オンラインLINE Pay決済を有効化）', '켜짐 (온라인 LINE Pay 결제 활성화)')}</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- B7：組合搭配折扣規則（例：買雞排 + 飲料 折 $5） -->
-          <div style="background:#ECFDF5; border:1.5px solid #6EE7B7; border-radius:12px; padding:12px; margin-bottom:14px;">
-            <div style="font-size:0.88rem; font-weight:950; color:#065F46; margin-bottom:4px;">${t('組合搭配折扣規則（例：買雞排 + 飲料 折 $5，學生端與 POS 自動計算）', 'Combo / Bundle Discount Rules (e.g. Chicken Cutlet + Drink -$5)', 'セット割引ルール（例：チキン＋ドリンクで$5引き）', '세트 할인 규칙 (예: 치킨 + 음료 -$5)')}</div>
-            <div style="font-size:0.74rem; color:#047857; margin-bottom:8px;">
-              ${t('條件 A / B 可填餐點名稱關鍵字（如：雞排）或分類名稱（如：飲料類、飲品），多組關鍵字可用 / 分隔（如：飲料類/紅茶/奶茶）。', 'Match A / B supports dish keywords (e.g. Chicken) or category names (e.g. Drinks), separated by / for multiple.', '条件A/Bには商品名またはカテゴリ名を入力できます（/区切りで複数可）。', '조건 A/B에 메뉴명 또는 카테고리명을 입력하세요 (/로 여러 개 지정 가능).')}
-            </div>
-            <div style="display:grid; grid-template-columns:1.1fr 1fr 1fr 0.65fr auto; gap:6px; align-items:end; margin-bottom:10px;">
-              <div>
-                <label class="field-label">${t('活動名稱 *', 'Deal Name *', '割引名 *', '할인명 *')}</label>
-                <input type="text" id="newComboNameInput" maxlength="32" class="select-input" placeholder="${t('例：雞排+飲料折5元', 'e.g. Cutlet + Drink -$5')}">
-              </div>
-              <div>
-                <label class="field-label">${t('條件 A (品名或分類) *', 'Match A (Dish/Cat) *', '条件A *', '조건 A *')}</label>
-                <input type="text" id="newComboMatchAInput" maxlength="32" class="select-input" placeholder="${t('例：雞排', 'e.g. Cutlet')}">
-              </div>
-              <div>
-                <label class="field-label">${t('條件 B (品名或分類) *', 'Match B (Dish/Cat) *', '条件B *', '조건 B *')}</label>
-                <input type="text" id="newComboMatchBInput" maxlength="32" class="select-input" placeholder="${t('例：飲料類/飲品', 'e.g. Drinks')}">
-              </div>
-              <div>
-                <label class="field-label">${t('每組折 ($)', 'Off ($)', '割引 ($)', '할인 ($)')}</label>
-                <input type="number" id="newComboAmtInput" class="select-input" min="1" max="500" value="5">
-              </div>
-              <button type="button" class="btn-tip-action" style="height:38px; background:#059669;" onclick="addStoreComboDiscount()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px;">
-              ${(Array.isArray(store.comboDiscounts) && store.comboDiscounts.length > 0) ? store.comboDiscounts.map((r, rIdx) => `
-                <div style="display:inline-flex; align-items:center; gap:6px; background:#FFFFFF; border:1px solid #34D399; padding:5px 10px; border-radius:999px; font-size:0.78rem; font-weight:850; color:#065F46;">
-                  <span>${escapeHtml(r.name || `${r.matchA} + ${r.matchB}`)}</span>
-                  <span style="font-size:0.72rem; color:#047857;">[${escapeHtml(r.matchA)} + ${escapeHtml(r.matchB)} ➔ -NT$${r.discountAmount}]</span>
-                  <button type="button" onclick="deleteStoreComboDiscount(${rIdx})" style="border:none; background:transparent; color:var(--red); font-weight:900; cursor:pointer;">✕</button>
-                </div>
-              `).join('') : `<span style="font-size:0.76rem; color:#047857;">${t('目前尚未建立組合折扣（新增後請點下方「儲存設定」同步雲端）', 'No combo deals yet. Add one and click Save below.', 'セット割引は未登録です。', '등록된 세트 할인이 없습니다.')}</span>`}
-            </div>
-          </div>
-
-          <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:12px; padding:12px; margin-bottom:14px;">
-            <div style="font-size:0.86rem; font-weight:900; color:var(--indigo); margin-bottom:8px;">${t('本店專屬優惠券 / 折扣碼管理（學生於購物車輸入立即核實折抵）', 'Store Coupon / Promo Code Manager', 'クーポン・割引コード管理', '매장 전용 쿠폰 / 할인코드 관리')}</div>
-            <div style="display:grid; grid-template-columns:1fr 0.85fr 0.7fr 0.75fr auto; gap:6px; align-items:end; margin-bottom:10px;">
-              <div>
-                <label class="field-label">${t('折扣碼 *', 'Code *', 'コード *', '할인코드 *')}</label>
-                <input type="text" id="newCouponCodeInput" maxlength="20" class="select-input" style="text-transform:uppercase; font-family:monospace;" placeholder="SCU15">
-              </div>
-              <div>
-                <label class="field-label">${t('類型', 'Type', '種類', '유형')}</label>
-                <select id="newCouponTypeSelect" class="select-input">
-                  <option value="AMOUNT">${t('折現金 ($)', 'Fixed ($)', '金額割引 ($)', '정액 할인 ($)')}</option>
-                  <option value="PERCENT">${t('打折 (% off)', 'Percent (% off)', '割合割引 (%)', '정률 할인 (%)')}</option>
-                </select>
-              </div>
-              <div>
-                <label class="field-label">${t('面額/折數', 'Value', '割引値', '할인값')}</label>
-                <input type="number" id="newCouponValInput" class="select-input" min="1" value="15">
-              </div>
-              <div>
-                <label class="field-label">${t('低消 ($)', 'Min ($)', '最低額 ($)', '최소 ($)')}</label>
-                <input type="number" id="newCouponMinInput" class="select-input" min="0" value="80">
-              </div>
-              <button type="button" class="btn-tip-action" style="height:38px;" onclick="addStoreCouponItem()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px;">
-              ${(Array.isArray(store.coupons) && store.coupons.length > 0) ? store.coupons.map((c, cIdx) => `
-                <div style="display:inline-flex; align-items:center; gap:6px; background:#FFFFFF; border:1px solid #C7D2FE; padding:4px 10px; border-radius:999px; font-size:0.76rem; font-weight:800;">
-                  <span style="font-family:monospace; color:#4338CA;">${escapeHtml(c.code)}</span>
-                  <span>${c.type === 'PERCENT' ? `-${c.value}%` : `-NT$${c.value}`} (${t('滿', 'Min ', '最低', '최소')}$${c.minSubtotal || 0})</span>
-                  <button type="button" onclick="deleteStoreCouponItem(${cIdx})" style="border:none; background:transparent; color:var(--red); font-weight:900; cursor:pointer;">✕</button>
-                </div>
-              `).join('') : `<span style="font-size:0.76rem; color:var(--text-muted);">${t('目前尚未建立優惠券（新增後請點下方「儲存設定」）', 'No coupons yet. Add one and click Save below.', 'クーポン未登録です。', '등록된 쿠폰이 없습니다.')}</span>`}
-            </div>
-          </div>
-
-          <button type="button" class="btn-primary-full" style="max-width:340px;" onclick="saveMerchantConfig()">${t('儲存營業狀態、行銷優惠與優惠券設定', 'Save Status, Promos & Coupons', '営業・割引・クーポン設定を保存', '영업 상태・할인・쿠폰 저장')}</button>
-        </div>
-      ` : ''}
-
       ${sub === 'storeProfile' ? `
-        <div class="chart-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
-            <div>
-              <h3 style="font-size:1.05rem; font-weight:900;">${t(`編輯餐廳基本資料・代表圖示・營業時間與公休日（${store.name} / ${store.id}）`, `Store Profile, Hours & Holidays (${trTerm(store.name)} / ${store.id})`, `店舗基本情報・営業時間・定休日（${trTerm(store.name)} / ${store.id}）`, `매장 기본 정보・영업시간・휴무일 (${trTerm(store.name)} / ${store.id})`)}</h3>
-              <p style="font-size:0.78rem; color:var(--text-secondary);">${t('支援動態修改店名、所屬校區、營業時間、午休時段與每週公休日，免改程式碼即可即時更新全站預訂時段！', 'Edit store name, campus, hours, break window, and weekly closed days live without changing code.', '店名・キャンパス・営業時間・休憩・定休日をリアルタイム更新できます。', '매장명, 캠퍼스, 영업시간, 휴게시간 및 정기 휴무일을 즉시 수정할 수 있습니다.')}</p>
-            </div>
-            <button type="button" class="btn-danger-soft" onclick="deleteCurrentMerchantStore()">${t('刪除此餐廳櫃位', 'Delete Store', 'この店舗を削除', '이 매장 삭제')}</button>
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('營業時間與公休', 'Business Hours & Holidays', '営業時間・定休日', '영업시간 및 휴무일')}</h3>
           </div>
 
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
+          <div class="settings-form-grid" style="margin-bottom:14px;">
             <div>
-              <label class="field-label">${t('所屬校區 (可自由輸入新校區)', 'Campus', 'キャンパス', '소속 캠퍼스')}</label>
-              <input type="text" id="cfgProfileCampus" class="select-input" value="${escapeHtml(store.campus || '雙溪校區')}" placeholder="${t('如：雙溪校區、城中校區', 'e.g. Waishuanghsi Campus', '例：双渓キャンパス', '예: 솽시 캠퍼스')}">
+              <label class="field-label">${t('今日營業狀態', 'Store Status', '営業状態', '영업 상태')}</label>
+              <select id="cfgStoreIsOpen" class="select-input">
+                <option value="true" ${store.isOpen !== false ? 'selected' : ''}>${t('正常營業中', 'Open', '通常営業中', '정상 영업 중')}</option>
+                <option value="false" ${store.isOpen === false ? 'selected' : ''}>${t('暫停營業（停止接單與預訂）', 'Paused (Stops All Orders)', '営業休止（全注文停止）', '영업 중지 (모든 주문 중단)')}</option>
+              </select>
             </div>
             <div>
-              <label class="field-label">${t('餐廳名稱 *', 'Store Name *', '店舗名 *', '매장명 *')}</label>
-              <input type="text" id="cfgProfileName" class="select-input" value="${escapeHtml(store.name || '')}" placeholder="${t('如：趙班長海苔飯捲', 'Store name', '店舗名', '매장명')}">
-            </div>
-            <div>
-              <label class="field-label">${t('餐點類型標語', 'Cuisine Tagline', '料理カテゴリ', '음식 카테고리')}</label>
-              <input type="text" id="cfgProfileCategory" class="select-input" value="${escapeHtml(store.category || '')}" placeholder="${t('如：人氣韓式・飯捲', 'e.g. Korean Kimbap', '例：韓国キンパ', '예: 김밥・분식')}">
-            </div>
-            <div>
-              <label class="field-label">${t('餐廳代表圖片網址 (選填)', 'Store Image URL (Optional)', '店舗画像URL (任意)', '매장 이미지 URL (선택)')}</label>
-              <input type="text" id="cfgProfileIcon" class="select-input" value="${escapeHtml(store.icon || '')}" placeholder="https://...">
-            </div>
-            <div>
-              <label class="field-label">${t('平日預設開始營業時間', 'Default Opening Time', '基本開店時刻', '기본 오픈 시간')}</label>
+              <label class="field-label">${t('平日預設開始時間', 'Default Open Time', '基本開店時刻', '기본 오픈 시간')}</label>
               <input type="time" id="cfgProfileOpenTime" class="select-input" value="${escapeHtml(store.openTime || '10:30')}">
             </div>
             <div>
-              <label class="field-label">${t('平日預設結束營業時間', 'Default Closing Time', '基本閉店時刻', '기본 마감 시간')}</label>
+              <label class="field-label">${t('平日預設結束時間', 'Default Close Time', '基本閉店時刻', '기본 마감 시간')}</label>
               <input type="time" id="cfgProfileCloseTime" class="select-input" value="${escapeHtml(store.closeTime || '19:30')}">
             </div>
             <div>
-              <label class="field-label">${t('午休開始時間 (選填，無午休留空)', 'Break Start (Optional)', '休憩開始 (任意)', '휴게 시작 (선택)')}</label>
+              <label class="field-label">${t('午休開始 (選填)', 'Break Start (Optional)', '休憩開始 (任意)', '휴게 시작 (선택)')}</label>
               <input type="time" id="cfgProfileBreakStart" class="select-input" value="${escapeHtml(store.breakStartTime || '')}">
             </div>
             <div>
-              <label class="field-label">${t('午休結束時間 (選填)', 'Break End (Optional)', '休憩終了 (任意)', '휴게 종료 (선택)')}</label>
+              <label class="field-label">${t('午休結束 (選填)', 'Break End (Optional)', '休憩終了 (任意)', '휴게 종료 (선택)')}</label>
               <input type="time" id="cfgProfileBreakEnd" class="select-input" value="${escapeHtml(store.breakEndTime || '')}">
             </div>
           </div>
 
-          <!-- B4 + B8：各星期獨立營業時間與每週固定公休視覺化設定（支援週六較短營業時間，儲存後 100% 持久化回顯） -->
-          <div style="background:#F8FAFC; border:1.5px solid #CBD5E1; border-radius:12px; padding:12px; margin-bottom:16px;">
+          <div class="settings-subbox">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-              <div>
-                <div style="font-size:0.9rem; font-weight:950; color:#0F172A;">${t('各星期獨立營業時間與每週固定公休設定', 'Per-Weekday Opening Hours & Weekly Closed Days', '曜日別営業時間・定休日設定', '요일별 영업시간 및 정기 휴무일 설정')}</div>
-                <div style="font-size:0.74rem; color:var(--text-secondary);">${t('可為星期六等特定日期單獨設定較短營業時間（如 10:30~15:00），勾選「公休」即設為每週固定公休日。', 'Set custom hours for any weekday (e.g. shorter Saturday hours) and check "Closed" for weekly holidays.')}</div>
-              </div>
+              <div class="settings-subbox-title" style="margin-bottom:0;">${t('各星期獨立時間與公休', 'Per-Weekday Hours & Closed Days', '曜日別営業時間・定休日', '요일별 영업시간 및 휴무일')}</div>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <button type="button" class="pos-chip-btn" style="padding:4px 9px; font-size:0.72rem;" onclick="applyWeekdayDefaultHoursPreset()">${t('套用上方時間至一～五', 'Copy to Mon-Fri')}</button>
-                <button type="button" class="pos-chip-btn" style="padding:4px 9px; font-size:0.72rem; background:#FFFBEB; color:#B45309; border-color:#F59E0B;" onclick="applySaturdayShortHoursPreset()">${t('週六改 10:30~15:00', 'Sat 10:30-15:00')}</button>
+                <button type="button" class="pos-chip-btn" style="padding:4px 9px; font-size:0.72rem;" onclick="applyWeekdayDefaultHoursPreset()">${t('套用至週一～五', 'Apply to Mon-Fri')}</button>
+                <button type="button" class="pos-chip-btn" style="padding:4px 9px; font-size:0.72rem;" onclick="applySaturdayShortHoursPreset()">${t('週六 10:30~15:00', 'Sat 10:30-15:00')}</button>
               </div>
             </div>
             <div class="weekly-hours-grid">
@@ -8692,319 +8495,446 @@ function renderMerchantSettingsPanel(store) {
             </div>
           </div>
 
-          <button type="button" class="btn-primary-full" style="max-width:340px;" onclick="saveStoreProfileConfig()">${t('儲存餐廳資料與各星期營業時段設定', 'Save Store Profile & Weekly Hours', '店舗情報と曜日別営業時間を保存', '매장 정보 및 요일별 영업시간 저장')}</button>
-        </div>
-
-        <!-- A7：學生端餐廳顯示控制（勾選哪些餐廳開放於學生端；僅勾選 1 間時掃碼直接進入該餐廳點餐！） -->
-        <div class="chart-card" style="border:1.5px solid #818CF8; background:#EEF2FF;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-            <div>
-              <h3 style="font-size:1.02rem; font-weight:950; color:#312E81;">${t('學生端餐廳顯示控制（選擇哪些餐廳開放給學生點餐）', 'Student Storefront Visibility Control', '学生画面への店舗表示制御', '학생 화면 매장 노출 제어')}</h3>
-              <p style="font-size:0.76rem; color:#4338CA; margin-top:2px;">
-                ${t('僅勾選 1 間餐廳（如目前僅趙班長）時，學生掃碼將直接進入該餐廳菜單點餐；勾選 2 間以上時自動切換為校區餐廳列表。', 'When only 1 store is checked, students go straight into its menu; when 2+ stores are checked, the store directory is shown automatically.', '1店舗のみ選択すると学生QRから直接その店のメニューを開きます。2店舗以上で一覧表示します。', '1개 매장만 선택하면 학생 QR 스캔 시 해당 매장 메뉴로 바로 이동하며, 2개 이상이면 매장 목록이 표시됩니다.')}
-              </p>
-            </div>
-            <button type="button" class="btn-tip-action" style="background:#4F46E5; padding:8px 16px;" onclick="saveStoresStudentVisibility()">${t('儲存學生端顯示設定', 'Save Visibility Settings', '表示設定を保存', '노출 설정 저장')}</button>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;">
-            ${state.stores.map(s => {
-              const isVis = s.visibleToStudents !== false;
-              return `
-                <label style="display:flex; align-items:center; gap:8px; background:#FFFFFF; border:1.5px solid ${isVis ? '#4F46E5' : '#CBD5E1'}; border-radius:10px; padding:9px 12px; cursor:pointer; font-size:0.84rem; font-weight:800;">
-                  <input type="checkbox" class="store-student-vis-chk" data-store-id="${escapeHtml(s.id)}" ${isVis ? 'checked' : ''} style="width:18px; height:18px; accent-color:#4F46E5;">
-                  <span style="flex:1; min-width:0;">
-                    <span style="font-weight:950; color:var(--text-primary);">${escapeHtml(trTerm(s.name))}</span>
-                    <small style="display:block; font-size:0.7rem; color:var(--text-secondary);">${escapeHtml(trTerm(s.campus))} (${escapeHtml(s.id)})</small>
-                  </span>
-                </label>
-              `;
-            }).join('')}
+          <div class="settings-action-row">
+            <button type="button" class="btn-primary-full" style="max-width:260px;" onclick="saveStoreProfileConfig()">${t('儲存營業時間與公休', 'Save Hours & Status', '営業時間を保存', '영업시간 저장')}</button>
           </div>
         </div>
 
-        <div class="chart-card" style="background:#F8FAFC; border:1.5px dashed #94A3B8;">
-          <h3 style="font-size:1.02rem; font-weight:900; margin-bottom:8px;">${t('新增學餐合作餐廳櫃位（須設定獨立店務 PIN 碼）', 'Add New Partner Store (Requires Store PIN)', '新規パートナー店舗を追加（専用PIN必須）', '신규 입점 매장 추가 (전용 PIN 필수)')}</h3>
-          <div style="display:grid; grid-template-columns:1fr 1.2fr 1.1fr 0.6fr 1fr auto; gap:8px; align-items:end; flex-wrap:wrap;">
-            <div>
-              <label class="field-label">${t('所屬校區 *', 'Campus *', 'キャンパス *', '캠퍼스 *')}</label>
-              <input type="text" id="newStoreCampusInput" class="select-input" value="${escapeHtml(store.campus || '雙溪校區')}" placeholder="${t('雙溪校區', 'Campus', 'キャンパス', '캠퍼스')}">
-            </div>
-            <div>
-              <label class="field-label">${t('新餐廳名稱 *', 'New Store Name *', '新店舗名 *', '새 매장명 *')}</label>
-              <input type="text" id="newStoreNameInput" class="select-input" placeholder="${t('如：阿宏鐵板燒', 'e.g. Teppanyaki', '例：鉄板焼き', '예: 철판구이')}">
-            </div>
-            <div>
-              <label class="field-label">${t('分類說明', 'Category', 'カテゴリ', '카테고리')}</label>
-              <input type="text" id="newStoreCatInput" class="select-input" placeholder="${t('現炒鐵板・簡餐', 'Bento & Stir-fry', '定食・弁当', '도시락・식사')}" value="${escapeHtml(t('人氣特餐・便當', 'Bento & Meals', '人気弁当', '인기 도시락'))}">
-            </div>
-            <div>
-              <label class="field-label">${t('圖示', 'Icon', 'アイコン', '아이콘')}</label>
-              <input type="text" id="newStoreIconInput" class="select-input" value="" placeholder="">
-            </div>
-            <div>
-              <label class="field-label" style="color:var(--red);">${t('專屬管理 PIN (4~8碼) *', 'Store PIN (4-8 digits) *', '管理PIN (4〜8桁) *', '관리 PIN (4~8자리) *')}</label>
-              <input type="password" id="newStorePinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="4-8 digits" value="">
-            </div>
-            <button type="button" class="btn-tip-action" style="height:40px;" onclick="createNewMerchantStore()">＋ ${t('建立新餐廳', 'Create Store', '店舗作成', '매장 생성')}</button>
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('點餐與餐具設定', 'Ordering & Cutlery', '注文・カトラリー設定', '주문 및 수저 설정')}</h3>
           </div>
+
+          <div class="settings-form-grid">
+            <div>
+              <label class="field-label">${t('免洗餐具收費 (NT$)', 'Disposable Cutlery Fee (NT$)', 'カトラリー料金 (NT$)', '일회용 수저 요금 (NT$)')}</label>
+              <input type="number" id="cfgCutleryPrice" class="select-input" min="0" max="50" value="${storeCutleryPrice}">
+            </div>
+            <div>
+              <label class="field-label">${t('空閒基礎出餐時間 (分鐘)', 'Base Prep Time (min)', '基本調理時間 (分)', '기본 조리 시간 (분)')}</label>
+              <input type="number" id="cfgBasePrepMin" class="select-input" min="1" max="25" value="${store.basePrepMinutes || 4}">
+            </div>
+            <div>
+              <label class="field-label">${t('預訂提前備餐時間 (分鐘)', 'Pre-order Lead Time (min)', '予約調理開始 (分前)', '예약 사전 조리 (분 전)')}</label>
+              <input type="number" id="cfgReserveLeadMins" class="select-input" min="10" max="90" value="${store.reserveLeadMinutes || 25}">
+            </div>
+            <div>
+              <label class="field-label">${t('內用餐後結帳', 'Dine-in Pay After Meal', '店内後払い', '매장 식사 후불')}</label>
+              <select id="cfgAllowDineInPostPay" class="select-input">
+                <option value="false" ${!store.allowDineInPostPay ? 'selected' : ''}>${t('關閉', 'Off', 'オフ', '꺼짐')}</option>
+                <option value="true" ${store.allowDineInPostPay ? 'selected' : ''}>${t('開啟（餐後櫃檯結帳）', 'On (Pay at counter)', 'オン（食後会計）', '켜짐 (식후 결제)')}</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">${t('昨日售完品項恢復方式', 'Next-Day Sold-Out Reset', '翌朝の品切れ再開', '익일 품절 복구')}</label>
+              <select id="cfgMorningSoldOutPolicy" class="select-input">
+                <option value="ASK_MORNING" ${store.morningSoldOutPolicy !== 'AUTO_RESTORE' ? 'selected' : ''}>${t('早班開機詢問上架', 'Ask in morning', '翌朝確認', '오전 확인')}</option>
+                <option value="AUTO_RESTORE" ${store.morningSoldOutPolicy === 'AUTO_RESTORE' ? 'selected' : ''}>${t('隔日自動恢復上架', 'Auto-restock next day', '翌日自動再開', '다음날 자동 재입고')}</option>
+              </select>
+            </div>
+          </div>
+
+          <details class="settings-accordion">
+            <summary>
+              <span>${t('進階排隊參數', 'Advanced Queue Settings', '詳細待機パラメータ', '고급 대기 설정')}</span>
+            </summary>
+            <div class="settings-accordion-body">
+              <div class="settings-form-grid">
+                <div>
+                  <label class="field-label">${t('每 15 分鐘產能上限 (份)', '15-Min Capacity Reference (portions)', '15分あたりの上限 (食数)', '15분당 기준 생산량')}</label>
+                  <input type="number" id="cfgMaxCap" class="select-input" min="5" max="200" value="${store.maxCapacityPer15Min}">
+                </div>
+                <div>
+                  <label class="field-label">${t('忙碌店逾時自動結單 (分鐘，0=關閉)', 'Auto-Complete Timeout (min, 0=Off)', '自動完了時間（分、0=手動）', '자동 완료 시간 (분, 0=수동)')}</label>
+                  <input type="number" id="cfgAutoCompleteMinutes" class="select-input" min="0" max="240" value="${Number(store.autoCompleteMinutes) || 0}">
+                  <div style="display:flex; gap:4px; flex-wrap:wrap; margin-top:6px;">
+                    ${[0, 15, 20, 30, 45].map(m => `
+                      <button type="button" class="pos-chip-btn" style="padding:3px 8px; font-size:0.72rem;" onclick="const el=document.getElementById('cfgAutoCompleteMinutes'); if(el) el.value='${m}';">${m === 0 ? t('關閉', 'Off') : `${m}${t('分', 'm')}`}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="settings-action-row">
+            <button type="button" class="btn-primary-full" style="max-width:260px;" onclick="saveMerchantConfig()">${t('儲存點餐與餐具設定', 'Save Ordering Settings', '注文設定を保存', '주문 설정 저장')}</button>
+          </div>
+        </div>
+
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('基本資料', 'Store Profile', '店舗基本情報', '매장 기본 정보')}</h3>
+            ${isDev ? `<button type="button" class="btn-danger-soft" onclick="deleteCurrentMerchantStore()">${t('刪除此餐廳櫃位', 'Delete Store', 'この店舗を削除', '이 매장 삭제')}</button>` : ''}
+          </div>
+
+          <div class="settings-form-grid">
+            <div>
+              <label class="field-label">${t('餐廳名稱 *', 'Store Name *', '店舗名 *', '매장명 *')}</label>
+              <input type="text" id="cfgProfileName" class="select-input" value="${escapeHtml(store.name || '')}" placeholder="${t('如：趙班長海苔飯捲', 'Store name', '店舗名', '매장명')}">
+            </div>
+            <div>
+              <label class="field-label">${t('所屬校區', 'Campus', 'キャンパス', '소속 캠퍼스')}</label>
+              <input type="text" id="cfgProfileCampus" class="select-input" value="${escapeHtml(store.campus || '雙溪校區')}" placeholder="${t('如：雙溪校區、城中校區', 'e.g. Waishuanghsi Campus', '例：双渓キャンパス', '예: 솽시 캠퍼스')}">
+            </div>
+            <div>
+              <label class="field-label">${t('餐點類型標語', 'Cuisine Tagline', '料理カテゴリ', '음식 카테고리')}</label>
+              <input type="text" id="cfgProfileCategory" class="select-input" value="${escapeHtml(store.category || '')}" placeholder="${t('如：人氣韓式・飯捲', 'e.g. Korean Kimbap', '例：韓国キンパ', '예: 김밥・분식')}">
+            </div>
+            <div>
+              <label class="field-label">${t('代表圖片網址 (選填)', 'Image URL (Optional)', '店舗画像URL (任意)', '대표 이미지 URL (선택)')}</label>
+              <input type="text" id="cfgProfileIcon" class="select-input" value="${escapeHtml(cleanProfileIcon)}" placeholder="https://...">
+            </div>
+          </div>
+
+          <div class="settings-action-row">
+            <button type="button" class="btn-primary-full" style="max-width:240px;" onclick="saveStoreProfileConfig()">${t('儲存基本資料', 'Save Store Profile', '基本情報を保存', '기본 정보 저장')}</button>
+          </div>
+        </div>
+
+        ${isDev ? `
+          <div class="settings-section-card" style="border-color:#C7D2FE;">
+            <div class="settings-section-head">
+              <div>
+                <h3 class="settings-section-title">${t('學生端餐廳顯示控制', 'Student Storefront Visibility', '学生画面への店舗表示制御', '학생 화면 매장 노출 제어')}</h3>
+                <p class="settings-section-sub">${t('僅勾選 1 間時掃碼直接進入菜單，2 間以上顯示餐廳列表。', '1 store checked opens menu directly; 2+ shows directory.')}</p>
+              </div>
+              <button type="button" class="btn-tip-action" style="background:#4F46E5; padding:8px 16px;" onclick="saveStoresStudentVisibility()">${t('儲存顯示設定', 'Save Visibility', '表示設定を保存', '노출 설정 저장')}</button>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:8px;">
+              ${state.stores.map(s => {
+                const isVis = s.visibleToStudents !== false;
+                return `
+                  <label style="display:flex; align-items:center; gap:8px; background:#F8FAFC; border:1.5px solid ${isVis ? '#4F46E5' : '#CBD5E1'}; border-radius:10px; padding:9px 12px; cursor:pointer; font-size:0.84rem; font-weight:800;">
+                    <input type="checkbox" class="store-student-vis-chk" data-store-id="${escapeHtml(s.id)}" ${isVis ? 'checked' : ''} style="width:18px; height:18px; accent-color:#4F46E5;">
+                    <span style="flex:1; min-width:0;">
+                      <span style="font-weight:900; color:var(--text-primary);">${escapeHtml(trTerm(s.name))}</span>
+                      <small style="display:block; font-size:0.7rem; color:var(--text-secondary);">${escapeHtml(trTerm(s.campus))} (${escapeHtml(s.id)})</small>
+                    </span>
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="settings-section-card" style="border-style:dashed;">
+            <div class="settings-section-head">
+              <h3 class="settings-section-title">${t('新增合作餐廳', 'Add Partner Store', '新規店舗を追加', '신규 매장 추가')}</h3>
+            </div>
+            <div class="settings-menu-add-grid">
+              <div>
+                <label class="field-label">${t('所屬校區 *', 'Campus *', 'キャンパス *', '캠퍼스 *')}</label>
+                <input type="text" id="newStoreCampusInput" class="select-input" value="${escapeHtml(store.campus || '雙溪校區')}">
+              </div>
+              <div>
+                <label class="field-label">${t('新餐廳名稱 *', 'Store Name *', '新店舗名 *', '새 매장명 *')}</label>
+                <input type="text" id="newStoreNameInput" class="select-input" placeholder="${t('如：阿宏鐵板燒', 'e.g. Teppanyaki')}">
+              </div>
+              <div>
+                <label class="field-label">${t('分類說明', 'Category', 'カテゴリ', '카테고리')}</label>
+                <input type="text" id="newStoreCatInput" class="select-input" value="${escapeHtml(t('人氣特餐・便當', 'Bento & Meals'))}">
+              </div>
+              <div>
+                <label class="field-label">${t('圖片網址', 'Image URL', '画像URL', '이미지 URL')}</label>
+                <input type="text" id="newStoreIconInput" class="select-input" value="" placeholder="https://...">
+              </div>
+              <div>
+                <label class="field-label" style="color:var(--red);">${t('管理 PIN (4~8碼) *', 'Store PIN (4-8) *', '管理PIN *', '관리 PIN *')}</label>
+                <input type="password" id="newStorePinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="4-8 digits" value="">
+              </div>
+              <button type="button" class="btn-tip-action" style="height:40px;" onclick="createNewMerchantStore()">＋ ${t('建立餐廳', 'Create', '作成', '생성')}</button>
+            </div>
+          </div>
+        ` : ''}
+      ` : ''}
+
+      ${sub === 'promo' ? `
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <div>
+              <h3 class="settings-section-title">${t('組合優惠', 'Combo Deals', 'セット割引', '세트 할인')}</h3>
+              <p class="settings-section-sub">${t('條件可填品名或分類，多組可用 / 分隔（例：飲料類/紅茶）。', 'Use dish name or category; separate multiple with /.')}</p>
+            </div>
+          </div>
+
+          <div class="settings-combo-grid" style="margin-bottom:12px;">
+            <div>
+              <label class="field-label">${t('活動名稱 *', 'Deal Name *', '割引名 *', '할인명 *')}</label>
+              <input type="text" id="newComboNameInput" maxlength="32" class="select-input" placeholder="${t('例：雞排+飲料折5元', 'e.g. Cutlet + Drink -$5')}">
+            </div>
+            <div>
+              <label class="field-label">${t('條件 A (品名/分類) *', 'Match A *', '条件A *', '조건 A *')}</label>
+              <input type="text" id="newComboMatchAInput" maxlength="32" class="select-input" placeholder="${t('例：雞排', 'e.g. Cutlet')}">
+            </div>
+            <div>
+              <label class="field-label">${t('條件 B (品名/分類) *', 'Match B *', '条件B *', '조건 B *')}</label>
+              <input type="text" id="newComboMatchBInput" maxlength="32" class="select-input" placeholder="${t('例：飲料類/飲品', 'e.g. Drinks')}">
+            </div>
+            <div>
+              <label class="field-label">${t('每組折 ($)', 'Off ($)', '割引 ($)', '할인 ($)')}</label>
+              <input type="number" id="newComboAmtInput" class="select-input" min="1" max="500" value="5">
+            </div>
+            <button type="button" class="btn-tip-action" style="height:40px; background:#059669;" onclick="addStoreComboDiscount()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${(Array.isArray(store.comboDiscounts) && store.comboDiscounts.length > 0) ? store.comboDiscounts.map((r, rIdx) => `
+              <div style="display:inline-flex; align-items:center; gap:6px; background:#ECFDF5; border:1px solid #6EE7B7; padding:5px 11px; border-radius:999px; font-size:0.78rem; font-weight:850; color:#065F46;">
+                <span>${escapeHtml(r.name || `${r.matchA} + ${r.matchB}`)}</span>
+                <span style="font-size:0.72rem; color:#047857;">[${escapeHtml(r.matchA)} + ${escapeHtml(r.matchB)} → -NT$${r.discountAmount}]</span>
+                <button type="button" onclick="deleteStoreComboDiscount(${rIdx})" style="border:none; background:transparent; color:var(--red); font-weight:900; cursor:pointer;">✕</button>
+              </div>
+            `).join('') : `<span style="font-size:0.78rem; color:var(--text-muted);">${t('尚未建立組合優惠', 'No combo deals yet', 'セット割引は未登録です', '등록된 세트 할인이 없습니다')}</span>`}
+          </div>
+        </div>
+
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('滿額／離峰活動', 'Storewide & Off-Peak Promos', '金額・オフピーク割引', '금액 및 비혼잡 할인')}</h3>
+          </div>
+
+          <div class="settings-form-grid">
+            <div>
+              <label class="field-label">${t('優惠模式', 'Promotion Mode', '割引モード', '프로모션 모드')}</label>
+              <select id="cfgPromoMode" class="select-input" onchange="updatePromoModeFieldsVisibility()">
+                <option value="none" ${curPromoMode === 'none' ? 'selected' : ''}>${t('關閉優惠', 'Disabled', '無効', '사용 안 함')}</option>
+                <option value="gift" ${curPromoMode === 'gift' ? 'selected' : ''}>${t('滿額贈送指定餐點／飲品', 'Free Gift Over Minimum', '金額達成で無料特典', '기준 금액 이상 사은품')}</option>
+                <option value="discount" ${curPromoMode === 'discount' ? 'selected' : ''}>${t('滿額現金現折', 'Cash Discount Over Minimum', '金額達成で現金割引', '기준 금액 이상 할인')}</option>
+                <option value="second_discount" ${curPromoMode === 'second_discount' ? 'selected' : ''}>${t('第二件折價（每 2 件折抵）', '2nd Item Discount', '2点目割引', '2번째 메뉴 할인')}</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="promoModeDynamicFields" class="settings-form-grid" style="margin-top:12px; display:${showPromoFields ? 'grid' : 'none'};">
+            <div data-promo-field="scope">
+              <label class="field-label">${t('適用時段', 'Active Window', '適用時間帯', '적용 시간대')}</label>
+              <select id="cfgPromoScope" class="select-input">
+                <option value="OFF_PEAK" ${store.promoScope !== 'ALL_DAY' ? 'selected' : ''}>${t('僅離峰順暢時段', 'Off-Peak Only', 'オフピークのみ', '비혼잡 시간대 전용')}</option>
+                <option value="ALL_DAY" ${store.promoScope === 'ALL_DAY' ? 'selected' : ''}>${t('全天候適用', 'All Day', '終日適用', '전일 적용')}</option>
+              </select>
+            </div>
+
+            <div data-promo-field="minSubtotal" style="display:${showPromoMin ? 'block' : 'none'};">
+              <label class="field-label">${t('最低消費門檻 (NT$)', 'Min Spend (NT$)', '最低利用金額 (NT$)', '최소 주문 금액 (NT$)')}</label>
+              <input type="number" id="cfgPromoMinSubtotal" class="select-input" min="0" max="1000" value="${store.promoMinSubtotal !== undefined ? Number(store.promoMinSubtotal) : AI_DISCOUNT_MIN_SUBTOTAL}">
+            </div>
+
+            <div data-promo-field="text">
+              <label class="field-label">${t('優惠顯示文案', 'Promo Text', '割引表示テキスト', '프로모션 문구')}</label>
+              <input type="text" id="cfgPromoText" class="select-input" value="${escapeHtml(store.promoText || '')}" placeholder="${t('例：滿百贈招牌紅茶', 'e.g. Free Tea over $100')}">
+            </div>
+
+            <div data-promo-field="discount" style="display:${showPromoDiscount ? 'block' : 'none'};">
+              <label class="field-label">${t('折抵金額 (NT$)', 'Discount Amount (NT$)', '割引額 (NT$)', '할인 금액 (NT$)')}</label>
+              <input type="number" id="cfgPromoDiscount" class="select-input" min="0" max="200" value="${store.promoDiscount || store.secondItemDiscount || 0}">
+            </div>
+
+            <div data-promo-field="gift" style="display:${showPromoGift ? 'block' : 'none'};">
+              <label class="field-label">${t('指定贈品品項', 'Gift Item', '無料特典メニュー', '사은품 메뉴')}</label>
+              <select id="cfgGiftMenuItemId" class="select-input">
+                <option value="">${t('（不指定品項，依文案顯示）', '(Banner only)')}</option>
+                ${menus.map(m => `<option data-dish-name="1" value="${escapeHtml(m.id)}" ${String(store.giftMenuItemId || '') === String(m.id) ? 'selected' : ''}>${escapeHtml(trDishName(m))} (NT$${m.price})${m.soldOut ? ' [Out]' : ''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('專屬優惠碼', 'Promo Codes', 'クーポンコード', '할인코드')}</h3>
+          </div>
+
+          <div class="settings-coupon-grid" style="margin-bottom:12px;">
+            <div>
+              <label class="field-label">${t('折扣碼 *', 'Code *', 'コード *', '할인코드 *')}</label>
+              <input type="text" id="newCouponCodeInput" maxlength="20" class="select-input" style="text-transform:uppercase; font-family:monospace;" placeholder="SCU15">
+            </div>
+            <div>
+              <label class="field-label">${t('類型', 'Type', '種類', '유형')}</label>
+              <select id="newCouponTypeSelect" class="select-input">
+                <option value="AMOUNT">${t('折現金 ($)', 'Fixed ($)', '金額割引 ($)', '정액 할인 ($)')}</option>
+                <option value="PERCENT">${t('打折 (% off)', 'Percent (% off)', '割合割引 (%)', '정률 할인 (%)')}</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">${t('面額/折數', 'Value', '割引値', '할인값')}</label>
+              <input type="number" id="newCouponValInput" class="select-input" min="1" value="15">
+            </div>
+            <div>
+              <label class="field-label">${t('低消 ($)', 'Min ($)', '最低額 ($)', '최소 ($)')}</label>
+              <input type="number" id="newCouponMinInput" class="select-input" min="0" value="80">
+            </div>
+            <button type="button" class="btn-tip-action" style="height:40px;" onclick="addStoreCouponItem()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${(Array.isArray(store.coupons) && store.coupons.length > 0) ? store.coupons.map((c, cIdx) => `
+              <div style="display:inline-flex; align-items:center; gap:6px; background:#F8FAFC; border:1px solid #C7D2FE; padding:4px 10px; border-radius:999px; font-size:0.78rem; font-weight:800;">
+                <span style="font-family:monospace; color:#4338CA;">${escapeHtml(c.code)}</span>
+                <span>${c.type === 'PERCENT' ? `-${c.value}%` : `-NT$${c.value}`} (${t('滿', 'Min ', '最低', '최소')}$${c.minSubtotal || 0})</span>
+                <button type="button" onclick="deleteStoreCouponItem(${cIdx})" style="border:none; background:transparent; color:var(--red); font-weight:900; cursor:pointer;">✕</button>
+              </div>
+            `).join('') : `<span style="font-size:0.78rem; color:var(--text-muted);">${t('尚未建立專屬優惠碼', 'No promo codes yet', 'クーポン未登録です', '등록된 할인코드가 없습니다')}</span>`}
+          </div>
+        </div>
+
+        <div>
+          <button type="button" class="btn-primary-full" style="max-width:280px;" onclick="saveMerchantConfig()">${t('儲存行銷優惠設定', 'Save Promotions', 'プロモーションを保存', '프로모션 저장')}</button>
         </div>
       ` : ''}
 
       ${sub === 'line' ? `
-        <div class="chart-card" style="border:1.5px solid #86EFAC; background:#F0FDF4;">
-          <h3 style="font-size:1.05rem; font-weight:900; color:#065F46; margin-bottom:6px;">
- ${t(`官方帳號 + 電子信箱雙軌推播設定（${store.name}）`, `LINE OA + Email Dual Push Settings (${trTerm(store.name)})`, `LINE公式 + メール通知設定（${trTerm(store.name)}）`, `LINE 공식계정 + 이메일 알림 설정 (${trTerm(store.name)})`)}
-          </h3>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
-            <label class="option-label-row ${store.useCustomLineOa ? 'checked' : ''}" style="background:#FFFFFF; margin-bottom:0;" onclick="toggleStoreCustomLineMode(true)">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <input type="radio" name="storeLineOaMode" ${store.useCustomLineOa ? 'checked' : ''} style="width:18px; height:18px; accent-color:#06C755;">
-                <div>
-                  <div style="font-weight:900; color:var(--text-primary);">${t(`綁定「${store.name}」專屬官方帳號`, `Use Store's Own LINE OA`, `店舗専用LINE公式アカウント`, `매장 전용 LINE 공식계정`)}</div>
-                  <div style="font-size:0.74rem; color:var(--text-secondary);">${t('各店獨立計算每月免費推播額度', 'Separate monthly push quota per store', '店舗ごとに月間無料枠を管理', '매장별 월간 무료 발송 한도 관리')}</div>
-                </div>
-              </div>
-            </label>
-
-            <label class="option-label-row ${!store.useCustomLineOa ? 'checked' : ''}" style="background:#FFFFFF; margin-bottom:0;" onclick="toggleStoreCustomLineMode(false)">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <input type="radio" name="storeLineOaMode" ${!store.useCustomLineOa ? 'checked' : ''} style="width:18px; height:18px; accent-color:#06C755;">
-                <div>
-                  <div style="font-weight:900; color:var(--text-primary);">${t('使用平台預設官方帳號 (2012260287)', 'Use Platform Default LINE OA (2012260287)', 'プラットフォーム標準公式アカウント', '플랫폼 기본 공식계정 사용 (2012260287)')}</div>
-                  <div style="font-size:0.74rem; color:var(--text-secondary);">${t('免設定即可推播，並自動啟用電子信箱備援通知', 'Zero setup with automatic Email fallback alerts', '設定不要・メール通知バックアップ付き', '별도 설정 없이 이메일 백업 알림 지원')}</div>
-                </div>
-              </div>
-            </label>
-          </div>
-
-          ${store.useCustomLineOa ? `
-            <div style="background:#FFFFFF; padding:14px; border-radius:12px; border:1px solid #86EFAC; margin-bottom:12px;">
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-                <div>
-                  <label class="field-label">${t('LINE 授權頻道編號', 'LINE Channel ID', 'LINEチャネルID', 'LINE 채널 ID')}</label>
-                  <input type="text" id="cfgStoreLineClientId" class="select-input" placeholder="2012260287" value="${escapeHtml(store.customLineClientId || '')}">
-                </div>
-                <div>
-                  <label class="field-label">${t('LINE 授權頻道密鑰', 'LINE Channel Secret', 'LINEチャネルシークレット', 'LINE 채널 시크릿')}</label>
-                  <input type="password" id="cfgStoreLineClientSecret" class="select-input" placeholder="${t('輸入新密鑰以更新後端設定', 'Enter new secret to update', '新しいシークレットを入力', '새 시크릿 입력')}" value="">
-                </div>
-              </div>
-              <div>
-                <label class="field-label">${t('訊息推播存取權杖', 'Messaging Access Token', 'プッシュアクセストークン', '메시지 푸시 액세스 토큰')}</label>
-                <input type="password" id="cfgStoreLineChannelToken" class="select-input" placeholder="${t('貼上本店推播權杖', 'Paste push token', 'プッシュトークンを貼付', '푸시 토큰 붙여넣기')}" value="">
-              </div>
-            </div>
-          ` : `
-            <div style="background:#FFFFFF; padding:14px; border-radius:12px; border:1px solid #A7F3D0; margin-bottom:12px;">
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-                <div>
-                  <label class="field-label">${t('預設授權頻道編號', 'Default LINE Channel ID', '標準LINEチャネルID', '기본 LINE 채널 ID')}</label>
-                  <input type="text" id="cfgSysLineClientId" class="select-input" placeholder="2012260287" value="${escapeHtml(state.lineProfile.customClientId || DEFAULT_LINE_CLIENT_ID)}">
-                </div>
-                <div>
-                  <label class="field-label">${t('預設授權頻道密鑰', 'Default LINE Channel Secret', '標準LINEシークレット', '기본 LINE 시크릿')}</label>
-                  <input type="password" id="cfgSysLineClientSecret" class="select-input" placeholder="${t('由雲端伺服器安全託管', 'Managed securely on server', 'サーバーで安全に管理', '서버에서 안전하게 관리')}">
-                </div>
-              </div>
-              <div>
-                <label class="field-label">${t('預設訊息推播存取權杖', 'Default Push Access Token', '標準プッシュトークン', '기본 푸시 액세스 토큰')}</label>
-                <input type="password" id="cfgLineAccessToken" class="select-input" placeholder="${t('由雲端伺服器安全託管', 'Managed securely on server', 'サーバーで安全に管理', '서버에서 안전하게 관리')}">
-              </div>
-            </div>
-          `}
-
-          <div style="background:#FFFFFF; padding:14px; border-radius:12px; border:1.5px solid #06C755; margin-bottom:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
-              <div style="font-weight:900; font-size:0.88rem; color:#065F46;">
- ${t(`各店獨立 LINE Pay 商家金流串接設定（${store.name}）`, `Store LINE Pay Merchant Credentials (${trTerm(store.name)})`, `店舗別 LINE Pay 決済設定（${trTerm(store.name)}）`, `매장별 LINE Pay 결제 연동 (${trTerm(store.name)})`)}
-              </div>
-              <span style="font-size:0.74rem; font-weight:800; background:#DCFCE7; color:#065F46; padding:2px 8px; border-radius:999px;">
-                ${store.linePayChannelId ? `Channel (${escapeHtml(store.linePayChannelId)})` : `${t('預設學餐專屬沙盒收銀台', 'Default Sandbox Mode', '標準サンドボックス', '기본 샌드박스 모드')}`}
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('安全鎖與員工權限', 'Security Lock & Staff Permissions', 'セキュリティ・スタッフ権限', '보안 잠금 및 직원 권한')}</h3>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:0.74rem; font-weight:800; color:var(--green); background:var(--green-bg); padding:3px 10px; border-radius:999px;">
+                ${t(`登入剩餘 ${remainMins} 分`, `${remainMins}m left`)}
               </span>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr 0.9fr; gap:10px;">
-              <div>
-                <label class="field-label">${t('本店 LINE Pay Channel ID (商家金流代號)', 'Store LINE Pay Channel ID', 'LINE Pay チャネルID', 'LINE Pay 채널 ID')}</label>
-                <input type="text" id="cfgStoreLinePayChannelId" class="select-input" placeholder="1657000123" value="${escapeHtml(store.linePayChannelId || '')}">
-              </div>
-              <div>
-                <label class="field-label">${t('本店 LINE Pay Channel Secret Key', 'Store LINE Pay Secret Key', 'LINE Pay シークレットキー', 'LINE Pay 시크릿 키')}</label>
-                <input type="password" id="cfgStoreLinePayChannelSecret" class="select-input" placeholder="${store.hasLinePaySecret ? t('已於雲端加密託管 (輸入可更新)', 'Stored securely (enter to replace)', '暗号化保存済（更新時入力）', '암호화 보관 중 (변경 시 입력)') : 'Secret Key'}" value="">
-              </div>
-              <div>
-                <label class="field-label">${t('金流環境模式 (Request ➔ Confirm)', 'Environment Mode', '決済環境モード', '결제 환경 모드')}</label>
-                <select id="cfgStoreLinePaySandbox" class="select-input">
-                  <option value="true" ${store.linePaySandbox !== false ? 'selected' : ''}>${t('Sandbox 測試環境 / 學餐模擬授權', 'Sandbox / Test Mode', 'Sandbox テスト環境', 'Sandbox 테스트 환경')}</option>
-                  <option value="false" ${store.linePaySandbox === false ? 'selected' : ''}>${t('Production 正式環境 (真實扣款 API V3)', 'Production (Live API V3)', 'Production 本番環境', 'Production 실결제 환경')}</option>
-                </select>
-              </div>
+              <button type="button" class="btn-danger-soft" style="padding:6px 12px; font-size:0.78rem;" onclick="lockMerchantSession()">${t('立即上鎖', 'Lock Now', '今すぐロック', '즉시 잠금')}</button>
             </div>
           </div>
 
-          <button type="button" class="btn-line" style="padding:11px 18px; font-size:0.88rem;" onclick="saveLineMessagingConfig()">
- ${t('儲存本店 LINE Pay 商家金流與官方帳號推播設定', 'Save LINE Pay & Messaging Settings', 'LINE Pay・通知設定を保存', 'LINE Pay 및 알림 설정 저장')}
-          </button>
-        </div>
-
-        <div class="chart-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-            <h3 style="font-size:1.02rem; font-weight:900;">${t('店務安全鎖・平板專屬店鋪綁定與閒置自動上鎖設定', 'POS Security Lock, Device Binding & Auto-Lock', 'POSセキュリティ・端末固定・自動ロック', 'POS 보안 잠금・기기 고정 및 자동 잠금')}</h3>
-            <span style="font-size:0.75rem; font-weight:800; color:var(--green); background:var(--green-bg); padding:3px 10px; border-radius:999px;">
- ${t(`Session 有效（範圍: ${state.merchantAuthorizedStoreScope} · 剩餘 ${remainMins} 分）`, `Active Session (Scope: ${state.merchantAuthorizedStoreScope} · ${remainMins}m left)`, `認証有効（範囲: ${state.merchantAuthorizedStoreScope}・残${remainMins}分）`, `세션 유효 (범위: ${state.merchantAuthorizedStoreScope} · ${remainMins}분 남음)`)}
-            </span>
-          </div>
-
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:14px; padding-bottom:14px; border-bottom:1px dashed var(--border);">
+          <div class="settings-form-grid">
             <div>
-              <label class="field-label">${t('POS 閒置自動上鎖時間', 'POS Auto-Lock Timeout', '自動ロック時間', 'POS 자동 잠금 시간')}</label>
+              <label class="field-label">${t('POS 閒置自動上鎖時間', 'POS Auto-Lock Timeout', '自動ロック時間', 'POS 자동 잠금')}</label>
               <select id="cfgAutoLockMinsSelect" class="select-input" onchange="updateMerchantAutoLockMinutes(this.value)">
-                <option value="5" ${state.merchantAutoLockMinutes === 5 ? 'selected' : ''}>${t('閒置 5 分鐘自動上鎖 (高安全性)', '5 min idle (High Security)', '5分で自動ロック', '5분 유휴 시 잠금')}</option>
-                <option value="15" ${state.merchantAutoLockMinutes === 15 ? 'selected' : ''}>${t('閒置 15 分鐘自動上鎖 (推薦標準)', '15 min idle (Recommended)', '15分で自動ロック (推奨)', '15분 유휴 시 잠금 (권장)')}</option>
-                <option value="30" ${state.merchantAutoLockMinutes === 30 ? 'selected' : ''}>${t('閒置 30 分鐘自動上鎖', '30 min idle', '30分で自動ロック', '30분 유휴 시 잠금')}</option>
-                <option value="60" ${state.merchantAutoLockMinutes === 60 ? 'selected' : ''}>${t('閒置 60 分鐘自動上鎖', '60 min idle', '60分で自動ロック', '60분 유휴 시 잠금')}</option>
+                <option value="5" ${state.merchantAutoLockMinutes === 5 ? 'selected' : ''}>${t('5 分鐘', '5 min', '5分', '5분')}</option>
+                <option value="15" ${state.merchantAutoLockMinutes === 15 ? 'selected' : ''}>${t('15 分鐘（推薦）', '15 min (Recommended)', '15分（推奨）', '15분 (권장)')}</option>
+                <option value="30" ${state.merchantAutoLockMinutes === 30 ? 'selected' : ''}>${t('30 分鐘', '30 min', '30分', '30분')}</option>
+                <option value="60" ${state.merchantAutoLockMinutes === 60 ? 'selected' : ''}>${t('60 分鐘', '60 min', '60分', '60분')}</option>
               </select>
             </div>
             <div>
-              <label class="field-label">${t('此平板專屬店鋪鎖定模式', 'Dedicated Store Tablet Binding', 'この端末の店舗固定', '이 태블릿 전용 매장 고정')}</label>
-              <button type="button" class="btn-outline" style="width:100%; height:40px; font-weight:900; border-color:${state.boundMerchantStoreId === store.id ? 'var(--green)' : 'var(--border)'}; color:${state.boundMerchantStoreId === store.id ? 'var(--green)' : 'var(--text-primary)'};" onclick="toggleBindDeviceToCurrentStore()">
+              <label class="field-label">${t('平板專用機綁定', 'Tablet Store Binding', '端末の店舗固定', '태블릿 전용 매장 고정')}</label>
+              <button type="button" class="btn-outline" style="width:100%; height:40px; font-weight:850; border-color:${state.boundMerchantStoreId === store.id ? 'var(--green)' : 'var(--border)'}; color:${state.boundMerchantStoreId === store.id ? 'var(--green)' : 'var(--text-primary)'};" onclick="toggleBindDeviceToCurrentStore()">
                 ${state.boundMerchantStoreId === store.id
-                  ? `${t(`已綁定為「${store.name}」專用機 (點此解除)`, `Bound to ${trTerm(store.name)} (Tap to Unbind)`, `${trTerm(store.name)}専用端末に設定済（解除）`, `${trTerm(store.name)} 전용 기기 (해제)`)}`
-                  : `${t(`將此平板綁定為「${store.name}」專用機`, `Bind Tablet to ${trTerm(store.name)}`, `この端末を${trTerm(store.name)}専用に固定`, `이 태블릿을 ${trTerm(store.name)} 전용으로 고정`)}`}
+                  ? t(`已綁定「${store.name}」（點此解除）`, `Bound to ${trTerm(store.name)} (Unbind)`)
+                  : t(`綁定為「${store.name}」專用機`, `Bind to ${trTerm(store.name)}`)}
               </button>
             </div>
           </div>
 
-          <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:14px; padding-bottom:14px; border-bottom:1px dashed var(--border);">
+          <hr class="settings-divider">
+
+          <div class="settings-pin-grid">
             <div>
-              <label class="field-label">${t(`目前舊店長 PIN (4~8碼) *`, `Current Manager PIN (4-8) *`, `現在の店長PIN *`, `현재 점장 PIN *`)}</label>
-              <input type="password" id="cfgOldMerchantPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="${t('驗證本店舊密碼', 'Current PIN', '現在のPIN', '현재 PIN')}" value="">
+              <label class="field-label">${t('舊店長 PIN *', 'Current Manager PIN *', '現在の店長PIN *', '현재 점장 PIN *')}</label>
+              <input type="password" id="cfgOldMerchantPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="${t('輸入目前 PIN', 'Current PIN')}" value="">
             </div>
             <div>
-              <label class="field-label">${t(`新店長 PIN (4~8碼) *`, `New Manager PIN (4-8) *`, `新しい店長PIN *`, `새 점장 PIN *`)}</label>
-              <input type="password" id="cfgMerchantPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="${t('輸入新 4~8 位數字', '4-8 digits', '4〜8桁の数字', '4~8자리 숫자')}" value="">
+              <label class="field-label">${t('新店長 PIN (4~8碼) *', 'New Manager PIN (4-8) *', '新しい店長PIN *', '새 점장 PIN *')}</label>
+              <input type="password" id="cfgMerchantPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="4-8 digits" value="">
             </div>
-            <div style="display:flex; gap:8px;">
-              <button type="button" class="btn-outline" style="height:40px;" onclick="saveNewMerchantPin()">${t('驗證並更新店長密碼', 'Update Manager PIN', '店長PINを更新', '점장 PIN 변경')}</button>
-              <button type="button" class="btn-danger-soft" style="height:40px;" onclick="lockMerchantSession()">${t('立即上鎖', 'Lock Now', '今すぐロック', '즉시 잠금')}</button>
+            <div>
+              <button type="button" class="btn-outline" style="height:40px; width:100%;" onclick="saveNewMerchantPin()">${t('更新店長 PIN', 'Update PIN', '店長PIN更新', '점장 PIN 변경')}</button>
             </div>
           </div>
 
-          <div style="background:#EFF6FF; border:1.5px solid #93C5FD; border-radius:12px; padding:12px; margin-bottom:14px;">
-            <div style="font-size:0.9rem; font-weight:950; color:#1E3A8A; margin-bottom:6px;">${t('員工分級權限與一人一碼獨立 PIN 帳號管理', 'Staff Role Permissions & Individual Per-Staff PINs', 'スタッフ個別PIN・権限管理', '직원 개별 PIN 및 권한 관리')}</div>
-            <p style="font-size:0.75rem; color:#1D4ED8; margin-bottom:10px;">
-              ${t('每人獨立一組 PIN，打卡登入由伺服器強制綁定真實姓名與角色並寫入打卡稽核；一般收銀員無法無授權退單或改單減價。', 'Each staff member gets a personal PIN; server enforces real staff identity and audit logging on every clock-in and action.', 'スタッフごとに個別PINを発行。出勤打刻と権限チェックをサーバーで強制記録します。', '직원별 개별 PIN 발급 시 출근 기록과 권한을 서버가 강제 검증합니다.')}
-            </p>
+          <hr class="settings-divider">
 
-            <!-- 一人一碼獨立帳號列表 -->
-            <div style="background:#FFFFFF; border:1px solid #BFDBFE; border-radius:10px; padding:10px; margin-bottom:10px;">
-              <div style="font-size:0.78rem; font-weight:900; color:#1E40AF; margin-bottom:6px;">${t('已建立個人獨立 PIN 帳號', 'Registered Individual Staff PIN Accounts', '登録済み個別PINアカウント', '등록된 직원 개별 PIN 계정')} (${Array.isArray(store.staffAccounts) ? store.staffAccounts.length : 0})</div>
-              ${Array.isArray(store.staffAccounts) && store.staffAccounts.length > 0 ? `
-                <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;">
-                  ${store.staffAccounts.map(acc => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; background:#F8FAFC; padding:6px 10px; border-radius:8px; border:1px solid #E2E8F0; font-size:0.8rem;">
-                      <span>
-                        <strong data-dish-name="1">${escapeHtml(acc.name)}</strong>
-                        <span style="margin-left:5px; font-size:0.7rem; padding:1px 6px; border-radius:999px; background:${acc.role === 'MANAGER' ? '#FEF3C7' : '#DBEAFE'}; color:${acc.role === 'MANAGER' ? '#92400E' : '#1E40AF'}; font-weight:900;">${acc.role === 'MANAGER' ? t('店長', 'Manager', '店長', '점장') : t('收銀員', 'Staff', 'スタッフ', '캐셔')}</span>
-                        ${acc.active === false ? `<span style="margin-left:4px; color:var(--red); font-size:0.7rem; font-weight:900;">(${t('已停用', 'Disabled', '無効', '비활성')})</span>` : ''}
-                      </span>
-                      <div style="display:flex; gap:5px;">
-                        <button type="button" class="pos-chip-btn" style="padding:3px 8px; font-size:0.72rem;" onclick="toggleStaffAccountUi(${escapeJsAttr(acc.id)})">${acc.active === false ? t('啟用', 'Enable', '有効化', '활성화') : t('停用', 'Disable', '無効化', '비활성화')}</button>
-                        <button type="button" class="btn-danger-soft" style="padding:3px 8px; font-size:0.72rem;" title="${t('刪除帳號', 'Delete')}" onclick="removeStaffAccountUi(${escapeJsAttr(acc.id)})">${typeof mfIcon === 'function' ? mfIcon('trash') : '刪除'}</button>
-                      </div>
+          <div class="settings-subbox">
+            <div class="settings-subbox-title">${t('員工帳號與收銀員 PIN', 'Staff Accounts & Cashier PIN', 'スタッフアカウント・PIN', '직원 계정 및 캐셔 PIN')}</div>
+
+            ${Array.isArray(store.staffAccounts) && store.staffAccounts.length > 0 ? `
+              <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+                ${store.staffAccounts.map(acc => `
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; background:#FFFFFF; padding:7px 10px; border-radius:8px; border:1px solid var(--border); font-size:0.82rem;">
+                    <span>
+                      <strong data-dish-name="1">${escapeHtml(acc.name)}</strong>
+                      <span style="margin-left:6px; font-size:0.7rem; padding:1px 7px; border-radius:999px; background:${acc.role === 'MANAGER' ? '#FEF3C7' : '#DBEAFE'}; color:${acc.role === 'MANAGER' ? '#92400E' : '#1E40AF'}; font-weight:900;">${acc.role === 'MANAGER' ? t('店長', 'Manager', '店長', '점장') : t('收銀員', 'Staff', 'スタッフ', '캐셔')}</span>
+                      ${acc.active === false ? `<span style="margin-left:4px; color:var(--red); font-size:0.7rem; font-weight:900;">(${t('已停用', 'Disabled')})</span>` : ''}
+                    </span>
+                    <div style="display:flex; gap:5px;">
+                      <button type="button" class="pos-chip-btn" style="padding:3px 8px; font-size:0.72rem;" onclick="toggleStaffAccountUi(${escapeJsAttr(acc.id)})">${acc.active === false ? t('啟用', 'Enable') : t('停用', 'Disable')}</button>
+                      <button type="button" class="btn-danger-soft" style="padding:3px 8px; font-size:0.72rem;" title="${t('刪除帳號', 'Delete')}" onclick="removeStaffAccountUi(${escapeJsAttr(acc.id)})">${typeof mfIcon === 'function' ? mfIcon('trash') : '刪'}</button>
                     </div>
-                  `).join('')}
-                </div>
-              ` : `<div style="font-size:0.74rem; color:var(--text-muted); margin-bottom:8px;">${t('尚未建立個人獨立 PIN 帳號，可於下方新增「一人一碼」員工帳號。', 'No individual staff accounts yet. Add one below.', '個別PINアカウントはまだありません。', '등록된 개별 PIN 계정이 없습니다.')}</div>`}
-
-              <div style="display:grid; grid-template-columns:1.1fr 0.85fr 0.95fr auto; gap:6px; align-items:end;">
-                <div>
-                  <label class="field-label">${t('員工姓名 *', 'Staff Name *', 'スタッフ名 *', '직원 이름 *')}</label>
-                  <input type="text" id="newStaffAccNameInput" maxlength="20" class="select-input" style="padding:6px 8px; font-size:0.8rem;" placeholder="${t('例：陳小明', 'e.g. Alex', '例：田中', '예: 김민수')}">
-                </div>
-                <div>
-                  <label class="field-label">${t('權限角色', 'Role', '権限', '권한 역할')}</label>
-                  <select id="newStaffAccRoleSelect" class="select-input" style="padding:6px 8px; font-size:0.8rem;">
-                    <option value="STAFF">${t('收銀員 (STAFF)', 'Staff', 'スタッフ', '캐셔 (STAFF)')}</option>
-                    <option value="MANAGER">${t('店長 (MANAGER)', 'Manager', '店長', '점장 (MANAGER)')}</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="field-label">${t('個人 PIN (4~8碼) *', 'Personal PIN *', '個別PIN *', '개인 PIN *')}</label>
-                  <input type="password" id="newStaffAccPinInput" maxlength="8" inputmode="numeric" class="select-input" style="padding:6px 8px; font-size:0.8rem;" placeholder="4-8 digits">
-                </div>
-                <button type="button" class="btn-tip-action" style="height:36px; background:#059669; padding:0 12px; font-size:0.78rem;" onclick="addStaffAccountUi()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
+                  </div>
+                `).join('')}
               </div>
-            </div>
+            ` : `<div style="font-size:0.76rem; color:var(--text-muted); margin-bottom:10px;">${t('尚未建立個人 PIN 帳號', 'No individual staff PIN accounts yet')}</div>`}
 
-            <div style="display:grid; grid-template-columns:0.85fr 1.4fr auto; gap:8px; align-items:end; margin-bottom:8px;">
+            <div class="settings-staff-add-grid" style="margin-bottom:12px;">
               <div>
-                <label class="field-label">${t('通用收銀員 PIN (4~8碼)', 'Shared Staff PIN (4-8)', '共通スタッフPIN', '공용 캐셔 PIN')} ${store.hasStaffPin ? '' : ''}</label>
-                <input type="password" id="cfgStaffPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="${store.hasStaffPin ? t('留空不變', 'Leave blank to keep', '変更しない場合は空欄', '유지하려면 비워두기') : '1234'}">
+                <label class="field-label">${t('員工姓名 *', 'Name *', 'スタッフ名 *', '이름 *')}</label>
+                <input type="text" id="newStaffAccNameInput" maxlength="20" class="select-input" placeholder="${t('例：陳小明', 'e.g. Alex')}">
               </div>
               <div>
-                <label class="field-label">${t('打卡名單（逗號分隔）', 'Roster Names (comma-separated)', '出勤リスト（カンマ区切り）', '출근 명단 (쉼표 구분)')}</label>
-                <input type="text" id="cfgStaffListInput" class="select-input" value="${escapeHtml(Array.isArray(store.staffList) ? store.staffList.join(', ') : t('值班店長, 早班收銀, 晚班收銀', 'Shift Manager, Morning Staff, Evening Staff', 'シフト店長, 早番レジ, 遅番レジ', '근무 점장, 오전 캐셔, 오후 캐셔'))}">
-              </div>
-              <button type="button" class="btn-tip-action" style="height:40px; background:#1D4ED8;" onclick="saveStaffSecurityConfig()">${t('儲存員工權限', 'Save Staff', 'スタッフ保存', '직원 권한 저장')}</button>
-            </div>
-
-            <div style="font-size:0.74rem; color:#4338CA; background:#EEF2FF; border:1px solid #C7D2FE; padding:7px 10px; border-radius:8px; font-weight:800;">
- ${t('開發者維護通道：登入時選「開發者 (Developer)」並輸入開發者專屬 PIN（預設 999999，可於 GAS 指令碼屬性 DEVELOPER_PIN 自訂），即可免店家密碼存取全校各店。', 'Developer Access: Select "Developer" on login and enter the Developer PIN (default 999999, customizable via GAS ScriptProperty DEVELOPER_PIN).', '開発者モード：ログイン時に「開発者」を選択し専用PIN（初期値999999）を入力すると全店舗を管理できます。', '개발자 접근: 로그인 시 "개발자"를 선택하고 전용 PIN(기본값 999999)을 입력하면 모든 매장에 접근할 수 있습니다.')}
-            </div>
-          </div>
-
-          <!-- B15：Windows 芯燁 XP-160II 背景自動出單機 (Print Bridge) 與三聯前後台分區設定 -->
-          <div style="background:#EFF6FF; border:1.5px solid #60A5FA; border-radius:12px; padding:12px; margin-bottom:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
-              <div style="font-size:0.9rem; font-weight:950; color:#1E3A8A;">${t('Windows 芯燁 XP-160II 背景自動出單機（三聯自動切紙：顧客聯 + 前台 + 後台）', 'Windows Xprinter XP-160II Silent Auto-Print Bridge (3-Slip Cut)', 'Windows 自動レシート印刷ブリッジ（3枚自動カット）', 'Windows 자동 영수증 출력 브릿지 (3장 자동 컷)')}</div>
-              <span style="font-size:0.72rem; font-weight:900; background:${store.printerAutoEnabled !== false ? '#DCFCE7' : '#FEE2E2'}; color:${store.printerAutoEnabled !== false ? '#166534' : '#B91C1C'}; padding:2px 8px; border-radius:999px;">
-                ${store.printerAutoEnabled !== false ? `${t('自動佇列啟用中', 'Auto Queue ON')}` : `${t('已暫停自動出單', 'Auto Queue OFF')}`}
-              </span>
-            </div>
-            <p style="font-size:0.75rem; color:#1D4ED8; margin-bottom:10px; line-height:1.45;">
-              ${t('搭配電腦端「printer-bridge」背景程式，學生線上點餐或 POS 結帳後 3~5 秒內免彈視窗自動印出：① 顧客聯、② 前台工單（指定分類）、③ 後台工單（其餘分類，無品項自動略過），並響蜂鳴器與自動切紙！', 'Run printer-bridge on the Windows POS PC to silently auto-print Customer + Front + Back slips (skipping empty zones) with buzzer & auto-cut.')}
-            </p>
-            <div style="display:grid; grid-template-columns:0.8fr 1.6fr; gap:10px; margin-bottom:10px;">
-              <div>
-                <label class="field-label">${t('新訂單自動送印', 'Auto-Print New Orders')}</label>
-                <select id="cfgPrinterAutoEnabled" class="select-input">
-                  <option value="true" ${store.printerAutoEnabled !== false ? 'selected' : ''}>${t('啟用自動出單（推薦）', 'Enabled (Recommended)')}</option>
-                  <option value="false" ${store.printerAutoEnabled === false ? 'selected' : ''}>${t('暫停自動出單', 'Paused')}</option>
+                <label class="field-label">${t('角色', 'Role', '権限', '역할')}</label>
+                <select id="newStaffAccRoleSelect" class="select-input">
+                  <option value="STAFF">${t('收銀員', 'Staff', 'スタッフ', '캐셔')}</option>
+                  <option value="MANAGER">${t('店長', 'Manager', '店長', '점장')}</option>
                 </select>
               </div>
               <div>
-                <label class="field-label">${t('前台工單分類（逗號分隔，其餘品項自動分派至後台工單）', 'Front-Zone Categories (comma-separated; others go to Back)')}</label>
-                <input type="text" id="cfgPrinterFrontCategories" class="select-input" value="${escapeHtml((Array.isArray(store.printerFrontCategories) && store.printerFrontCategories.length > 0 ? store.printerFrontCategories : ['飯捲類', '飲料類', '飲品類']).join(', '))}" placeholder="${t('飯捲類, 飲料類, 飲品類', 'Kimbap, Drinks', 'キンパ, ドリンク', '김밥, 음료')}">
+                <label class="field-label">${t('個人 PIN (4~8碼) *', 'PIN (4-8) *', '個別PIN *', '개인 PIN *')}</label>
+                <input type="password" id="newStaffAccPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="4-8 digits">
+              </div>
+              <button type="button" class="btn-tip-action" style="height:40px; background:#059669;" onclick="addStaffAccountUi()">＋ ${t('新增', 'Add', '追加', '추가')}</button>
+            </div>
+
+            <div class="settings-staff-roster-grid">
+              <div>
+                <label class="field-label">${t('通用收銀員 PIN', 'Shared Staff PIN', '共通スタッフPIN', '공용 캐셔 PIN')}</label>
+                <input type="password" id="cfgStaffPinInput" maxlength="8" inputmode="numeric" class="select-input" placeholder="${store.hasStaffPin ? t('留空不變', 'Leave blank to keep') : '1234'}">
+              </div>
+              <div>
+                <label class="field-label">${t('打卡名單 (逗號分隔)', 'Roster Names', '出勤リスト', '출근 명단')}</label>
+                <input type="text" id="cfgStaffListInput" class="select-input" value="${escapeHtml(Array.isArray(store.staffList) ? store.staffList.join(', ') : t('值班店長, 早班收銀, 晚班收銀', 'Shift Manager, Morning Staff, Evening Staff'))}">
+              </div>
+              <button type="button" class="btn-tip-action" style="height:40px; background:#1D4ED8;" onclick="saveStaffSecurityConfig()">${t('儲存員工權限', 'Save Staff', '保存', '저장')}</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section-card">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">${t('出單機與印表機設定', 'Printers & Auto-Print', 'プリンター設定', '프린터 설정')}</h3>
+            <span style="font-size:0.74rem; font-weight:850; background:${store.printerAutoEnabled !== false ? '#DCFCE7' : '#FEE2E2'}; color:${store.printerAutoEnabled !== false ? '#166534' : '#B91C1C'}; padding:3px 10px; border-radius:999px;">
+              ${store.printerAutoEnabled !== false ? t('自動出單啟用中', 'Auto-Print ON') : t('已暫停自動出單', 'Auto-Print OFF')}
+            </span>
+          </div>
+
+          <div class="settings-subbox" style="margin-bottom:12px;">
+            <div class="settings-subbox-title">${t('背景自動出單機 (Print Bridge)', 'Silent Auto-Print Bridge')}</div>
+            <div class="settings-form-grid" style="margin-bottom:10px;">
+              <div>
+                <label class="field-label">${t('新訂單自動送印', 'Auto-Print New Orders')}</label>
+                <select id="cfgPrinterAutoEnabled" class="select-input">
+                  <option value="true" ${store.printerAutoEnabled !== false ? 'selected' : ''}>${t('啟用', 'Enabled')}</option>
+                  <option value="false" ${store.printerAutoEnabled === false ? 'selected' : ''}>${t('暫停', 'Paused')}</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">${t('前台工單分類 (逗號分隔)', 'Front-Zone Categories')}</label>
+                <input type="text" id="cfgPrinterFrontCategories" class="select-input" value="${escapeHtml((Array.isArray(store.printerFrontCategories) && store.printerFrontCategories.length > 0 ? store.printerFrontCategories : ['飯捲類', '飲料類', '飲品類']).join(', '))}" placeholder="${t('飯捲類, 飲料類, 飲品類', 'Kimbap, Drinks')}">
               </div>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; background:#FFFFFF; border:1px solid #BFDBFE; border-radius:10px; padding:8px 12px;">
-              <div style="font-size:0.76rem; color:#1E40AF;">
- <strong>Bridge Key:</strong>
-                <code style="background:#EFF6FF; padding:2px 6px; border-radius:4px; font-weight:900;">${escapeHtml(store.printerBridgeKey || t('請先按右側儲存以同步產生金鑰', 'Click Save to generate key'))}</code>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; background:#FFFFFF; border:1px solid var(--border); border-radius:10px; padding:8px 12px;">
+              <div style="font-size:0.76rem; color:var(--text-secondary);">
+                <strong>Bridge Key:</strong>
+                <code style="background:#F1F5F9; padding:2px 6px; border-radius:4px; font-weight:800; color:var(--text-primary);">${escapeHtml(store.printerBridgeKey || t('請先儲存以產生金鑰', 'Click Save to generate'))}</code>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <button type="button" class="pos-chip-btn" style="padding:5px 10px; font-size:0.74rem; background:#EFF6FF; color:#1D4ED8; border-color:#93C5FD;" onclick="copyPrinterBridgeConfigJson()">${t('複製 config.json 設定', 'Copy config.json')}</button>
-                <button type="button" class="btn-tip-action" style="padding:6px 14px; font-size:0.78rem; background:#1D4ED8;" onclick="savePrinterBridgeConfig()">${t('儲存出單機分區設定', 'Save Printer Config')}</button>
+                <button type="button" class="pos-chip-btn" style="padding:5px 10px; font-size:0.74rem;" onclick="copyPrinterBridgeConfigJson()">${t('複製 config.json', 'Copy config.json')}</button>
+                <button type="button" class="btn-tip-action" style="padding:6px 14px; font-size:0.78rem; background:#1D4ED8;" onclick="savePrinterBridgeConfig()">${t('儲存出單機設定', 'Save Printer')}</button>
               </div>
             </div>
           </div>
 
-          <div style="background:#F8FAFC; border:1.5px solid #CBD5E1; border-radius:12px; padding:12px;">
-            <div style="font-size:0.9rem; font-weight:950; color:#0F172A; margin-bottom:6px;">${t('瀏覽器直連 WebUSB / WebSerial 出單機 & 錢箱設定（備用模式）', 'Browser WebUSB / WebSerial Direct Printer (Optional)', 'WebUSB/WebSerial直印刷（予備）', 'WebUSB/WebSerial 직접 출력 (보조)')}</div>
-            <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:10px;">
-              ${t('支援透過瀏覽器 WebUSB 或 WebSerial 直接連線 80mm / 58mm 熱感印表機，結帳完成自動靜默切紙出單、依廚房站點分流派單並彈開 RJ-11 現金錢箱！', 'Connect 80mm/58mm thermal printers via WebUSB or WebSerial for silent checkout printing, station routing, and RJ-11 drawer kick.', 'WebUSB/WebSerial経由で80mm/58mmレシートプリンターとドロアーを直接制御します。', 'WebUSB/WebSerial로 80mm/58mm 프린터와 RJ-11 현금서랍을 직접 제어합니다.')}
-            </p>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:8px;">
+          <div class="settings-subbox">
+            <div class="settings-subbox-title">${t('瀏覽器直連 WebUSB / Serial（備用）', 'Browser WebUSB / Serial Direct Print')}</div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px;">
               ${['COUNTER', 'KITCHEN', 'DRINK'].map(rKey => {
                 const routeInfo = MerchantHardwarePrinter.routes[rKey];
                 return `
                   <div style="background:#FFFFFF; border:1px solid var(--border); border-radius:10px; padding:10px;">
                     <div style="font-weight:900; font-size:0.84rem; margin-bottom:3px;">${escapeHtml(trTerm(routeInfo.label))}</div>
-                    <div style="font-size:0.73rem; color:var(--text-secondary); margin-bottom:8px;">${t('狀態', 'Status', '状態', '상태')}: ${escapeHtml(trTerm(MerchantHardwarePrinter.getStatusSummary(rKey)))}</div>
+                    <div style="font-size:0.73rem; color:var(--text-secondary); margin-bottom:8px;">${t('狀態', 'Status')}: ${escapeHtml(trTerm(MerchantHardwarePrinter.getStatusSummary(rKey)))}</div>
                     <div style="display:flex; gap:5px; flex-wrap:wrap;">
                       <button type="button" class="pos-chip-btn" style="padding:4px 8px; font-size:0.72rem;" onclick="connectHardwarePrinterUi('${rKey}', 'usb')">WebUSB</button>
                       <button type="button" class="pos-chip-btn" style="padding:4px 8px; font-size:0.72rem;" onclick="connectHardwarePrinterUi('${rKey}', 'serial')">Serial</button>
-                      <button type="button" class="pos-chip-btn" style="padding:4px 8px; font-size:0.72rem; background:#ECFDF5; color:#065F46;" onclick="testHardwarePrinterUi('${rKey}')">${t('測試出單', 'Test Print', 'テスト印刷', '테스트 인쇄')}</button>
+                      <button type="button" class="pos-chip-btn" style="padding:4px 8px; font-size:0.72rem; background:#ECFDF5; color:#065F46;" onclick="testHardwarePrinterUi('${rKey}')">${t('測試出單', 'Test Print')}</button>
                     </div>
                   </div>
                 `;
@@ -9013,32 +8943,150 @@ function renderMerchantSettingsPanel(store) {
           </div>
         </div>
 
-        <div class="chart-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h3 style="font-size:0.98rem; font-weight:900;">${t('店務敏感操作稽核紀錄（雲端 AuditLogs 工作表持久化）', 'Sensitive Operations Audit Log (Cloud AuditLogs)', '重要操作監査ログ（クラウド保存）', '중요 작업 감사 로그 (클라우드 저장)')}</h3>
-            <span style="font-size:0.74rem; color:var(--text-secondary);">${t(`最近 ${storeAuditLogs.length} 筆紀錄`, `Latest ${storeAuditLogs.length} logs`, `直近${storeAuditLogs.length}件`, `최근 ${storeAuditLogs.length}건`)}</span>
-          </div>
-          ${storeAuditLogs.length === 0 ? `
-            <div style="font-size:0.82rem; color:var(--text-muted); padding:12px;">${t('尚無敏感操作稽核紀錄', 'No audit logs yet', '監査ログはまだありません', '감사 로그가 아직 없습니다')}</div>
-          ` : `
-            <div style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
-              ${storeAuditLogs.map(log => `
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 12px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; font-size:0.78rem;">
-                  <div>
-                    <strong data-dish-name="1" style="color:var(--indigo);">[${escapeHtml(log.action)}]</strong>
-                    ${log.staffName ? `<span data-dish-name="1" style="background:#EEF2FF; color:#312E81; padding:1px 6px; border-radius:4px; font-size:0.7rem; font-weight:800; margin-left:4px;">${escapeHtml(log.staffName)}${log.approvedBy ? ` (✓${escapeHtml(log.approvedBy)})` : ''}</span>` : ''}
-                    <span data-dish-name="1" style="color:var(--text-primary); margin-left:6px;">${escapeHtml(log.detail)}</span>
+        <details class="settings-accordion" ${state.settingsAdvancedLineOpen ? 'open' : ''} ontoggle="state.settingsAdvancedLineOpen = this.open">
+          <summary>
+            <span>${t('進階串接與系統紀錄', 'Integrations & System Logs', '外部連携・操作ログ', '연동 및 시스템 로그')}<span class="settings-accordion-meta">${t('LINE 推播・LINE Pay 金流・操作紀錄', 'LINE OA, LINE Pay, Audit Log')}</span></span>
+          </summary>
+          <div class="settings-accordion-body">
+            <div class="settings-subbox" style="margin-bottom:14px;">
+              <div class="settings-subbox-title">${t('LINE 官方帳號推播設定', 'LINE Official Account Push')}</div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px; margin-bottom:12px;">
+                <label class="option-label-row ${store.useCustomLineOa ? 'checked' : ''}" style="background:#FFFFFF; margin-bottom:0;" onclick="toggleStoreCustomLineMode(true)">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="radio" name="storeLineOaMode" ${store.useCustomLineOa ? 'checked' : ''} style="width:16px; height:16px; accent-color:#06C755;">
+                    <span style="font-weight:850; font-size:0.84rem; color:var(--text-primary);">${t('本店專屬官方帳號', 'Store Own LINE OA')}</span>
                   </div>
-                  <span style="color:var(--text-muted); font-family:monospace; white-space:nowrap;">${escapeHtml(log.ts)}</span>
+                </label>
+                <label class="option-label-row ${!store.useCustomLineOa ? 'checked' : ''}" style="background:#FFFFFF; margin-bottom:0;" onclick="toggleStoreCustomLineMode(false)">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="radio" name="storeLineOaMode" ${!store.useCustomLineOa ? 'checked' : ''} style="width:16px; height:16px; accent-color:#06C755;">
+                    <span style="font-weight:850; font-size:0.84rem; color:var(--text-primary);">${t('平台預設官方帳號', 'Platform Default LINE OA')}</span>
+                  </div>
+                </label>
+              </div>
+
+              ${store.useCustomLineOa ? `
+                <div class="settings-form-grid">
+                  <div>
+                    <label class="field-label">${t('LINE Channel ID', 'LINE Channel ID')}</label>
+                    <input type="text" id="cfgStoreLineClientId" class="select-input" placeholder="2012260287" value="${escapeHtml(store.customLineClientId || '')}">
+                  </div>
+                  <div>
+                    <label class="field-label">${t('LINE Channel Secret', 'LINE Channel Secret')}</label>
+                    <input type="password" id="cfgStoreLineClientSecret" class="select-input" placeholder="${t('輸入新密鑰以更新', 'Enter new secret')}" value="">
+                  </div>
+                  <div>
+                    <label class="field-label">${t('推播存取權杖', 'Messaging Access Token')}</label>
+                    <input type="password" id="cfgStoreLineChannelToken" class="select-input" placeholder="${t('貼上推播權杖', 'Paste token')}" value="">
+                  </div>
                 </div>
-              `).join('')}
+              ` : `
+                <div class="settings-form-grid">
+                  <div>
+                    <label class="field-label">${t('預設 Channel ID', 'Default Channel ID')}</label>
+                    <input type="text" id="cfgSysLineClientId" class="select-input" placeholder="2012260287" value="${escapeHtml(state.lineProfile.customClientId || DEFAULT_LINE_CLIENT_ID)}">
+                  </div>
+                  <div>
+                    <label class="field-label">${t('預設 Channel Secret', 'Default Channel Secret')}</label>
+                    <input type="password" id="cfgSysLineClientSecret" class="select-input" placeholder="${t('雲端安全託管', 'Managed on server')}">
+                  </div>
+                  <div>
+                    <label class="field-label">${t('預設推播權杖', 'Default Push Token')}</label>
+                    <input type="password" id="cfgLineAccessToken" class="select-input" placeholder="${t('雲端安全託管', 'Managed on server')}">
+                  </div>
+                </div>
+              `}
             </div>
-          `}
-        </div>
+
+            <div class="settings-subbox" style="margin-bottom:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+                <div class="settings-subbox-title" style="margin-bottom:0;">${t('LINE Pay 商家金流設定', 'LINE Pay Merchant Setup')}</div>
+                <span style="font-size:0.72rem; font-weight:800; background:#DCFCE7; color:#065F46; padding:2px 8px; border-radius:999px;">
+                  ${store.linePayChannelId ? `Channel (${escapeHtml(store.linePayChannelId)})` : t('測試沙盒模式', 'Sandbox Mode')}
+                </span>
+              </div>
+              <div class="settings-form-grid">
+                <div>
+                  <label class="field-label">${t('學生端線上 LINE Pay 預付', 'Online LINE Pay Prepayment')}</label>
+                  <select id="cfgEnableOnlineLinePay" class="select-input">
+                    <option value="false" ${store.enableOnlineLinePay !== true ? 'selected' : ''}>${t('關閉（僅現場付款）', 'Off (Pay at counter only)')}</option>
+                    <option value="true" ${store.enableOnlineLinePay === true ? 'selected' : ''}>${t('開啟線上預付', 'Enabled')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">${t('LINE Pay 手續費率 (%)', 'LINE Pay Fee Rate (%)')}</label>
+                  <input type="number" step="0.1" min="0" max="20" id="cfgLinePayFeeRate" class="select-input" value="${store.linePayFeeRate !== undefined ? Number(store.linePayFeeRate) : 2.2}">
+                </div>
+                <div>
+                  <label class="field-label">${t('Channel ID', 'Channel ID')}</label>
+                  <input type="text" id="cfgStoreLinePayChannelId" class="select-input" placeholder="1657000123" value="${escapeHtml(store.linePayChannelId || '')}">
+                </div>
+                <div>
+                  <label class="field-label">${t('Channel Secret Key', 'Channel Secret Key')}</label>
+                  <input type="password" id="cfgStoreLinePayChannelSecret" class="select-input" placeholder="${store.hasLinePaySecret ? t('已加密託管（輸入可更新）', 'Stored (enter to replace)') : 'Secret Key'}" value="">
+                </div>
+                <div>
+                  <label class="field-label">${t('環境模式', 'Environment')}</label>
+                  <select id="cfgStoreLinePaySandbox" class="select-input">
+                    <option value="true" ${store.linePaySandbox !== false ? 'selected' : ''}>${t('Sandbox 測試環境', 'Sandbox')}</option>
+                    <option value="false" ${store.linePaySandbox === false ? 'selected' : ''}>${t('Production 正式環境', 'Production')}</option>
+                  </select>
+                </div>
+              </div>
+              <div style="margin-top:12px;">
+                <button type="button" class="btn-line" style="padding:10px 18px; font-size:0.86rem;" onclick="saveLineMessagingConfig()">${t('儲存 LINE 推播與金流設定', 'Save LINE & LINE Pay Settings')}</button>
+              </div>
+            </div>
+
+            <div class="settings-subbox">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div class="settings-subbox-title" style="margin-bottom:0;">${t('店務操作稽核紀錄', 'Operations Audit Log', '操作監査ログ', '작업 감사 로그')}</div>
+                <span style="font-size:0.74rem; color:var(--text-secondary);">${t(`最近 ${storeAuditLogs.length} 筆`, `Latest ${storeAuditLogs.length}`)}</span>
+              </div>
+              ${storeAuditLogs.length === 0 ? `
+                <div style="font-size:0.8rem; color:var(--text-muted); padding:8px 0;">${t('尚無操作紀錄', 'No audit logs yet')}</div>
+              ` : `
+                <div style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+                  ${storeAuditLogs.map(log => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px; background:#FFFFFF; border:1px solid var(--border); border-radius:8px; font-size:0.76rem;">
+                      <div>
+                        <strong data-dish-name="1" style="color:var(--indigo);">[${escapeHtml(log.action)}]</strong>
+                        ${log.staffName ? `<span data-dish-name="1" style="background:#EEF2FF; color:#312E81; padding:1px 6px; border-radius:4px; font-size:0.7rem; font-weight:800; margin-left:4px;">${escapeHtml(log.staffName)}${log.approvedBy ? ` (✓${escapeHtml(log.approvedBy)})` : ''}</span>` : ''}
+                        <span data-dish-name="1" style="color:var(--text-primary); margin-left:6px;">${escapeHtml(log.detail)}</span>
+                      </div>
+                      <span style="color:var(--text-muted); font-family:monospace; white-space:nowrap;">${escapeHtml(log.ts)}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </div>
+          </div>
+        </details>
       ` : ''}
     </div>
   `;
   if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(panel);
+}
+
+function updatePromoModeFieldsVisibility() {
+  const modeEl = document.getElementById('cfgPromoMode');
+  const box = document.getElementById('promoModeDynamicFields');
+  if (!modeEl || !box) return;
+  const mode = modeEl.value || 'none';
+  if (mode === 'none') {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = 'grid';
+  const toggleField = (name, show) => {
+    const el = box.querySelector(`[data-promo-field="${name}"]`);
+    if (el) el.style.display = show ? 'block' : 'none';
+  };
+  toggleField('scope', true);
+  toggleField('text', true);
+  toggleField('minSubtotal', mode === 'gift' || mode === 'discount');
+  toggleField('discount', mode === 'discount' || mode === 'second_discount');
+  toggleField('gift', mode === 'gift');
 }
 
 function updateMerchantAutoLockMinutes(val) {
@@ -9114,14 +9162,24 @@ async function saveStoreProfileConfig() {
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
 
-  const campus = document.getElementById('cfgProfileCampus')?.value.trim() || store.campus;
-  const name = document.getElementById('cfgProfileName')?.value.trim() || '';
-  const category = document.getElementById('cfgProfileCategory')?.value.trim() || store.category;
-  const icon = document.getElementById('cfgProfileIcon')?.value.trim() || '';
-  const openTime = document.getElementById('cfgProfileOpenTime')?.value.trim() || '10:30';
-  const closeTime = document.getElementById('cfgProfileCloseTime')?.value.trim() || '19:30';
-  const breakStartTime = document.getElementById('cfgProfileBreakStart')?.value.trim() || '';
-  const breakEndTime = document.getElementById('cfgProfileBreakEnd')?.value.trim() || '';
+  const campusEl = document.getElementById('cfgProfileCampus');
+  const nameEl = document.getElementById('cfgProfileName');
+  const catEl = document.getElementById('cfgProfileCategory');
+  const iconEl = document.getElementById('cfgProfileIcon');
+  const openEl = document.getElementById('cfgProfileOpenTime');
+  const closeEl = document.getElementById('cfgProfileCloseTime');
+  const breakStartEl = document.getElementById('cfgProfileBreakStart');
+  const breakEndEl = document.getElementById('cfgProfileBreakEnd');
+  const isOpenEl = document.getElementById('cfgStoreIsOpen');
+
+  const campus = campusEl ? (campusEl.value.trim() || store.campus) : store.campus;
+  const name = nameEl ? nameEl.value.trim() : (store.name || '');
+  const category = catEl ? (catEl.value.trim() || store.category) : store.category;
+  const icon = iconEl ? iconEl.value.trim() : (store.icon || '');
+  const openTime = openEl ? (openEl.value.trim() || '10:30') : (store.openTime || '10:30');
+  const closeTime = closeEl ? (closeEl.value.trim() || '19:30') : (store.closeTime || '19:30');
+  const breakStartTime = breakStartEl ? breakStartEl.value.trim() : (store.breakStartTime || '');
+  const breakEndTime = breakEndEl ? breakEndEl.value.trim() : (store.breakEndTime || '');
 
   if (!name) {
     showToast('餐廳名稱不可為空！');
@@ -9141,6 +9199,10 @@ async function saveStoreProfileConfig() {
   }
 
   await withActiveButtonBusy(async () => {
+    const prevIsOpen = store.isOpen !== false;
+    if (isOpenEl) {
+      store.isOpen = isOpenEl.value === 'true';
+    }
     store.campus = campus;
     store.name = name;
     store.category = category;
@@ -9180,13 +9242,52 @@ async function saveStoreProfileConfig() {
         })
       });
       const data = await res.json();
+
+      // 若畫面上有調整「今日營業狀態」，同步寫入 updateStoreConfig
+      if (isOpenEl && (store.isOpen !== prevIsOpen || isOpenEl.value === 'false')) {
+        try {
+          await fetch(GAS_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'updateStoreConfig',
+              ...getMerchantAuthPayload(),
+              managerOverridePin: state.tempManagerOverridePin || '',
+              storeId: store.id,
+              isOpen: store.isOpen,
+              cutleryPrice: store.cutleryPrice,
+              basePrepMinutes: store.basePrepMinutes,
+              maxCapacityPer15Min: store.maxCapacityPer15Min,
+              reserveLeadMinutes: store.reserveLeadMinutes,
+              autoCompleteMinutes: store.autoCompleteMinutes,
+              baseQueueOffset: store.baseQueueOffset || 0,
+              activeOrders: store.activeOrders,
+              promoMode: store.promoMode,
+              promoScope: store.promoScope,
+              promoMinSubtotal: store.promoMinSubtotal,
+              promoText: store.promoText,
+              promoDiscount: store.promoDiscount,
+              secondItemDiscount: store.secondItemDiscount,
+              giftMenuItemId: store.giftMenuItemId,
+              coupons: Array.isArray(store.coupons) ? store.coupons : [],
+              comboDiscounts: Array.isArray(store.comboDiscounts) ? store.comboDiscounts : [],
+              morningSoldOutPolicy: store.morningSoldOutPolicy,
+              enableOnlineLinePay: store.enableOnlineLinePay,
+              allowDineInPostPay: store.allowDineInPostPay,
+              linePayFeeRate: store.linePayFeeRate
+            })
+          });
+        } catch (e2) {}
+      }
+
       if (data && data.success) {
         if (data.store) {
           if (Array.isArray(data.store.closedDays)) store.closedDays = data.store.closedDays;
           if (data.store.weeklyHours && typeof data.store.weeklyHours === 'object') store.weeklyHours = data.store.weeklyHours;
           saveLocalStores(state.stores);
         }
-        showToast(`已更新「${name}」餐廳資料、各星期營業時段與每週公休日並同步雲端！`);
+        showToast(`已儲存「${name}」營業與基本資料並同步雲端！`);
       } else {
         showToast(`本機已更新，雲端回應：${(data && data.message) || '請確認後端已更新部署'}`);
       }
@@ -9194,7 +9295,7 @@ async function saveStoreProfileConfig() {
       showToast('本機已儲存餐廳設定，待網路恢復後同步');
     }
     renderMerchantView();
-  }, t('儲存餐廳設定中...', 'Saving Store Profile...'));
+  }, t('儲存設定中...', 'Saving...'));
 }
 
 async function createNewMerchantStore() {
@@ -11011,31 +11112,64 @@ async function saveMerchantConfig() {
   if (!store) return;
 
   await withActiveButtonBusy(async () => {
-    const isOpenVal = document.getElementById('cfgStoreIsOpen')?.value;
-    if (isOpenVal !== undefined) {
-      store.isOpen = isOpenVal === 'true';
+    const isOpenEl = document.getElementById('cfgStoreIsOpen');
+    if (isOpenEl) store.isOpen = isOpenEl.value === 'true';
+
+    const cutleryEl = document.getElementById('cfgCutleryPrice');
+    if (cutleryEl) store.cutleryPrice = Math.max(0, parseInt(cutleryEl.value || '1', 10));
+
+    const basePrepEl = document.getElementById('cfgBasePrepMin');
+    if (basePrepEl) store.basePrepMinutes = Math.max(1, parseInt(basePrepEl.value || '4', 10));
+
+    const maxCapEl = document.getElementById('cfgMaxCap');
+    if (maxCapEl) store.maxCapacityPer15Min = Math.max(5, parseInt(maxCapEl.value || '20', 10));
+
+    const reserveLeadEl = document.getElementById('cfgReserveLeadMins');
+    if (reserveLeadEl) store.reserveLeadMinutes = Math.max(10, Math.min(90, parseInt(reserveLeadEl.value || '25', 10) || 25));
+
+    const autoCompleteEl = document.getElementById('cfgAutoCompleteMinutes');
+    if (autoCompleteEl) {
+      const rawAutoComplete = parseInt(autoCompleteEl.value || '0', 10);
+      store.autoCompleteMinutes = (Number.isFinite(rawAutoComplete) && rawAutoComplete > 0)
+        ? Math.max(5, Math.min(240, rawAutoComplete))
+        : 0;
     }
-    store.cutleryPrice = Math.max(0, parseInt(document.getElementById('cfgCutleryPrice')?.value || '1', 10));
-    store.basePrepMinutes = Math.max(1, parseInt(document.getElementById('cfgBasePrepMin')?.value || '4', 10));
-    store.maxCapacityPer15Min = Math.max(5, parseInt(document.getElementById('cfgMaxCap')?.value || '20', 10));
-    store.reserveLeadMinutes = Math.max(10, Math.min(90, parseInt(document.getElementById('cfgReserveLeadMins')?.value || '25', 10) || 25));
-    const rawAutoComplete = parseInt(document.getElementById('cfgAutoCompleteMinutes')?.value || '0', 10);
-    store.autoCompleteMinutes = (Number.isFinite(rawAutoComplete) && rawAutoComplete > 0)
-      ? Math.max(5, Math.min(240, rawAutoComplete))
-      : 0;
+
     store.baseQueueOffset = 0;
-    store.promoMode = document.getElementById('cfgPromoMode')?.value || 'none';
-    store.promoScope = document.getElementById('cfgPromoScope')?.value === 'ALL_DAY' ? 'ALL_DAY' : 'OFF_PEAK';
-    store.promoMinSubtotal = Math.max(0, parseInt(document.getElementById('cfgPromoMinSubtotal')?.value || String(AI_DISCOUNT_MIN_SUBTOTAL), 10) || 0);
-    store.promoText = document.getElementById('cfgPromoText')?.value.trim() || '';
-    store.promoDiscount = Math.max(0, parseInt(document.getElementById('cfgPromoDiscount')?.value || '0', 10));
-    store.secondItemDiscount = store.promoMode === 'second_discount' ? store.promoDiscount : (store.secondItemDiscount || 0);
-    store.giftMenuItemId = document.getElementById('cfgGiftMenuItemId')?.value || '';
-    store.allowDineInPostPay = document.getElementById('cfgAllowDineInPostPay')?.value === 'true';
-    const rawLpFee = parseFloat(document.getElementById('cfgLinePayFeeRate')?.value || '2.2');
-    store.linePayFeeRate = isNaN(rawLpFee) ? 2.2 : Math.max(0, Math.min(20, rawLpFee));
+
+    const promoModeEl = document.getElementById('cfgPromoMode');
+    if (promoModeEl) store.promoMode = promoModeEl.value || 'none';
+
+    const promoScopeEl = document.getElementById('cfgPromoScope');
+    if (promoScopeEl) store.promoScope = promoScopeEl.value === 'ALL_DAY' ? 'ALL_DAY' : 'OFF_PEAK';
+
+    const promoMinEl = document.getElementById('cfgPromoMinSubtotal');
+    if (promoMinEl) store.promoMinSubtotal = Math.max(0, parseInt(promoMinEl.value || String(AI_DISCOUNT_MIN_SUBTOTAL), 10) || 0);
+
+    const promoTextEl = document.getElementById('cfgPromoText');
+    if (promoTextEl) store.promoText = promoTextEl.value.trim();
+
+    const promoDiscountEl = document.getElementById('cfgPromoDiscount');
+    if (promoDiscountEl) {
+      store.promoDiscount = Math.max(0, parseInt(promoDiscountEl.value || '0', 10));
+      store.secondItemDiscount = store.promoMode === 'second_discount' ? store.promoDiscount : (store.secondItemDiscount || 0);
+    }
+
+    const giftItemEl = document.getElementById('cfgGiftMenuItemId');
+    if (giftItemEl) store.giftMenuItemId = giftItemEl.value || '';
+
+    const postPayEl = document.getElementById('cfgAllowDineInPostPay');
+    if (postPayEl) store.allowDineInPostPay = postPayEl.value === 'true';
+
+    const lpFeeEl = document.getElementById('cfgLinePayFeeRate');
+    if (lpFeeEl) {
+      const rawLpFee = parseFloat(lpFeeEl.value || '2.2');
+      store.linePayFeeRate = isNaN(rawLpFee) ? 2.2 : Math.max(0, Math.min(20, rawLpFee));
+    }
+
     const morningPolicyEl = document.getElementById('cfgMorningSoldOutPolicy');
     if (morningPolicyEl) store.morningSoldOutPolicy = morningPolicyEl.value === 'AUTO_RESTORE' ? 'AUTO_RESTORE' : 'ASK_MORNING';
+
     const onlineLpEl = document.getElementById('cfgEnableOnlineLinePay');
     if (onlineLpEl) store.enableOnlineLinePay = onlineLpEl.value === 'true';
 
@@ -11078,7 +11212,7 @@ async function saveMerchantConfig() {
       });
       const data = await res.json();
       if (data && data.success) {
-        showToast(`已儲存「${store.name}」營業狀態、組合折扣、售罄模式與結帳設定並同步雲端！`);
+        showToast(`已儲存「${store.name}」設定並同步雲端！`);
       } else {
         showToast(`本機已更新，雲端回應：${(data && data.message) || '請確認後端已更新部署'}`);
       }
@@ -11336,6 +11470,7 @@ function toggleStoreCustomLineMode(useCustom) {
   const store = state.stores.find(s => s.id === state.merchantStoreId);
   if (!store) return;
   store.useCustomLineOa = Boolean(useCustom);
+  state.settingsAdvancedLineOpen = true;
   saveLocalStores(state.stores);
   renderMerchantSettingsPanel(store);
 }
@@ -11352,10 +11487,17 @@ async function saveLineMessagingConfig() {
     const linePayChannelId = document.getElementById('cfgStoreLinePayChannelId')?.value.trim() || '';
     const linePayChannelSecret = document.getElementById('cfgStoreLinePayChannelSecret')?.value.trim() || '';
     const linePaySandbox = document.getElementById('cfgStoreLinePaySandbox')?.value !== 'false';
+    const onlineLpEl = document.getElementById('cfgEnableOnlineLinePay');
+    const lpFeeEl = document.getElementById('cfgLinePayFeeRate');
 
     store.linePayChannelId = linePayChannelId;
     if (linePayChannelSecret) store.hasLinePaySecret = true;
     store.linePaySandbox = linePaySandbox;
+    if (onlineLpEl) store.enableOnlineLinePay = onlineLpEl.value === 'true';
+    if (lpFeeEl) {
+      const rawLpFee = parseFloat(lpFeeEl.value || '2.2');
+      store.linePayFeeRate = isNaN(rawLpFee) ? 2.2 : Math.max(0, Math.min(20, rawLpFee));
+    }
 
     if (store.useCustomLineOa) {
       const clientId = document.getElementById('cfgStoreLineClientId')?.value.trim() || '';
@@ -11386,7 +11528,6 @@ async function saveLineMessagingConfig() {
           })
         });
       } catch (e) {}
-      showToast(`已儲存「${store.name}」專屬 LINE Pay 金流與官方帳號推播設定至雲端後台！`);
     } else {
       const sysClientId = document.getElementById('cfgSysLineClientId')?.value.trim() || DEFAULT_LINE_CLIENT_ID;
       const sysClientSecret = document.getElementById('cfgSysLineClientSecret')?.value.trim() || '';
@@ -11418,8 +11559,48 @@ async function saveLineMessagingConfig() {
           })
         });
       } catch (e) {}
-      showToast(`已儲存「${store.name}」LINE Pay 商家金流與官方帳號推播設定！`);
     }
+
+    if (onlineLpEl || lpFeeEl) {
+      state.lastLocalStoreConfigUpdateTs = Date.now();
+      try {
+        await fetch(GAS_URL, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'updateStoreConfig',
+            ...getMerchantAuthPayload(),
+            managerOverridePin: state.tempManagerOverridePin || '',
+            storeId: store.id,
+            isOpen: store.isOpen,
+            cutleryPrice: store.cutleryPrice,
+            basePrepMinutes: store.basePrepMinutes,
+            maxCapacityPer15Min: store.maxCapacityPer15Min,
+            reserveLeadMinutes: store.reserveLeadMinutes,
+            autoCompleteMinutes: store.autoCompleteMinutes,
+            baseQueueOffset: store.baseQueueOffset || 0,
+            activeOrders: store.activeOrders,
+            promoMode: store.promoMode,
+            promoScope: store.promoScope,
+            promoMinSubtotal: store.promoMinSubtotal,
+            promoText: store.promoText,
+            promoDiscount: store.promoDiscount,
+            secondItemDiscount: store.secondItemDiscount,
+            giftMenuItemId: store.giftMenuItemId,
+            coupons: Array.isArray(store.coupons) ? store.coupons : [],
+            comboDiscounts: Array.isArray(store.comboDiscounts) ? store.comboDiscounts : [],
+            morningSoldOutPolicy: store.morningSoldOutPolicy,
+            enableOnlineLinePay: store.enableOnlineLinePay,
+            allowDineInPostPay: store.allowDineInPostPay,
+            linePayFeeRate: store.linePayFeeRate
+          })
+        });
+      } catch (e) {}
+    }
+
+    showToast(`已儲存「${store.name}」LINE 推播與金流設定！`);
+    state.settingsAdvancedLineOpen = true;
     renderMerchantSettingsPanel(store);
   }, t('儲存金流設定中...', 'Saving...'));
 }

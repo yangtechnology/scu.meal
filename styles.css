@@ -4063,7 +4063,7 @@ select.select-input {
 .sticky-menu-cat-bar {
   position: -webkit-sticky;
   position: sticky;
-  top: var(--app-header-h, 68px);
+  top: calc(var(--app-header-h, 68px) + 10px);
   z-index: 45;
   display: flex;
   justify-content: space-between;
@@ -4080,9 +4080,20 @@ select.select-input {
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
+.sticky-menu-cat-bar::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  right: -16px;
+  top: -12px;
+  height: 12px;
+  background: var(--bg-page);
+  pointer-events: none;
+}
+
 @media (max-width: 640px) {
   .sticky-menu-cat-bar {
-    top: var(--app-header-h, 68px);
+    top: calc(var(--app-header-h, 68px) + 10px);
     padding: 9px 10px;
   }
 }
@@ -4871,6 +4882,241 @@ html.pos-font-xlarge .modal-card {
 @media (max-width: 900px) {
   html.pos-font-large .pos-modern-workspace,
   html.pos-font-xlarge .pos-modern-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==================== v26.18 店家端設定頁簡化卡片與摺疊抽屜 ==================== */
+.settings-subtabs-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #FFFFFF;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-subtabs-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-section-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.settings-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.settings-section-title {
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.settings-section-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.settings-form-grid > div {
+  min-width: 0;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px dashed var(--border);
+  margin: 16px 0;
+}
+
+.settings-subbox {
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.settings-subbox-title {
+  font-size: 0.88rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.settings-action-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.settings-accordion {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.settings-section-card .settings-accordion {
+  background: #F8FAFC;
+  border-radius: 12px;
+  margin-top: 14px;
+}
+
+.settings-accordion[open] {
+  border-color: #CBD5E1;
+}
+
+.settings-accordion > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9rem;
+  font-weight: 850;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.settings-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-accordion > summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #64748B;
+  border-bottom: 2px solid #64748B;
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.settings-accordion[open] > summary::after {
+  transform: rotate(-135deg);
+}
+
+.settings-accordion > summary:hover {
+  background: rgba(15, 23, 42, 0.025);
+}
+
+.settings-accordion-meta {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+
+.settings-accordion-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.settings-menu-add-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1.25fr 0.65fr 0.65fr 0.9fr 1.15fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.settings-combo-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 0.65fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.settings-coupon-grid {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr 0.75fr 0.75fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.settings-pin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.settings-staff-add-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.85fr 0.95fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.settings-staff-roster-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1.4fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+@media (max-width: 900px) {
+  .settings-menu-add-grid,
+  .settings-combo-grid,
+  .settings-coupon-grid,
+  .settings-pin-grid,
+  .settings-staff-add-grid,
+  .settings-staff-roster-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .settings-menu-add-grid > button,
+  .settings-combo-grid > button,
+  .settings-coupon-grid > button,
+  .settings-pin-grid > div:last-child,
+  .settings-staff-add-grid > button,
+  .settings-staff-roster-grid > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-section-card {
+    padding: 14px;
+  }
+  .settings-menu-add-grid,
+  .settings-combo-grid,
+  .settings-coupon-grid,
+  .settings-pin-grid,
+  .settings-staff-add-grid,
+  .settings-staff-roster-grid {
     grid-template-columns: 1fr;
   }
 }

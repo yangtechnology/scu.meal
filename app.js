@@ -1336,7 +1336,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.17`;
+    script.src = `${base}merchant.js?v=26.18`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
