@@ -782,6 +782,32 @@ body.store-mode-active .page-container,
   font-size: 2.1rem;
   flex-shrink: 0;
   position: relative;
+  overflow: hidden;
+}
+
+.store-monogram {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #FF6B2B 0%, #EA580C 100%);
+  color: #FFFFFF;
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.store-thumb .store-monogram {
+  font-size: 1.6rem;
+}
+
+.in-store-banner .store-avatar-lg {
+  border: none !important;
+  background: transparent !important;
 }
 
 .ai-score-badge {
@@ -905,6 +931,15 @@ body.store-mode-active .page-container,
   border-bottom: 1.5px solid #F1F5F9;
 }
 
+.category-accent-bar {
+  display: inline-block;
+  width: 4px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--brand);
+  flex-shrink: 0;
+}
+
 .menu-item-card {
   background: #FFFFFF;
   border: 1.5px solid rgba(226, 232, 240, 0.9);
@@ -917,6 +952,12 @@ body.store-mode-active .page-container,
   transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, border-color 0.18s ease;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.035);
   position: relative;
+}
+
+.menu-item-card.no-img {
+  padding: 13px 15px;
+  align-items: stretch;
+  gap: 0;
 }
 
 .menu-item-card:hover {
@@ -2634,9 +2675,17 @@ select.select-input {
   }
 
   .btn-my-orders,
-  .btn-line,
-  .header-lang-select {
+  .btn-line {
     padding: 4px 8px !important;
+    font-size: 0.72rem !important;
+  }
+
+  .header-lang-wrap {
+    padding: 0 6px 0 7px !important;
+  }
+
+  .header-lang-select {
+    padding: 4px 2px 4px 4px !important;
     font-size: 0.72rem !important;
   }
 
@@ -2676,6 +2725,11 @@ select.select-input {
     padding: 11px 12px;
     gap: 11px;
     border-radius: 14px;
+  }
+
+  .menu-item-card.no-img {
+    padding: 13px 15px;
+    gap: 0;
   }
 
   .menu-img-box {
@@ -2718,24 +2772,51 @@ select.select-input {
 }
 
 /* ==================== #3 #4 #5 學生端精簡工具列、多語選擇器與品牌化對話框 ==================== */
+.header-lang-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: #FFFFFF;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 0 8px 0 9px;
+  transition: border-color 0.15s;
+}
+
+.header-lang-wrap:hover,
+.header-lang-wrap:focus-within {
+  border-color: var(--brand);
+}
+
+.header-lang-globe {
+  width: 15px;
+  height: 15px;
+  color: #2563EB;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.header-lang-chevron {
+  width: 12px;
+  height: 12px;
+  color: #64748B;
+  pointer-events: none;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
 .header-lang-select {
   appearance: none;
   -webkit-appearance: none;
-  background: #FFFFFF;
+  background: transparent;
   color: var(--text-primary);
-  border: 1.5px solid var(--border);
+  border: none;
   border-radius: 999px;
-  padding: 5px 11px;
+  padding: 5px 4px 5px 5px;
   font-size: 0.76rem;
   font-weight: 800;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.15s;
-}
-
-.header-lang-select:hover,
-.header-lang-select:focus {
-  border-color: var(--brand);
 }
 
 .student-directory-toolbar {
@@ -3833,9 +3914,30 @@ select.select-input {
 }
 
 .kds-check-box {
-  font-size: 0.92rem;
-  line-height: 1.25;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 5px;
+  border: 2px solid #94A3B8;
+  background: #FFFFFF;
+  color: #FFFFFF;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.kds-check-item-row.checked .kds-check-box {
+  background: #10B981;
+  border-color: #10B981;
+  color: #FFFFFF;
+}
+
+.kds-check-box .mf-icon {
+  width: 13px;
+  height: 13px;
+  vertical-align: middle;
 }
 
 /* ==================== v24.0 全域按鈕即時觸控回饋、載入轉圈反灰防連點與暫停營業樣式 ==================== */

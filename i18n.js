@@ -1175,7 +1175,8 @@ function syncHeaderLanguageControls() {
   const legacyBtn = document.getElementById('headerLangToggleBtn');
   if (legacyBtn) {
     const labelMap = { 'zh-TW': '繁中', 'en': 'EN', 'ja': '日本語', 'ko': '한국어' };
-    legacyBtn.innerText = labelMap[lang] || '繁中';
+    const globeSvg = typeof window.mfIcon === 'function' ? window.mfIcon('globe', 'header-lang-globe') + ' ' : '';
+    legacyBtn.innerHTML = globeSvg + (labelMap[lang] || '繁中');
   }
 
   const staticTextMap = {

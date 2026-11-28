@@ -1336,7 +1336,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.14`;
+    script.src = `${base}merchant.js?v=26.15`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -2249,17 +2249,18 @@ function mergeFriedBagPrefIntoNote(rawNote, pref) {
 }
 
 function getStoreIconDisplay(store) {
-  const iconHtml = (name) => (typeof window.mfIcon === 'function' ? window.mfIcon(name, 'mf-icon-xl') : '');
-  if (!store) return iconHtml('store');
+  if (!store) return '<span class="store-monogram">M</span>';
   const customIcon = String(store.icon || '').trim();
   if (customIcon && /^(https?:\/\/|data:image\/|\.?\.?\/)/i.test(customIcon)) {
     return `<img src="${escapeHtml(customIcon)}" alt="${escapeHtml(store.name || '')}" style="width:100%; height:100%; object-fit:cover; border-radius:inherit;">`;
   }
-  const text = `${store.name || ''} ${store.category || ''}`;
-  if (text.includes('飯') || text.includes('麵') || text.includes('丼') || text.includes('咖哩') || text.includes('餃') || text.includes('廚房') || text.includes('食堂')) {
-    return iconHtml('utensils');
-  }
-  return iconHtml('store');
+  const rawName = String(store.name || '').trim();
+  const cleanName = (typeof stripEmoji === 'function' ? stripEmoji(rawName) : rawName)
+    .replace(/^(?:雙溪|城中)(?:校區)?[\s\-—–·・:：/／]+/, '')
+    .replace(/^[\s\-—–·・:：/／()（）【】\[\]「」『』#]+/, '')
+    .trim();
+  const firstChar = (Array.from(cleanName || rawName || 'M')[0] || 'M').toUpperCase();
+  return `<span class="store-monogram">${escapeHtml(firstChar)}</span>`;
 }
 
 function updateDynamicCampusSwitcherButtons() {
@@ -6526,7 +6527,7 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
       menuGroupsHtml += `
         <section class="menu-cat-section" data-menu-cat="${escapeHtml(cat)}" style="margin-bottom:14px; scroll-margin-top:138px;">
           <h3 class="category-group-title">
-            <span style="display:inline-flex; width:26px; height:26px; border-radius:8px; background:var(--brand-light); color:var(--brand); align-items:center; justify-content:center; font-size:0.86rem;">${typeof mfIcon === 'function' ? mfIcon('utensils') : ''}</span>
+            <span class="category-accent-bar" aria-hidden="true"></span>
             <span>${escapeHtml(trTerm(cat))}</span>
             <span style="font-size:0.74rem; font-weight:700; color:var(--text-muted); margin-left:auto;">${grouped[cat].length} ${t('道餐點', 'items')}</span>
           </h3>
@@ -6535,10 +6536,6 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
               const isSoldOut = Boolean(item.soldOut);
               const inCartQty = inCartCountByItemId[String(item.id)] || 0;
               const hasValidImg = Boolean(item.image && /^(https?:\/\/|data:image\/)/i.test(item.image));
-              const fallbackDishIcon = typeof mfIcon === 'function' ? mfIcon('utensils', 'mf-icon-lg') : '';
-              const imgHtml = hasValidImg
-                ? `<img src="${escapeHtml(item.image)}" loading="lazy" alt="" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';"><span style="display:none; color:#94A3B8;">${fallbackDishIcon}</span>`
-                : `<span style="color:#94A3B8;">${fallbackDishIcon}</span>`;
               const hasOpts = item.options && Object.keys(item.options).length > 0;
               const optKeysTranslated = hasOpts ? Object.keys(item.options).map(k => trTerm(k)).join('・') : '';
               const displayDishName = trDishName(item);
@@ -6572,11 +6569,13 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
                     : `<span class="menu-action-pill">${inCartQty > 0 ? t('＋ 再選一份', '+ Add Another', '＋ 追加', '＋ 추가') : t('選規格', 'Options', '選択', '옵션')}</span>`));
 
               return `
-                <div class="menu-item-card ${isSoldOut ? 'sold-out' : ''} ${inCartQty > 0 ? 'in-cart-active' : ''}" data-menu-id="${escapeHtml(item.id)}" data-sold-out="${isSoldOut ? '1' : '0'}" data-has-opts="${hasOpts ? '1' : '0'}" onclick="handleMenuItemClick(${escapeJsAttr(item.id)}, false)">
-                  <div class="menu-img-box">
-                    ${imgHtml}
-                    ${!isSoldOut ? `<div class="menu-plus-badge">${inCartQty > 0 ? inCartQty : '＋'}</div>` : ''}
-                  </div>
+                <div class="menu-item-card ${hasValidImg ? '' : 'no-img'} ${isSoldOut ? 'sold-out' : ''} ${inCartQty > 0 ? 'in-cart-active' : ''}" data-menu-id="${escapeHtml(item.id)}" data-sold-out="${isSoldOut ? '1' : '0'}" data-has-opts="${hasOpts ? '1' : '0'}" onclick="handleMenuItemClick(${escapeJsAttr(item.id)}, false)">
+                  ${hasValidImg ? `
+                    <div class="menu-img-box">
+                      <img src="${escapeHtml(item.image)}" loading="lazy" alt="" onerror="if(this.parentElement){this.parentElement.style.display='none'; if(this.parentElement.parentElement) this.parentElement.parentElement.classList.add('no-img');}">
+                      ${!isSoldOut ? `<div class="menu-plus-badge">${inCartQty > 0 ? inCartQty : '＋'}</div>` : ''}
+                    </div>
+                  ` : ''}
                   <div style="flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between; gap:6px;">
                     <div>
                       <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
