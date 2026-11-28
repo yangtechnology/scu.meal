@@ -1337,7 +1337,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.12`;
+    script.src = `${base}merchant.js?v=26.13`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -3491,13 +3491,10 @@ function ensureSharedModalsMounted() {
   if (!document.getElementById('onlinePaymentModal')) {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="onlinePaymentModal" class="modal-overlay">
-        <div class="modal-card" style="max-width:420px;">
+        <div class="modal-card" style="max-width:400px;">
           <div id="onlinePaymentHeader" class="payment-gateway-header linepay">
-            <div>
-              <div style="font-size:0.72rem; font-weight:800; opacity:0.9;">行動支付線上結帳收銀台</div>
-              <h3 style="font-size:1.2rem; font-weight:900;" id="onlinePaymentTitle">LINE Pay 付款確認</h3>
-            </div>
-            <button type="button" onclick="cancelOnlinePaymentModal()" style="border:none; background:rgba(255,255,255,0.22); color:#fff; width:32px; height:32px; border-radius:50%; font-weight:900;">✕</button>
+            <h3 style="font-size:1.12rem; font-weight:900; margin:0;" id="onlinePaymentTitle">💚 LINE Pay 付款</h3>
+            <button type="button" onclick="cancelOnlinePaymentModal()" aria-label="關閉" style="border:none; background:rgba(255,255,255,0.22); color:#fff; width:32px; height:32px; border-radius:50%; font-weight:900; flex-shrink:0;">✕</button>
           </div>
           <div class="modal-body" id="onlinePaymentBody"></div>
         </div>
@@ -5761,90 +5758,45 @@ function requestOnlinePaymentGateway(payMethod, amount, storeName, storeId, orde
 
     const storeObj = state.stores.find(s => s.id === storeId);
     const hasConfiguredLp = Boolean(storeObj && storeObj.linePayChannelId && storeObj.hasLinePaySecret);
-    const customChannelId = storeObj && storeObj.linePayChannelId ? String(storeObj.linePayChannelId) : '';
-    const maskedChannelDisplay = hasConfiguredLp
-      ? `${customChannelId.slice(0, 4)}****${customChannelId.slice(-2)} (本店獨立特店金鑰)`
-      : t('尚未設定本店 LINE Pay 商家金鑰', 'LINE Pay Merchant Key Not Configured');
-    const envBadgeText = (storeObj && storeObj.linePaySandbox === false && hasConfiguredLp)
-      ? '🟢 LINE Pay V3 Production'
-      : '🧪 LINE Pay V3 Sandbox';
 
     state.pendingLinePayDraftContext = pendingOrderDraft || null;
     header.className = 'payment-gateway-header linepay';
-    title.innerText = '💚 LINE Pay V3 ' + t('真實付款跳轉與請款核實', 'Live Checkout & Confirm');
+    title.innerText = '💚 ' + t('LINE Pay 付款', 'LINE Pay', 'LINE Pay 決済', 'LINE Pay 결제');
 
     if (state.linePayCountdownTimer) {
       clearInterval(state.linePayCountdownTimer);
       state.linePayCountdownTimer = null;
     }
-    let remainSec = 900;
 
     body.innerHTML = `
-      <div style="text-align:center; padding:8px 4px;">
-        <div style="font-size:0.8rem; font-weight:800; color:var(--text-secondary);">${escapeHtml(BRAND_CONFIG.merchantTitle)} — ${escapeHtml(trTerm(storeName))}</div>
-        <div style="font-size:2.2rem; font-weight:950; color:var(--text-primary); margin:6px 0;">NT$ ${amount}</div>
-        <div style="display:inline-flex; align-items:center; gap:6px; background:${hasConfiguredLp ? '#ECFDF5' : '#FEF2F2'}; color:${hasConfiguredLp ? '#047857' : '#DC2626'}; font-size:0.74rem; font-weight:800; padding:3px 10px; border-radius:999px; margin-bottom:12px;">
-          <span>${hasConfiguredLp ? '🛡️ ' + escapeHtml(envBadgeText) : '⚠️ ' + t('本店尚未開通真實 LINE Pay 金鑰', 'LINE Pay Not Active')}</span>
-          ${hasConfiguredLp ? `<span>・</span><span id="linePayTimeoutCountdown" style="font-family:monospace;">15:00</span>` : ''}
-        </div>
+      <div style="text-align:center; padding:10px 4px 4px;">
+        <div style="font-size:0.86rem; font-weight:800; color:var(--text-secondary);">${escapeHtml(trTerm(storeName))}</div>
+        <div style="font-size:2.35rem; font-weight:950; color:var(--text-primary); margin:8px 0 12px; letter-spacing:-0.02em;">NT$ ${amount}</div>
 
-        <div style="background:#F8FAFC; border:1.5px solid #E2E8F0; border-radius:14px; padding:14px; margin-bottom:14px; text-align:left; font-size:0.8rem; color:var(--text-secondary);">
-          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span>${t('收款特店櫃位', 'Store')}</span>
-            <strong style="color:var(--text-primary);">${escapeHtml(trTerm(storeName))} (${escapeHtml(storeId || '')})</strong>
+        ${hasConfiguredLp ? `
+          <div id="linePayFlowStepLabel" style="font-size:0.84rem; font-weight:700; color:var(--text-secondary); margin-bottom:20px; line-height:1.45;">
+            ${t('點擊下方按鈕將跳轉至 LINE Pay 完成付款', 'Tap below to continue to LINE Pay', '下のボタンから LINE Pay へ進み決済を完了してください', '아래 버튼을 눌러 LINE Pay에서 결제를 완료하세요')}
           </div>
-          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span>Channel ID</span>
-            <strong style="color:${hasConfiguredLp ? 'var(--indigo)' : 'var(--red)'}; font-family:monospace;">${escapeHtml(maskedChannelDisplay)}</strong>
+        ` : `
+          <div style="background:#FFFBEB; border:1.5px solid #F59E0B; color:#92400E; padding:10px 12px; border-radius:10px; font-size:0.82rem; font-weight:800; margin-bottom:18px; line-height:1.45;">
+            ${t('本店尚未開通線上 LINE Pay，請改用現場櫃檯付現。', 'Online LINE Pay is not enabled for this store. Please pay at the counter.')}
           </div>
-          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span>${t('金流核實流程', 'Payment Flow')}</span>
-            <strong id="linePayFlowStepLabel" style="color:var(--brand-dark);">${t('1. 跳轉 LINE Pay 官方頁付款 ➔ 2. 回傳 Confirm 核實入帳', '1. Redirect to LINE Pay ➔ 2. Confirm Settlement')}</strong>
-          </div>
-          <div style="display:flex; justify-content:space-between;">
-            <span>${t('狀態隔離保護', 'Safety')}</span>
-            <strong style="color:var(--green);">✓ ${t('未經 Confirm 0000 核實絕不送入廚房', 'Never sent to kitchen until returnCode 0000')}</strong>
-          </div>
-        </div>
+        `}
 
-        ${!hasConfiguredLp ? `
-          <div style="background:#FFFBEB; border:1.5px solid #F59E0B; color:#92400E; padding:10px 12px; border-radius:10px; font-size:0.78rem; font-weight:800; margin-bottom:12px; text-align:left;">
-            💡 ${t('為杜絕假付款風險，本店須於後台設定真實 LINE Pay Channel ID / Secret 方可使用線上跳轉付款。您現在可直接改用「現場櫃檯付現」送出訂單！', 'This store has not configured live LINE Pay keys yet. Please switch to Cash at Pickup.')}
-          </div>
-        ` : ''}
-
-        <div style="display:flex; gap:10px;">
-          <button type="button" class="btn-outline" style="flex:1;" onclick="cancelOnlinePaymentModal()">${t('取消', 'Cancel')}</button>
+        <div style="display:flex; gap:10px; align-items:stretch;">
+          <button type="button" class="btn-outline" style="flex:0 0 auto; min-width:84px; white-space:nowrap;" onclick="cancelOnlinePaymentModal()">${t('取消', 'Cancel', 'キャンセル', '취소')}</button>
           ${hasConfiguredLp ? `
-            <button type="button" id="confirmGatewayPayBtn" class="btn-tip-action" style="flex:2; background:#00C300; padding:13px; font-size:0.94rem;" onclick="approveOnlinePaymentModal(${escapeJsAttr(storeId || '')}, ${Number(amount) || 0}, ${escapeJsAttr(orderId || '')})">
-              💚 ${t('前往 LINE Pay 官方頁付款', 'Proceed to LINE Pay')} (NT$ ${amount})
+            <button type="button" id="confirmGatewayPayBtn" class="btn-tip-action" style="flex:1; min-width:0; background:#00C300; padding:13px 14px; font-size:0.98rem;" onclick="approveOnlinePaymentModal(${escapeJsAttr(storeId || '')}, ${Number(amount) || 0}, ${escapeJsAttr(orderId || '')})">
+              ${t('前往付款', 'Pay Now', '支払う', '결제하기')} · NT$ ${amount}
             </button>
           ` : `
-            <button type="button" class="btn-tip-action" style="flex:2; background:var(--brand); padding:13px; font-size:0.92rem;" onclick="cancelOnlinePaymentModal(); setCheckoutMode('checkoutPayMethod', '現場櫃檯付現'); showToast('已切換為現場櫃檯付現');">
+            <button type="button" class="btn-tip-action" style="flex:1; min-width:0; background:var(--brand); padding:13px 14px; font-size:0.95rem;" onclick="cancelOnlinePaymentModal(); setCheckoutMode('checkoutPayMethod', '現場櫃檯付現'); showToast('已切換為現場櫃檯付現');">
               💵 ${t('改用現場櫃檯付現', 'Switch to Cash at Pickup')}
             </button>
           `}
         </div>
       </div>
     `;
-
-    if (hasConfiguredLp) {
-      state.linePayCountdownTimer = setInterval(() => {
-        remainSec--;
-        const cdEl = document.getElementById('linePayTimeoutCountdown');
-        if (cdEl) {
-          const mm = String(Math.floor(Math.max(0, remainSec) / 60)).padStart(2, '0');
-          const ss = String(Math.max(0, remainSec) % 60).padStart(2, '0');
-          cdEl.textContent = `${mm}:${ss}`;
-        }
-        if (remainSec <= 0) {
-          clearInterval(state.linePayCountdownTimer);
-          state.linePayCountdownTimer = null;
-          showToast(t('⏰ LINE Pay 付款已逾時，請重新發起結帳', '⏰ LINE Pay session timed out'));
-          cancelOnlinePaymentModal();
-        }
-      }, 1000);
-    }
 
     state.pendingPaymentResolver = resolve;
     modal.classList.add('open');
@@ -5864,7 +5816,7 @@ async function approveOnlinePaymentModal(storeId, amount, orderId = '') {
   if (btn) {
     if (btn.disabled) return;
     btn.disabled = true;
-    btn.innerText = t('⏳ 正在向 LINE Pay V3 建立真實交易連結...', '⏳ Creating LINE Pay V3 transaction...');
+    btn.innerText = t('⏳ 正在前往 LINE Pay...', '⏳ Redirecting to LINE Pay...', '⏳ LINE Pay へ移動中...', '⏳ LINE Pay로 이동 중...');
   }
   try {
     const cleanReturnBase = `${window.location.origin}${window.location.pathname}`;
@@ -5922,7 +5874,7 @@ async function approveOnlinePaymentModal(storeId, amount, orderId = '') {
     showToast(`🚫 ${translateServerError(err.message || 'LINE Pay 交易建立失敗')}`);
     if (btn) {
       btn.disabled = false;
-      btn.innerText = `💚 ${t('重新前往 LINE Pay 付款', 'Retry LINE Pay', 'LINE Pay再試行', 'LINE Pay 다시 시도')} (NT$ ${amount})`;
+      btn.innerText = `${t('重新前往付款', 'Retry Payment', '再試行', '다시 시도')} · NT$ ${amount}`;
     }
   }
 }

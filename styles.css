@@ -1000,13 +1000,34 @@ body.store-mode-active .page-container,
   width: 100%;
 }
 
-input[type="date"].select-input,
-input[type="time"].select-input,
+input[type="date"],
+input[type="time"],
+input.select-input,
 select.select-input {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+input[type="date"],
+input[type="time"] {
+  min-height: 42px;
+  line-height: 1.4;
+  text-align: left;
+  background-color: #FFFFFF;
+}
+
+select.select-input {
+  min-height: 42px;
+  line-height: 1.4;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.25L6 7.75l3.5-3.5' stroke='%23475569' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
 
 @media (max-width: 560px) {
@@ -2193,17 +2214,18 @@ select.select-input {
 .modal-card {
   background: #FFFFFF;
   width: 100%;
-  max-width: 520px;
+  max-width: min(520px, 100%);
   max-height: 90dvh;
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-float);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 .modal-overlay.bottom-sheet .modal-card {
-  max-width: 680px;
+  max-width: min(680px, 100%);
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
   max-height: 88dvh;
@@ -2218,11 +2240,15 @@ select.select-input {
   gap: 10px;
   background: #FFFFFF;
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .modal-body {
   padding: 16px 18px;
   overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 100%;
   flex: 1;
 }
 
@@ -2231,6 +2257,77 @@ select.select-input {
   border-top: 1px solid var(--border);
   background: #FFFFFF;
   flex-shrink: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* 全站手機版防爆版護欄 (iOS Safari / 375px iPhone) */
+.modal-card button,
+.modal-body .btn-tip-action,
+.modal-footer .btn-tip-action {
+  white-space: normal;
+  line-height: 1.3;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+.modal-body .btn-outline,
+.modal-footer .btn-outline {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#cartModal .modal-card *,
+#onlinePaymentModal .modal-card *,
+#crossDeviceLookupModal .modal-card *,
+#lineBindModal .modal-card *,
+#optionsModal .modal-card *,
+#myOrdersDrawerModal .modal-card * {
+  box-sizing: border-box;
+}
+
+#cartModal .modal-body > *,
+#onlinePaymentModal .modal-body > *,
+#crossDeviceLookupModal .modal-body > *,
+#lineBindModal .modal-body > *,
+#optionsModal .modal-body > *,
+#myOrdersDrawerModal .modal-body > *,
+#viewOrder,
+#viewTicket {
+  max-width: 100%;
+  min-width: 0;
+}
+
+#viewOrder,
+#viewTicket {
+  overflow-x: hidden;
+}
+
+#cartModal [style*="display:flex"] > *,
+#cartModal [style*="display:grid"] > *,
+#onlinePaymentModal [style*="display:flex"] > *,
+#onlinePaymentModal [style*="display:grid"] > *,
+#crossDeviceLookupModal [style*="display:flex"] > *,
+#crossDeviceLookupModal [style*="display:grid"] > *,
+#lineBindModal [style*="display:flex"] > *,
+#lineBindModal [style*="display:grid"] > *,
+#optionsModal [style*="display:flex"] > *,
+#optionsModal [style*="display:grid"] > *,
+#myOrdersDrawerModal [style*="display:flex"] > *,
+#myOrdersDrawerModal [style*="display:grid"] > *,
+#viewOrder [style*="display:flex"] > *,
+#viewOrder [style*="display:grid"] > *,
+#viewTicket [style*="display:flex"] > *,
+#viewTicket [style*="display:grid"] > *,
+.cart-seg-row > *,
+.cart-footer-step2 > *,
+.cart-item-top > *,
+.cart-item-actions > *,
+.cart-pay-card-left > *,
+.checkout-reserve-grid > *,
+.checkout-two-col-grid > * {
+  min-width: 0;
 }
 
 /* 行動支付收銀台 Header */
