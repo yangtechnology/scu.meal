@@ -531,16 +531,13 @@ function getValidPickupTimeSlotsWithQuota(targetDateStr, storeId = null) {
       }
       if (isToday && totalMins < minAllowedMinutesOfDay) continue;
       const timeLabel = `${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-      const booked = storeId ? getSlotBookedCount(storeId, cleanDate, timeLabel) : 0;
-      const remaining = Math.max(0, maxCap - booked);
-      const isFull = booked >= maxCap;
       const isPeak = isPeakHourTimeSlot(timeLabel);
       result.push({
         time: timeLabel,
-        booked,
+        booked: 0,
         maxCap,
-        remaining,
-        isFull,
+        remaining: maxCap,
+        isFull: false,
         isPeak
       });
     }
@@ -550,7 +547,6 @@ function getValidPickupTimeSlotsWithQuota(targetDateStr, storeId = null) {
 
 function getValidPickupTimeSlots(targetDateStr, storeId = null) {
   return getValidPickupTimeSlotsWithQuota(targetDateStr, storeId)
-    .filter(s => !s.isFull)
     .map(s => s.time);
 }
 
@@ -1341,7 +1337,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.11`;
+    script.src = `${base}merchant.js?v=26.12`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -7632,25 +7628,22 @@ function updateCartUI() {
   }
 
   const isReserve = !isStorePausedCart && state.checkoutTimeMode === 'RESERVE';
-  let slotsWithQuota = [];
+  let reserveTimeSlots = [];
   if (isReserve) {
-    slotsWithQuota = getValidPickupTimeSlotsWithQuota(state.checkoutReserveDate, store ? store.id : null);
-    let availableTimes = slotsWithQuota.filter(s => !s.isFull).map(s => s.time);
-    if (availableTimes.length === 0) {
+    reserveTimeSlots = getValidPickupTimeSlots(state.checkoutReserveDate, store ? store.id : null);
+    if (reserveTimeSlots.length === 0) {
       for (let off = 1; off <= 7; off++) {
         const candidateDate = getDateOffsetStr(off);
-        const candSlots = getValidPickupTimeSlotsWithQuota(candidateDate, store ? store.id : null);
-        const candAvail = candSlots.filter(s => !s.isFull).map(s => s.time);
-        if (candAvail.length > 0) {
+        const candTimes = getValidPickupTimeSlots(candidateDate, store ? store.id : null);
+        if (candTimes.length > 0) {
           state.checkoutReserveDate = candidateDate;
-          slotsWithQuota = candSlots;
-          availableTimes = candAvail;
+          reserveTimeSlots = candTimes;
           break;
         }
       }
     }
-    if (!availableTimes.includes(state.checkoutReserveTime)) {
-      state.checkoutReserveTime = availableTimes[0] || '12:15';
+    if (!reserveTimeSlots.includes(state.checkoutReserveTime)) {
+      state.checkoutReserveTime = reserveTimeSlots[0] || '12:15';
     }
   }
 
@@ -7886,10 +7879,6 @@ function updateCartUI() {
       `;
     }
   } else {
-    const selectedSlotMeta = isReserve
-      ? (slotsWithQuota.find(s => s.time === state.checkoutReserveTime) || null)
-      : null;
-
     const hasActiveStoreCoupons = Boolean(store && Array.isArray(store.coupons) && store.coupons.some(c => c && c.active !== false));
     const hasFilledExtras = Boolean(
       String(state.checkoutNote || '').trim() ||
@@ -7929,19 +7918,12 @@ function updateCartUI() {
               <div>
                 <label class="cart-mini-field-lbl">${t('時段', 'Time', '時間', '시간')}</label>
                 <select class="select-input" onchange="setCheckoutMode('checkoutReserveTime', this.value)">
-                  ${slotsWithQuota.map(s => `
-                    <option value="${s.time}" ${state.checkoutReserveTime === s.time ? 'selected' : ''} ${s.isFull || s.remaining < totalCount ? 'disabled' : ''}>
-                      ${s.time} ${s.isFull ? t('(滿)', '(Full)') : s.remaining < totalCount ? t(`(剩 ${s.remaining} 份)`, `(${s.remaining} left)`) : t(`(剩 ${s.remaining} 份)`, `(${s.remaining} left)`)}
-                    </option>
+                  ${reserveTimeSlots.map(timeStr => `
+                    <option value="${timeStr}" ${state.checkoutReserveTime === timeStr ? 'selected' : ''}>${timeStr}</option>
                   `).join('')}
                 </select>
               </div>
             </div>
-            ${selectedSlotMeta ? `
-              <div class="cart-quota-tiny">
-                <span>${t(`剩 ${selectedSlotMeta.remaining} 份`, `${selectedSlotMeta.remaining} left`)}${selectedSlotMeta.isPeak ? ` · ${t('尖峰', 'Peak')}` : ''}</span>
-              </div>
-            ` : ''}
             ${isLargeOrderReserve && isCashSelected ? `
               <div class="cart-quota-tiny warn">${t(`滿 $${LARGE_ORDER_DEPOSIT_THRESHOLD} 現金預訂請於取餐前至櫃檯確認`, `Cash pre-orders $${LARGE_ORDER_DEPOSIT_THRESHOLD}+ require counter confirmation`)}</div>
             ` : ''}
