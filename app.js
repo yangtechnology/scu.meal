@@ -1336,7 +1336,7 @@ function ensureMerchantModuleLoaded() {
     }
     const script = document.createElement('script');
     const base = typeof getBaseRootUrl === 'function' ? getBaseRootUrl() : './';
-    script.src = `${base}merchant.js?v=26.16`;
+    script.src = `${base}merchant.js?v=26.17`;
     script.async = false;
     script.onload = () => resolve(true);
     script.onerror = () => {
@@ -4253,7 +4253,8 @@ function syncStickyHeaderOffset() {
   try {
     if (typeof document === 'undefined' || !document.documentElement) return;
     const header = document.querySelector('header.app-header');
-    const h = header && header.offsetHeight ? Math.round(header.offsetHeight) : (window.innerWidth <= 640 ? 98 : 68);
+    const rectH = header && typeof header.getBoundingClientRect === 'function' ? header.getBoundingClientRect().height : 0;
+    const h = rectH > 0 ? Math.round(rectH) : (header && header.offsetHeight ? Math.round(header.offsetHeight) : (window.innerWidth <= 640 ? 98 : 68));
     document.documentElement.style.setProperty('--app-header-h', `${h}px`);
   } catch (e) {}
 }
@@ -6707,6 +6708,9 @@ function renderInStoreMenuCards(onlyUpdateGrid = false) {
   `;
   initStudentMenuScrollSpy();
   syncStickyHeaderOffset();
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(syncStickyHeaderOffset);
+  }
   if (state.lang && state.lang !== 'zh-TW') applyDomSystemTranslation(box);
 }
 

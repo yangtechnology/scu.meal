@@ -49,7 +49,7 @@ body {
   color: var(--text-primary);
   line-height: 1.5;
   padding-bottom: 90px;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -2390,7 +2390,7 @@ select.select-input {
 
 #viewOrder,
 #viewTicket {
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 #cartModal [style*="display:flex"] > *,
@@ -4061,8 +4061,9 @@ select.select-input {
 
 /* ==================== v23.0 專業點餐與收銀互動樣式（三-1 / 三-4 / 二-3 / 二-4 / B6 動態舒適間距） ==================== */
 .sticky-menu-cat-bar {
+  position: -webkit-sticky;
   position: sticky;
-  top: calc(var(--app-header-h, 74px) + 12px);
+  top: var(--app-header-h, 68px);
   z-index: 45;
   display: flex;
   justify-content: space-between;
@@ -4071,17 +4072,17 @@ select.select-input {
   flex-wrap: wrap;
   margin-top: 6px;
   margin-bottom: 16px;
-  background: rgba(255, 255, 255, 0.97);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(12px);
   padding: 10px 12px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--border);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
 @media (max-width: 640px) {
   .sticky-menu-cat-bar {
-    top: calc(var(--app-header-h, 102px) + 10px);
+    top: var(--app-header-h, 68px);
     padding: 9px 10px;
   }
 }
